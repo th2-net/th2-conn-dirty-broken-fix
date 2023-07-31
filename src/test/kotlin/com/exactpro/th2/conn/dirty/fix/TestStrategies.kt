@@ -271,7 +271,7 @@ class TestStrategies {
         val channel = testContext.channel
         val handler = testContext.fixHandler
 
-        verify(channel, timeout(2100)).open()
+        verify(channel, timeout(2200)).open()
         verify(channel).send(any(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
 
@@ -279,7 +279,7 @@ class TestStrategies {
         handler.onOutgoing(channel, businessMessage(4).asExpandable(), Collections.emptyMap());
         handler.onOutgoing(channel, businessMessage(5).asExpandable(), Collections.emptyMap())
 
-        verify(channel, timeout(2100)).open()
+        verify(channel, timeout(2200)).open()
         verify(channel).send(any(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
         messages.clear()

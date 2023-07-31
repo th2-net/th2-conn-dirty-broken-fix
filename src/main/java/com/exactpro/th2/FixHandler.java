@@ -1285,6 +1285,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void runReconnectWithSequenceResetStrategy(RuleConfiguration configuration) {
+        strategy.resetStrategyAndState(configuration);
         Instant start = Instant.now();
         ruleStartEvent(configuration.getRuleType(), start);
         ChangeSequenceConfiguration resendRequestConfig = configuration.getChangeSequenceConfiguration();
