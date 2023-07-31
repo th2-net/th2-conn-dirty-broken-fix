@@ -1,5 +1,5 @@
 /*
- * Copyright 2022-2022 Exactpro (Exactpro Systems Limited)
+ * Copyright 2022-2023 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,7 +41,7 @@ private val MAPPER = JsonMapper.builder()
     .addModule(KotlinModule(nullIsSameAsDefault = true))
     .build()
 
-private const val RULE_NAME_PROPERTY = "rule-name"
+const val RULE_NAME_PROPERTY = "rule-name"
 private const val RULE_ACTIONS_PROPERTY = "rule-actions"
 private const val MANGLE_EVENT_TYPE = "Mangle"
 
@@ -115,7 +115,7 @@ class FixProtocolMangler(context: IManglerContext) : IMangler {
 
         if (rules.isEmpty()) return null
 
-        val rule = rules.filter { rule ->
+        val rule = rules.filter { it.isActiveRule }.filter { rule ->
             rule.transform.any { transform ->
                 transform.conditions.all { it.matches(message) }
             }

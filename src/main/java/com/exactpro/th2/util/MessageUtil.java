@@ -1,5 +1,5 @@
 /*
- * Copyright 2022-2022 Exactpro (Exactpro Systems Limited)
+ * Copyright 2022-2023 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,16 +18,9 @@ package com.exactpro.th2.util;
 
 import io.netty.buffer.ByteBuf;
 
-import java.nio.charset.StandardCharsets;
-
-import static com.exactpro.th2.constants.Constants.BEGIN_STRING_TAG;
-import static com.exactpro.th2.constants.Constants.BODY_LENGTH_TAG;
-import static com.exactpro.th2.constants.Constants.CHECKSUM_TAG;
-import static com.exactpro.th2.constants.Constants.MSG_SEQ_NUM_TAG;
-import static com.exactpro.th2.constants.Constants.MSG_TYPE_TAG;
-import static com.exactpro.th2.constants.Constants.SENDER_COMP_ID_TAG;
-import static com.exactpro.th2.constants.Constants.SENDING_TIME_TAG;
-import static com.exactpro.th2.constants.Constants.TARGET_COMP_ID_TAG;
+import static com.exactpro.th2.constants.Constants.*;
+import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.indexOf;
+import static java.nio.charset.StandardCharsets.US_ASCII;
 
 public class MessageUtil {
 
@@ -65,7 +58,7 @@ public class MessageUtil {
 
     public static int findTag(ByteBuf message, int offset, String tag) {
 
-        byte[] byteTag = tag.getBytes(StandardCharsets.US_ASCII);
+        byte[] byteTag = tag.getBytes(US_ASCII);
         int start;
         int firstSoh = 1;
         byte delim = BYTE_SOH;
@@ -116,7 +109,7 @@ public class MessageUtil {
     }
 
     public static void updateTag(ByteBuf message, String tag, String value) {
-        byte[] toInsert = value.getBytes(StandardCharsets.US_ASCII);
+        byte[] toInsert = value.getBytes(US_ASCII);
 
         int firstSoh = 1;
 
@@ -141,27 +134,27 @@ public class MessageUtil {
         byte[] toInsert;
 
         if (tag.equals(BEGIN_STRING_TAG.toString())) {
-            toInsert = (BEGIN_STRING_TAG + "=" + value + SOH).getBytes(StandardCharsets.US_ASCII);
+            toInsert = (BEGIN_STRING_TAG + "=" + value + SOH).getBytes(US_ASCII);
             getSupplementedMessage(message, toInsert, 0);
             return;
         }
 
         if (tag.equals(BODY_LENGTH_TAG.toString())) {
-            toInsert = (BODY_LENGTH_TAG + "=" + value + SOH).getBytes(StandardCharsets.US_ASCII);
+            toInsert = (BODY_LENGTH_TAG + "=" + value + SOH).getBytes(US_ASCII);
             int toIdx = findByte(message, 0, BYTE_SOH) + 1;
             getSupplementedMessage(message, toInsert, toIdx);
             return;
         }
 
         if (tag.equals(MSG_TYPE_TAG.toString())) {
-            toInsert = (MSG_TYPE_TAG + "=" + value + SOH).getBytes(StandardCharsets.US_ASCII);
+            toInsert = (MSG_TYPE_TAG + "=" + value + SOH).getBytes(US_ASCII);
             int toIdx = message.indexOf(findTag(message, 0, BODY_LENGTH_TAG.toString()) + 1, message.readableBytes(), BYTE_SOH) + 1;
             getSupplementedMessage(message, toInsert, toIdx);
             return;
         }
 
         if (tag.equals(MSG_SEQ_NUM_TAG.toString())) {
-            toInsert = (MSG_SEQ_NUM_TAG + "=" + value + SOH).getBytes(StandardCharsets.US_ASCII);
+            toInsert = (MSG_SEQ_NUM_TAG + "=" + value + SOH).getBytes(US_ASCII);
             int start = findTag(message, 0, MSG_TYPE_TAG.toString())+1;
             int toIdx;
             if (start == 0){
@@ -189,19 +182,19 @@ public class MessageUtil {
         }
 
         if (tag.equals(CHECKSUM_TAG.toString())) {
-            toInsert = (CHECKSUM_TAG + "=" + value + SOH).getBytes(StandardCharsets.US_ASCII);
+            toInsert = (CHECKSUM_TAG + "=" + value + SOH).getBytes(US_ASCII);
             getSupplementedMessage(message, toInsert, message.readableBytes());
             return;
         }
 
-        toInsert = (tag + "=" + value + SOH).getBytes(StandardCharsets.US_ASCII);
+        toInsert = (tag + "=" + value + SOH).getBytes(US_ASCII);
         int toIdx = findTag(message, 0, CHECKSUM_TAG.toString()) + 1;
 
         getSupplementedMessage(message, toInsert, toIdx);
     }
 
     private static void putAddTag(ByteBuf message, String value, String tag, Integer previousTag){
-        byte[] toInsert = (tag + "=" + value + SOH).getBytes(StandardCharsets.US_ASCII);
+        byte[] toInsert = (tag + "=" + value + SOH).getBytes(US_ASCII);
         int start = findTag(message, 0, previousTag.toString()) + 1;
         int toIdx = message.indexOf(start, message.readableBytes(), BYTE_SOH) + 1;
 
@@ -223,5 +216,44 @@ public class MessageUtil {
         message.writerIndex(fromIdx);
         message.writeBytes(message.copy(start, end));
         MessageUtil.putTag(message, tag, value);
+    }
+
+    public static String calculateChecksum(byte[] data) {
+        int total = 0;
+        for (byte item : data) {
+            total += item;
+        }
+        int checksum = total % 256;
+        return String.format("%03d", checksum);
+    }
+
+    public static String getChecksum(ByteBuf message) {
+
+        int checksumIdx = indexOf(message, CHECKSUM) + 1;
+        if (checksumIdx <= 0) {
+            checksumIdx = message.capacity();
+        }
+
+        ByteBuf data = message.copy(0, checksumIdx);
+        return calculateChecksum(data.array());
+    }
+
+    public static String getChecksum(StringBuilder message) { //do private
+
+        String substring = message.substring(0, message.indexOf(CHECKSUM) + 1);
+        return calculateChecksum(substring.getBytes(US_ASCII));
+    }
+
+    public static int getBodyLength(StringBuilder message) { //do private
+        int start = message.indexOf(SOH, message.indexOf(BODY_LENGTH) + 1);
+        int end = message.indexOf(CHECKSUM);
+        return end - start;
+    }
+
+    public static int getBodyLength(ByteBuf message) {
+        int bodyLengthIdx = indexOf(message, BODY_LENGTH);
+        int start = findByte(message, bodyLengthIdx + 1, BYTE_SOH);
+        int end = indexOf(message, CHECKSUM);
+        return end - start;
     }
 }

@@ -16,6 +16,7 @@
 
 package com.exactpro.th2;
 
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BrokenConnConfiguration;
 import com.exactpro.th2.conn.dirty.fix.KeyFileType;
 import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel.Security;
 import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerSettings;
@@ -66,6 +67,8 @@ public class FixHandlerSettings implements IHandlerSettings {
     private int testRequestDelay = 60;
     private int reconnectDelay = 5;
     private int disconnectRequestDelay = 5;
+
+    private BrokenConnConfiguration brokenConnConfiguration;
 
     @JsonDeserialize(using = DateTimeFormatterDeserializer.class)
     private DateTimeFormatter sendingDateTimeFormat = DateTimeFormatter.ofPattern("yyyyMMdd-HH:mm:ss.SSSSSSSSS");
@@ -294,4 +297,11 @@ public class FixHandlerSettings implements IHandlerSettings {
         this.disconnectRequestDelay = disconnectRequestDelay;
     }
 
+    public BrokenConnConfiguration getBrokenConnConfiguration() {
+        return brokenConnConfiguration;
+    }
+
+    public void setBrokenConnConfiguration(BrokenConnConfiguration brokenConnConfiguration) {
+        this.brokenConnConfiguration = brokenConnConfiguration;
+    }
 }

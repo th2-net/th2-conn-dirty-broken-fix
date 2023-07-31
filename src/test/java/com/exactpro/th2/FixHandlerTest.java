@@ -16,15 +16,18 @@
 
 package com.exactpro.th2;
 
-import com.exactpro.th2.common.grpc.EventID;
-import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.conn.dirty.fix.FixField;
-import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel;
 import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerContext;
 import com.exactpro.th2.util.MessageUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import kotlin.Unit;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.Map;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -34,31 +37,12 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mockito;
 
-import java.net.InetSocketAddress;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-
+import static com.exactpro.th2.TestUtils.createHandlerSettings;
 import static com.exactpro.th2.conn.dirty.fix.FixByteBufUtilKt.findField;
-import static com.exactpro.th2.constants.Constants.BEGIN_STRING_TAG;
-import static com.exactpro.th2.constants.Constants.BODY_LENGTH_TAG;
-import static com.exactpro.th2.constants.Constants.CHECKSUM_TAG;
-import static com.exactpro.th2.constants.Constants.DEFAULT_APPL_VER_ID_TAG;
-import static com.exactpro.th2.constants.Constants.MSG_SEQ_NUM_TAG;
-import static com.exactpro.th2.constants.Constants.MSG_TYPE_TAG;
-import static com.exactpro.th2.constants.Constants.NEW_SEQ_NO_TAG;
-import static com.exactpro.th2.constants.Constants.SENDER_COMP_ID_TAG;
-import static com.exactpro.th2.constants.Constants.SENDER_SUB_ID_TAG;
-import static com.exactpro.th2.constants.Constants.SENDING_TIME_TAG;
-import static com.exactpro.th2.constants.Constants.TARGET_COMP_ID_TAG;
+import static com.exactpro.th2.constants.Constants.*;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.asExpandable;
+import static com.exactpro.th2.util.MessageUtil.getBodyLength;
+import static com.exactpro.th2.util.MessageUtil.getChecksum;
 import static java.nio.charset.StandardCharsets.US_ASCII;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Collections.emptyMap;
@@ -69,7 +53,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 class FixHandlerTest {
-
 
     private Channel channel;
     private FixHandlerSettings settings;
@@ -169,27 +152,7 @@ class FixHandlerTest {
         assertEquals(expectedResendRequest, new String(channel.getQueue().get(1).array()));
     }
 
-    @NotNull
-    public static FixHandlerSettings createHandlerSettings() {
-        final FixHandlerSettings fixHandlerSettings = new FixHandlerSettings();
-        fixHandlerSettings.setHost("127.0.0.1");
-        fixHandlerSettings.setPort(8080);
-        fixHandlerSettings.setBeginString("FIXT.1.1");
-        fixHandlerSettings.setHeartBtInt(30);
-        fixHandlerSettings.setSenderCompID("client");
-        fixHandlerSettings.setTargetCompID("server");
-        fixHandlerSettings.setEncryptMethod("0");
-        fixHandlerSettings.setUsername("username");
-        fixHandlerSettings.setPassword("pass");
-        fixHandlerSettings.setTestRequestDelay(10);
-        fixHandlerSettings.setReconnectDelay(5);
-        fixHandlerSettings.setDisconnectRequestDelay(5);
-        fixHandlerSettings.setResetSeqNumFlag(false);
-        fixHandlerSettings.setResetOnLogon(false);
-        fixHandlerSettings.setDefaultApplVerID("9");
-        fixHandlerSettings.setSenderSubID("trader");
-        return fixHandlerSettings;
-    }
+
 
     @NotNull
     private static FixHandler createFixHandler() {
@@ -259,19 +222,19 @@ class FixHandlerTest {
         ByteBuf bufferForPrepareMessage1 = Unpooled.buffer().writeBytes("8=FIXT.1.1\0019=13\001552=1\00149=client\00134=8\00156=null\00110=169\001".getBytes(US_ASCII));
         ByteBuf bufferForPrepareMessage2 = Unpooled.buffer(11).writeBytes("552=1\001".getBytes(US_ASCII));
         ByteBuf bufferForPrepareMessage3 = Unpooled.buffer().writeBytes("8=FIXT.1.1\00111=9977764\00122=8\00138=100\00140=2\00144=55\00152=20220127-12:00:40.775\00148=INSTR2\00154=2\00159=3\00160=20220127-15:00:36\001528=A\001581=1\001453=4\001448=DEMO-CONN2\001447=D\001452=76\001448=0\001447=P\001452=3\001448=0\001447=P\001452=122\001448=3\001447=P\001452=12\00110=157\001".getBytes(US_ASCII));
-        ByteBuf bufferForPrepareMessage4 = Unpooled.buffer().writeBytes("8=FIXT.1.1\0019=192\00135=A\00111=3428785\00122=8\00138=30\00140=2\00144=55\00148=INSTR1\00154=1\00159=0\00160=20220127-18:38:35\001526=11111\001528=A\001581=1\001453=4\001448=DEMO-CONN1\001447=D\001452=76\001448=0\001447=P\001452=3\001448=0\00147=P\001452=122\001448=3\001447=P\001452=12\00110=228\001".getBytes(US_ASCII));
+        ByteBuf bufferForPrepareMessage4 = Unpooled.buffer().writeBytes("8=FIXT.1.1\0019=192\00135=AE\00111=3428785\00122=8\00138=30\00140=2\00144=55\00148=INSTR1\00154=1\00159=0\00160=20220127-18:38:35\001526=11111\001528=A\001581=1\001453=4\001448=DEMO-CONN1\001447=D\001452=76\001448=0\001447=P\001452=3\001448=0\00147=P\001452=122\001448=3\001447=P\001452=12\00110=228\001".getBytes(US_ASCII));
 
-        String expectedMessage1 = "8=FIXT.1.1\u00019=70\u000135=A\u0001552=1\u000149=client\u000134=2\u000156=server\u000152=2014-12-22T10:15:30Z\u000150=trader\u000110=126\u0001";
+        String expectedMessage1 = "8=FIXT.1.1\u00019=71\u000135=AE\u0001552=1\u000149=client\u000134=2\u000156=server\u000152=2014-12-22T10:15:30Z\u000150=trader\u000110=196\u0001";
         String expectedMessage2 = "8=FIXT.1.1\u00019=65\u000134=3\u000149=client\u000156=server\u000152=2014-12-22T10:15:30Z\u000150=trader\u0001552=1\u000110=156\u0001";
-        String expectedMessage3 = "8=FIXT.1.1\u00019=242\u000135=A\u000134=4\u000149=client\u000156=server\u000150=trader\u000111=9977764\u000122=8\u000138=100\u000140=2\u000144=55\u000152=2014-12-22T10:15:30Z\u000148=INSTR2\u000154=2\u000159=3\u000160=20220127-15:00:36\u0001528=A\u0001581=1\u0001453=4\u0001448=DEMO-CONN2\u0001447=D\u0001452=76\u0001448=0\u0001447=P\u0001452=3\u0001448=0\u0001447=P\u0001452=122\u0001448=3\u0001447=P\u0001452=12\u000110=129\u0001";
-        String expectedMessage4 = "8=FIXT.1.1\u00019=250\u000135=A\u000134=5\u000149=client\u000156=server\u000152=2014-12-22T10:15:30Z\u000150=trader\u000111=3428785\u000122=8\u000138=30\u000140=2\u000144=55\u000148=INSTR1\u000154=1\u000159=0\u000160=20220127-18:38:35\u0001526=11111\u0001528=A\u0001581=1\u0001453=4\u0001448=DEMO-CONN1\u0001447=D\u0001452=76\u0001448=0\u0001447=P\u0001452=3\u0001448=0\u000147=P\u0001452=122\u0001448=3\u0001447=P\u0001452=12\u000110=234\u0001";
+        String expectedMessage3 = "8=FIXT.1.1\u00019=243\u000135=AE\u000134=4\u000149=client\u000156=server\u000150=trader\u000111=9977764\u000122=8\u000138=100\u000140=2\u000144=55\u000152=2014-12-22T10:15:30Z\u000148=INSTR2\u000154=2\u000159=3\u000160=20220127-15:00:36\u0001528=A\u0001581=1\u0001453=4\u0001448=DEMO-CONN2\u0001447=D\u0001452=76\u0001448=0\u0001447=P\u0001452=3\u0001448=0\u0001447=P\u0001452=122\u0001448=3\u0001447=P\u0001452=12\u000110=199\u0001";
+        String expectedMessage4 = "8=FIXT.1.1\u00019=251\u000135=AE\u000134=5\u000149=client\u000156=server\u000152=2014-12-22T10:15:30Z\u000150=trader\u000111=3428785\u000122=8\u000138=30\u000140=2\u000144=55\u000148=INSTR1\u000154=1\u000159=0\u000160=20220127-18:38:35\u0001526=11111\u0001528=A\u0001581=1\u0001453=4\u0001448=DEMO-CONN1\u0001447=D\u0001452=76\u0001448=0\u0001447=P\u0001452=3\u0001448=0\u000147=P\u0001452=122\u0001448=3\u0001447=P\u0001452=12\u000110=048\u0001";
         Map<String, String> expected = new HashMap<>();
-        expected.put("MsgType", "A");
+        expected.put("MsgType", "AE");
         Map<String, String> expected2 = new HashMap<>();
         Map<String, String> expected3 = new HashMap<>();
-        expected3.put("MsgType", "A");
+        expected3.put("MsgType", "AE");
         Map<String, String> expected4 = new HashMap<>();
-        expected4.put("MsgType", "A");
+        expected4.put("MsgType", "AE");
 
         Map<String, String> actual = new HashMap<>(expected);
         fixHandler.onOutgoing(channel, bufferForPrepareMessage1, actual);
@@ -295,7 +258,7 @@ class FixHandlerTest {
     @Test
     void getChecksumTest() {
         StringBuilder messageForChecksum = new StringBuilder("UUU\00110=169\001"); // U == 85 in ASCII str == 256
-        String actual = fixHandler.getChecksum(messageForChecksum);
+        String actual = getChecksum(messageForChecksum);
         String expectedString = "000";
         assertEquals(expectedString, actual);
     }
@@ -303,7 +266,7 @@ class FixHandlerTest {
     @Test
     void getByteBufChecksumTest() {
         ByteBuf messageForChecksum = Unpooled.wrappedBuffer("UUU\00110=169\001".getBytes(US_ASCII)); // U == 85 in ASCII str == 256
-        String actual = fixHandler.getChecksum(messageForChecksum);
+        String actual = getChecksum(messageForChecksum);
         String expectedString = "000";
         assertEquals(expectedString, actual);
     }
@@ -312,7 +275,7 @@ class FixHandlerTest {
     void getBodyLengthTest() {
         StringBuilder messageForBodyLength = new StringBuilder("8=FIXT.1.1\0019=13\00135=AE\00110=169\001");
         int expected = 6;
-        int actual = fixHandler.getBodyLength(messageForBodyLength);
+        int actual = getBodyLength(messageForBodyLength);
         assertEquals(expected, actual);
     }
 
@@ -320,7 +283,7 @@ class FixHandlerTest {
     void getByteByfBodyLengthTest() {
         ByteBuf byteBuf = Unpooled.wrappedBuffer("8=FIX.2.2\0019=19\00135=AE\001552=1\00110=053\001".getBytes(US_ASCII));
         int expected = 12;
-        int actual = fixHandler.getBodyLength(byteBuf);
+        int actual = getBodyLength(byteBuf);
         assertEquals(expected, actual);
     }
 
@@ -402,7 +365,7 @@ class FixHandlerTest {
         assertNotNull(buf);
         assertEquals(expected2, new String(buf.array()));
 
-        MessageUtil.putTag(buf, CHECKSUM_TAG.toString(), fixHandler.getChecksum(buf));
+        MessageUtil.putTag(buf, CHECKSUM_TAG.toString(), getChecksum(buf));
         assertNotNull(buf);
         assertEquals(expected3, new String(buf.array()));
     }
@@ -526,87 +489,6 @@ class FixHandlerTest {
 
         FixField sendingTime = findField(buf, SENDING_TIME_TAG);
         assertNotNull(sendingTime);
-    }
-}
-
-class Channel implements IChannel {
-    private final FixHandlerSettings fixHandlerSettings;
-    private final MyFixHandler fixHandler;
-    private final List<ByteBuf> queue = new ArrayList<>();
-
-    Channel(FixHandlerSettings fixHandlerSettings) {
-        this.fixHandlerSettings = fixHandlerSettings;
-        IHandlerContext context = Mockito.mock(IHandlerContext.class);
-        Mockito.when(context.getSettings()).thenReturn(this.fixHandlerSettings);
-
-        this.fixHandler = new MyFixHandler(context);
-    }
-
-    @Override
-    public CompletableFuture<Unit> open() {
-        return CompletableFuture.completedFuture(Unit.INSTANCE);
-    }
-
-    @NotNull
-    @Override
-    public CompletableFuture<MessageID> send(@NotNull ByteBuf byteBuf, @NotNull Map<String, String> map, EventID eventId, @NotNull IChannel.SendMode sendMode) {
-        queue.add(byteBuf);
-        return CompletableFuture.completedFuture(MessageID.getDefaultInstance());
-    }
-
-    @Override
-    public boolean isOpen() {
-        return true;
-    }
-
-    @Override
-    public CompletableFuture<Unit> close() {
-        return CompletableFuture.completedFuture(Unit.INSTANCE);
-    }
-
-    public FixHandlerSettings getFixHandlerSettings() {
-        return fixHandlerSettings;
-    }
-
-    public MyFixHandler getFixHandler() {
-        return fixHandler;
-    }
-
-    public List<ByteBuf> getQueue() {
-        return queue;
-    }
-
-    public void clearQueue() {
-        this.queue.clear();
-    }
-
-    @NotNull
-    @Override
-    public InetSocketAddress getAddress() {
-        return null;
-    }
-
-    @Override
-    public Security getSecurity() {
-        return new Security();
-    }
-
-    @NotNull
-    @Override
-    public Map<String, Object> getAttributes() {
-        return Map.of();
-    }
-
-    @NotNull
-    @Override
-    public String getSessionAlias() {
-        return "alias";
-    }
-
-    @NotNull
-    @Override
-    public String getSessionGroup() {
-        return "group";
     }
 }
 
