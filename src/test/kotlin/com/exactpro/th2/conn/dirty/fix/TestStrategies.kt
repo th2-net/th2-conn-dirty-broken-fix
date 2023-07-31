@@ -319,7 +319,7 @@ class TestStrategies {
         val channel = testContext.channel
         val handler = testContext.fixHandler
 
-        Thread.sleep(2000) // Waiting for strategy to apply
+        Thread.sleep(2200) // Waiting for strategy to apply
         messages.clear()
 
         handler.onIncoming(channel, testRequest(4).asExpandable());
