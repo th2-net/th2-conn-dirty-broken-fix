@@ -18,6 +18,7 @@ package com.exactpro.th2.conn.dirty.fix.brokenconn.configuration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.RuleType
 import java.time.Duration
 
+// TODO: disconnect type should be configurable
 data class RuleConfiguration(
     val ruleType: RuleType,
     val duration: Duration,

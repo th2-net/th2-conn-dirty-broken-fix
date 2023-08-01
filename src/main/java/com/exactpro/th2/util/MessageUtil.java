@@ -18,7 +18,16 @@ package com.exactpro.th2.util;
 
 import io.netty.buffer.ByteBuf;
 
-import static com.exactpro.th2.constants.Constants.*;
+import static com.exactpro.th2.constants.Constants.BEGIN_STRING_TAG;
+import static com.exactpro.th2.constants.Constants.BODY_LENGTH;
+import static com.exactpro.th2.constants.Constants.BODY_LENGTH_TAG;
+import static com.exactpro.th2.constants.Constants.CHECKSUM;
+import static com.exactpro.th2.constants.Constants.CHECKSUM_TAG;
+import static com.exactpro.th2.constants.Constants.MSG_SEQ_NUM_TAG;
+import static com.exactpro.th2.constants.Constants.MSG_TYPE_TAG;
+import static com.exactpro.th2.constants.Constants.SENDER_COMP_ID_TAG;
+import static com.exactpro.th2.constants.Constants.SENDING_TIME_TAG;
+import static com.exactpro.th2.constants.Constants.TARGET_COMP_ID_TAG;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.indexOf;
 import static java.nio.charset.StandardCharsets.US_ASCII;
 
@@ -238,6 +247,7 @@ public class MessageUtil {
         return calculateChecksum(data.array());
     }
 
+    // TODO: charset should be configurable
     public static String getChecksum(StringBuilder message) { //do private
 
         String substring = message.substring(0, message.indexOf(CHECKSUM) + 1);

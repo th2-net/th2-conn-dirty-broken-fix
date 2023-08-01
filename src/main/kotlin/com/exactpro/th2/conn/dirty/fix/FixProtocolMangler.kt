@@ -41,7 +41,7 @@ private val MAPPER = JsonMapper.builder()
     .addModule(KotlinModule(nullIsSameAsDefault = true))
     .build()
 
-const val RULE_NAME_PROPERTY = "rule-name"
+private const val RULE_NAME_PROPERTY = "rule-name"
 private const val RULE_ACTIONS_PROPERTY = "rule-actions"
 private const val MANGLE_EVENT_TYPE = "Mangle"
 
@@ -115,7 +115,7 @@ class FixProtocolMangler(context: IManglerContext) : IMangler {
 
         if (rules.isEmpty()) return null
 
-        val rule = rules.filter { it.isActiveRule }.filter { rule ->
+        val rule = rules.filter { rule ->
             rule.transform.any { transform ->
                 transform.conditions.all { it.matches(message) }
             }

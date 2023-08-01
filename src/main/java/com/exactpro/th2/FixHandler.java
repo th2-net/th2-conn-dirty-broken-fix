@@ -22,6 +22,7 @@ import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.utils.event.transport.EventUtilsKt;
 import com.exactpro.th2.conn.dirty.fix.FixField;
+import com.exactpro.th2.conn.dirty.fix.MessageTransformer;
 import com.exactpro.th2.conn.dirty.fix.SequenceLoader;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BatchSendConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BlockMessageConfiguration;
@@ -86,12 +87,64 @@ import static com.exactpro.th2.conn.dirty.fix.FixByteBufUtilKt.firstField;
 import static com.exactpro.th2.conn.dirty.fix.FixByteBufUtilKt.lastField;
 import static com.exactpro.th2.conn.dirty.fix.FixByteBufUtilKt.updateChecksum;
 import static com.exactpro.th2.conn.dirty.fix.FixByteBufUtilKt.updateLength;
-import static com.exactpro.th2.conn.dirty.fix.FixProtocolManglerKt.RULE_NAME_PROPERTY;
 import static com.exactpro.th2.conn.dirty.fix.KeyFileType.Companion.OperationMode.ENCRYPT_MODE;
 import static com.exactpro.th2.conn.dirty.tcp.core.util.CommonUtil.getEventId;
 import static com.exactpro.th2.conn.dirty.tcp.core.util.CommonUtil.toByteBuf;
 import static com.exactpro.th2.conn.dirty.tcp.core.util.CommonUtil.toErrorEvent;
-import static com.exactpro.th2.constants.Constants.*;
+import static com.exactpro.th2.constants.Constants.ADMIN_MESSAGES;
+import static com.exactpro.th2.constants.Constants.BEGIN_SEQ_NO;
+import static com.exactpro.th2.constants.Constants.BEGIN_SEQ_NO_TAG;
+import static com.exactpro.th2.constants.Constants.BEGIN_STRING_TAG;
+import static com.exactpro.th2.constants.Constants.BODY_LENGTH;
+import static com.exactpro.th2.constants.Constants.BODY_LENGTH_TAG;
+import static com.exactpro.th2.constants.Constants.CHECKSUM;
+import static com.exactpro.th2.constants.Constants.CHECKSUM_TAG;
+import static com.exactpro.th2.constants.Constants.DEFAULT_APPL_VER_ID;
+import static com.exactpro.th2.constants.Constants.ENCRYPTED_PASSWORD;
+import static com.exactpro.th2.constants.Constants.ENCRYPT_METHOD;
+import static com.exactpro.th2.constants.Constants.END_SEQ_NO;
+import static com.exactpro.th2.constants.Constants.END_SEQ_NO_TAG;
+import static com.exactpro.th2.constants.Constants.GAP_FILL_FLAG;
+import static com.exactpro.th2.constants.Constants.GAP_FILL_FLAG_TAG;
+import static com.exactpro.th2.constants.Constants.HEART_BT_INT;
+import static com.exactpro.th2.constants.Constants.IS_POSS_DUP;
+import static com.exactpro.th2.constants.Constants.MSG_SEQ_NUM;
+import static com.exactpro.th2.constants.Constants.MSG_SEQ_NUM_TAG;
+import static com.exactpro.th2.constants.Constants.MSG_TYPE;
+import static com.exactpro.th2.constants.Constants.MSG_TYPE_HEARTBEAT;
+import static com.exactpro.th2.constants.Constants.MSG_TYPE_LOGON;
+import static com.exactpro.th2.constants.Constants.MSG_TYPE_LOGOUT;
+import static com.exactpro.th2.constants.Constants.MSG_TYPE_RESEND_REQUEST;
+import static com.exactpro.th2.constants.Constants.MSG_TYPE_SEQUENCE_RESET;
+import static com.exactpro.th2.constants.Constants.MSG_TYPE_TAG;
+import static com.exactpro.th2.constants.Constants.MSG_TYPE_TEST_REQUEST;
+import static com.exactpro.th2.constants.Constants.NEW_ENCRYPTED_PASSWORD;
+import static com.exactpro.th2.constants.Constants.NEW_PASSWORD;
+import static com.exactpro.th2.constants.Constants.NEW_SEQ_NO;
+import static com.exactpro.th2.constants.Constants.NEW_SEQ_NO_TAG;
+import static com.exactpro.th2.constants.Constants.NEXT_EXPECTED_SEQ_NUM;
+import static com.exactpro.th2.constants.Constants.NEXT_EXPECTED_SEQ_NUMBER_TAG;
+import static com.exactpro.th2.constants.Constants.ORIG_SENDING_TIME;
+import static com.exactpro.th2.constants.Constants.ORIG_SENDING_TIME_TAG;
+import static com.exactpro.th2.constants.Constants.PASSWORD;
+import static com.exactpro.th2.constants.Constants.POSS_DUP;
+import static com.exactpro.th2.constants.Constants.POSS_DUP_TAG;
+import static com.exactpro.th2.constants.Constants.RESET_SEQ_NUM;
+import static com.exactpro.th2.constants.Constants.SENDER_COMP_ID;
+import static com.exactpro.th2.constants.Constants.SENDER_COMP_ID_TAG;
+import static com.exactpro.th2.constants.Constants.SENDER_SUB_ID;
+import static com.exactpro.th2.constants.Constants.SENDER_SUB_ID_TAG;
+import static com.exactpro.th2.constants.Constants.SENDING_TIME;
+import static com.exactpro.th2.constants.Constants.SENDING_TIME_TAG;
+import static com.exactpro.th2.constants.Constants.SESSION_STATUS_TAG;
+import static com.exactpro.th2.constants.Constants.SUCCESSFUL_LOGOUT_CODE;
+import static com.exactpro.th2.constants.Constants.TARGET_COMP_ID;
+import static com.exactpro.th2.constants.Constants.TARGET_COMP_ID_TAG;
+import static com.exactpro.th2.constants.Constants.TEST_REQ_ID;
+import static com.exactpro.th2.constants.Constants.TEST_REQ_ID_TAG;
+import static com.exactpro.th2.constants.Constants.TEXT_TAG;
+import static com.exactpro.th2.constants.Constants.USERNAME;
+import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.asExpandable;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.indexOf;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.isEmpty;
 import static com.exactpro.th2.util.MessageUtil.findByte;
@@ -132,6 +185,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     private Future<?> reconnectRequestTimer = CompletableFuture.completedFuture(null);
     private volatile IChannel channel;
     protected FixHandlerSettings settings;
+    private final MessageTransformer messageTransformer = MessageTransformer.INSTANCE;
 
     public FixHandler(IHandlerContext context) {
         this.context = context;
@@ -240,7 +294,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                 LOGGER.error("Error while sleeping.");
             }
         }
-        return strategy.getSendStrategy().getSendHandler().send(channel, body, Collections.emptyMap(), eventID);
+        return strategy.getSendStrategy().getSendHandler().send(channel, body, properties, eventID);
     }
 
     @NotNull
@@ -349,7 +403,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         serverMsgSeqNum.incrementAndGet();
 
         if (serverMsgSeqNum.get() < receivedMsgSeqNum && !isDup && enabled.get()) {
-            sendResendRequest(serverMsgSeqNum.get(), receivedMsgSeqNum);
+            sendResendRequest(serverMsgSeqNum.get(), receivedMsgSeqNum - 1);
         }
 
         switch (msgTypeValue) {
@@ -376,7 +430,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                 }
                 break;
             default:
-                if(LOGGER.isDebugEnabled()) LOGGER.debug("Received message - {}", message.toString(US_ASCII));
+                if(LOGGER.isInfoEnabled()) LOGGER.info("Received message - {}", message.toString(US_ASCII));
         }
 
         resetTestRequestTask();
@@ -504,6 +558,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     public void sendResendRequest(int beginSeqNo, int endSeqNo) { //do private
+        LOGGER.info("Sending resend request: {} - {}", beginSeqNo, endSeqNo);
         StringBuilder resendRequest = new StringBuilder();
         setHeader(resendRequest, MSG_TYPE_RESEND_REQUEST, msgSeqNum.incrementAndGet());
         resendRequest.append(BEGIN_SEQ_NO).append(beginSeqNo).append(SOH);
@@ -826,9 +881,9 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     @Override
     public void onClose(@NotNull IChannel channel) {
+        enabled.set(false);
         cancelFuture(heartbeatTimer);
         cancelFuture(testRequestTimer);
-        enabled.set(false);
     }
 
     @Override
@@ -854,7 +909,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategyState.addMessageToBatchCache(message);
 
         CompletableFuture<MessageID> messageID;
-        if(strategyState.getBatchMessageCacheSize() == config.getBatchSize()) {
+        if(strategyState.getBatchMessageCacheSize().get() == config.getBatchSize()) {
             messageID = channel.send(strategyState.getBatchMessageCache(), properties, eventID, SendMode.DIRECT);
             strategyState.resetBatchMessageCache();
         } else {
@@ -891,6 +946,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         return messageIDS.get(0);
     }
 
+    // TODO: Add simplified configuration
     private Map<String, String> transformProcessor(
         ByteBuf message,
         Map<String, String> metadata
@@ -907,12 +963,15 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         var strategyState = strategy.getState();
 
-        int count = strategyState.getTransformedIncomingMessagesCount();
+        int count = strategyState.getTransformedIncomingMessagesCount().get();
         if(count == config.getNumberOfTimesToTransform()) {
             return null;
         }
+        messageTransformer.transformWithoutResults(message, config.getCombinedActions());
+        updateLength(message);
+        updateChecksum(message);
+
         strategyState.incrementIncomingTransformedMessages();
-        metadata.put(RULE_NAME_PROPERTY, config.getManglerRuleName());
         return null;
     }
 
@@ -938,7 +997,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     private Map<String, String> missIncomingMessages(ByteBuf message, Map<String, String> metadata) {
         int countToMiss = strategy.getMissIncomingMessagesConfig().getCount();
         var strategyState = strategy.getState();
-        if(strategyState.getMissedIncomingMessagesCount() == countToMiss) {
+        if(strategyState.getMissedIncomingMessagesCount().get() == countToMiss) {
             return null;
         }
         strategyState.incrementMissedIncomingMessages();
@@ -954,7 +1013,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     private Map<String, String> logoutOnLogon(ByteBuf message, Map<String, String> metadata) {
         StrategyState state = strategy.getState();
         TransformMessageConfiguration config = state.getConfig().getTransformMessageConfiguration();
-        if(state.getTransformedIncomingMessagesCount() < config.getNumberOfTimesToTransform()) {
+        if(state.getTransformedIncomingMessagesCount().get() < config.getNumberOfTimesToTransform()) {
             handleLogon(message, metadata);
             sendLogout();
             try {
@@ -987,7 +1046,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         int countToMiss = strategy.getMissOutgoingMessagesConfiguration().getCount();
         var strategyState = strategy.getState();
         onOutgoingUpdateTag(message, metadata);
-        if(strategyState.getMissedOutgoingMessagesCount() == countToMiss) {
+        if(strategyState.getMissedOutgoingMessagesCount().get() == countToMiss) {
             return null;
         }
         strategyState.incrementMissedOutgoingMessages();
@@ -1123,10 +1182,10 @@ public class FixHandler implements AutoCloseable, IHandler {
     private void cleanupIgnoreIncomingMessagesStrategy() {
         strategy.getIncomingMessagesStrategy().setIncomingMessagesPreprocessor(this::defaultMessageProcessor);
         try {
+            Thread.sleep(strategy.getState().getConfig().getCleanUpDuration().toMillis()); // waiting for new incoming messages to trigger resend request.
             channel.close().get();
             channel.open().get();
             waitUntilLoggedIn();
-            Thread.sleep(strategy.getState().getConfig().getCleanUpDuration().toMillis());
         } catch (Exception e) {
             String message = String.format("Error while cleaning up %s strategy", strategy.getType());
             LOGGER.error(message, e);
@@ -1191,7 +1250,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.getOutgoingMessagesStrategy().setOutgoingMessageProcessor(this::defaultOutgoingStrategy);
         strategy.getIncomingMessagesStrategy().setIncomingMessagesPreprocessor(this::defaultMessageProcessor);
         try {
-            Thread.sleep(strategy.getState().getConfig().getCleanUpDuration().toMillis()); // FIXME: Add configuration
+            Thread.sleep(strategy.getState().getConfig().getCleanUpDuration().toMillis()); // waiting for new incoming/outgoing messages to trigger resend request.
         } catch (Exception e) {
             String message = String.format("Error while cleaning up %s strategy", strategy.getType());
             LOGGER.error(message, e);
@@ -1322,7 +1381,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private void cleanupBatchSendStrategy() {
         var state = strategy.getState();
-        if(state.getBatchMessageCacheSize() > 0) {
+        if(state.getBatchMessageCacheSize().get() > 0) {
             defaultSend(channel, state.getBatchMessageCache(), Collections.emptyMap(), null);
         }
         strategy.getSendStrategy().setSendHandler(this::defaultSend);

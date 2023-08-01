@@ -15,8 +15,74 @@
  */
 package com.exactpro.th2.conn.dirty.fix.brokenconn.configuration
 
+import com.exactpro.th2.conn.dirty.fix.Action
+import com.exactpro.th2.conn.dirty.fix.FieldDefinition
+import com.exactpro.th2.constants.Constants
+
 data class TransformMessageConfiguration(
-    val manglerRuleName: String,
+    val actions: List<Action> = emptyList(),
     val messageType: String,
-    val numberOfTimesToTransform: Int
-)
+    val numberOfTimesToTransform: Int,
+    val newUsername: String? = null,
+    val newPassword: String? = null,
+    val newCompId: String? = null,
+    val newTargetId: String? = null
+) {
+    private val simpleActions: List<Action>
+    init {
+        val simpleActions = mutableListOf<Action>()
+        newUsername?.let {
+            simpleActions.add(
+                Action(
+                    set = FieldDefinition(
+                        tag = Constants.USERNAME_TAG,
+                        value = it,
+                        tagOneOf = null,
+                        valueOneOf = null
+                    )
+                )
+            )
+        }
+        newPassword?.let {
+            simpleActions.add(
+                Action(
+                    set = FieldDefinition(
+                        tag = Constants.PASSWORD_TAG,
+                        value = it,
+                        tagOneOf = null,
+                        valueOneOf = null
+                    )
+                )
+            )
+        }
+
+        newCompId?.let {
+            simpleActions.add(
+                Action(
+                    set = FieldDefinition(
+                        tag = Constants.SENDER_COMP_ID_TAG,
+                        value = it,
+                        tagOneOf = null,
+                        valueOneOf = null
+                    )
+                )
+            )
+        }
+
+        newTargetId?.let {
+            simpleActions.add(
+                Action(
+                    set = FieldDefinition(
+                        tag = Constants.TARGET_COMP_ID_TAG,
+                        value = it,
+                        tagOneOf = null,
+                        valueOneOf = null
+                    )
+                )
+            )
+        }
+
+        this.simpleActions = simpleActions
+    }
+    val combinedActions = actions + simpleActions
+}

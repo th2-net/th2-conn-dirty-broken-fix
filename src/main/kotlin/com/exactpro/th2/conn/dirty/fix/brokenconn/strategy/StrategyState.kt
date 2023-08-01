@@ -20,40 +20,46 @@ import io.netty.buffer.ByteBuf
 import io.netty.buffer.CompositeByteBuf
 import io.netty.buffer.Unpooled
 import java.time.Instant
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 class StrategyState(val config: RuleConfiguration? = null) {
     val startTime: Instant = Instant.now()
     val type = config?.ruleType ?: RuleType.DEFAULT
-    private val missedMessagesCache: HashMap<Int, ByteBuf> = HashMap()
-    var batchMessageCache: CompositeByteBuf = Unpooled.compositeBuffer()
-        private set
+    val batchMessageCache: CompositeByteBuf = Unpooled.compositeBuffer()
 
-    var batchMessageCacheSize = 0
-        private set
+    private val writeLock = ReentrantLock()
+    private val missedMessagesCache: MutableMap<Int, ByteBuf> = ConcurrentHashMap<Int, ByteBuf>()
 
-    var missedIncomingMessagesCount = 0
-        private set
+    val batchMessageCacheSize = AtomicInteger(0)
 
-    var missedOutgoingMessagesCount = 0
-        private set
+    val missedIncomingMessagesCount = AtomicInteger(0)
 
-    var transformedIncomingMessagesCount = 0
-        private set
+    val missedOutgoingMessagesCount = AtomicInteger(0)
 
-    fun incrementMissedIncomingMessages() { missedIncomingMessagesCount += 1 }
-    fun incrementMissedOutgoingMessages() { missedOutgoingMessagesCount += 1 }
-    fun incrementIncomingTransformedMessages() { transformedIncomingMessagesCount += 1 }
+    val transformedIncomingMessagesCount = AtomicInteger(0)
+
+    fun incrementMissedIncomingMessages() { missedIncomingMessagesCount.incrementAndGet() }
+    fun incrementMissedOutgoingMessages() { missedOutgoingMessagesCount.incrementAndGet() }
+    fun incrementIncomingTransformedMessages() { transformedIncomingMessagesCount.incrementAndGet() }
 
     fun addMissedMessageToCache(sequence: Int, message: ByteBuf) = missedMessagesCache.put(sequence, message)
     fun getMissedMessage(sequence: Int): ByteBuf? = missedMessagesCache[sequence]
 
     fun addMessageToBatchCache(message: ByteBuf) {
-        batchMessageCacheSize.inc()
-        batchMessageCache.addComponent(message)
+        writeLock.withLock {
+            batchMessageCacheSize.incrementAndGet()
+            batchMessageCache.addComponent(message)
+        }
     }
 
     fun resetBatchMessageCache() {
-        batchMessageCacheSize = 0
-        batchMessageCache = Unpooled.compositeBuffer()
+        writeLock.withLock {
+            batchMessageCacheSize.set(0)
+            batchMessageCache.clear()
+        }
     }
 }

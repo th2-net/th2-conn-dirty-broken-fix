@@ -16,13 +16,14 @@
 package com.exactpro.th2.conn.dirty.fix.brokenconn.strategy
 
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RuleConfiguration
+import java.util.concurrent.atomic.AtomicInteger
 
 class StrategyScheduler(
     schedulerType: SchedulerType,
     private val rules: List<RuleConfiguration>
 ) {
     private val totalWeight = rules.asSequence().map { it.weight ?: 0 }.sum()
-    private var strategyIndex = 0
+    private var strategyIndex = AtomicInteger(0)
     private val nextFunction = if(schedulerType == SchedulerType.CONSECUTIVE) ::nextConsecutiveRule else ::nextWeightedRule
 
     fun next(): RuleConfiguration {
@@ -30,10 +31,7 @@ class StrategyScheduler(
     }
 
     private fun nextConsecutiveRule(): RuleConfiguration {
-        val rule = rules[strategyIndex]
-        strategyIndex = (strategyIndex + 1) % rules.size
-
-        return rule
+        return rules[strategyIndex.getAndUpdate {(it + 1) % rules.size}]
     }
 
     private fun nextWeightedRule(): RuleConfiguration {

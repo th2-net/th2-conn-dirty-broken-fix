@@ -15,18 +15,20 @@
  */
 package com.exactpro.th2;
 
+import com.exactpro.th2.conn.dirty.fix.FixProtocolManglerSettings;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BrokenConnConfiguration;
 import org.jetbrains.annotations.NotNull;
 
 public class TestUtils {
     @NotNull
     public static FixHandlerSettings createHandlerSettings() {
-        return createHandlerSettings(null, null);
+        return createHandlerSettings(null, null, false);
     }
 
     public static FixHandlerSettings createHandlerSettings(
         BrokenConnConfiguration brokenConfig,
-        Integer hbtInt
+        Integer hbtInt,
+        boolean useNextExpectedSeqNumber
     ) {
         final FixHandlerSettings fixHandlerSettings = new FixHandlerSettings();
         fixHandlerSettings.setHost("127.0.0.1");
@@ -37,6 +39,7 @@ public class TestUtils {
         } else {
             fixHandlerSettings.setHeartBtInt(hbtInt);
         }
+        fixHandlerSettings.setUseNextExpectedSeqNum(useNextExpectedSeqNumber);
         fixHandlerSettings.setSenderCompID("client");
         fixHandlerSettings.setTargetCompID("server");
         fixHandlerSettings.setEncryptMethod("0");

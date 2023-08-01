@@ -16,5 +16,17 @@
 package com.exactpro.th2.conn.dirty.fix.brokenconn.strategy
 
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.MessageProcessor
+import java.util.concurrent.locks.ReentrantReadWriteLock
+import kotlin.concurrent.withLock
 
-data class OutgoingMessagesStrategy(var outgoingMessageProcessor: MessageProcessor)
+class OutgoingMessagesStrategy(
+    initialOutgoingMessageProcessor: MessageProcessor
+) {
+    private val readWriteLock = ReentrantReadWriteLock()
+    private val readLock = readWriteLock.readLock()
+    private val writeLock = readWriteLock.writeLock()
+
+    var outgoingMessageProcessor = initialOutgoingMessageProcessor
+        get() = readLock.withLock { field }
+        set(value) = writeLock.withLock { field = value }
+}

@@ -28,6 +28,11 @@ typealias Tag = Int
 object MessageTransformer {
     private val logger = KotlinLogging.logger {}
 
+    fun transformWithoutResults(message: ByteBuf, actions: List<Action>) {
+        logger.debug { "Applying rule directly from handler: ${actions}." }
+        transform(message, actions).toList() // unwinding sequence
+    }
+
     fun transform(message: ByteBuf, rule: Rule, unconditionally: Boolean = false): TransformResult? {
         logger.debug { "Applying rule: ${rule.name}" }
 
@@ -61,7 +66,7 @@ object MessageTransformer {
         return TransformResult(rule.name, results, original)
     }
 
-    private fun transform(message: ByteBuf, actions: List<Action>) = sequence {
+    fun transform(message: ByteBuf, actions: List<Action>) = sequence {
         actions.forEach { action ->
             try {
                 action.set?.apply {
@@ -247,8 +252,7 @@ data class Transform(
 
 data class Rule(
     val name: RuleID,
-    val transform: List<Transform>,
-    val isActiveRule: Boolean = true
+    val transform: List<Transform>
 ) {
     init {
         require(transform.isNotEmpty()) { "Rule must have at least one transform" }

@@ -17,5 +17,21 @@ package com.exactpro.th2.conn.dirty.fix.brokenconn.strategy
 
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.ChannelSendHandler
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.MessageProcessor
+import java.util.concurrent.locks.ReentrantReadWriteLock
+import kotlin.concurrent.withLock
 
-data class SendStrategy(var sendPreprocessor: MessageProcessor, var sendHandler: ChannelSendHandler)
+class SendStrategy(
+    initialSendPreprocessor: MessageProcessor,
+    initialSendHandler: ChannelSendHandler
+) {
+    private val readWriteLock = ReentrantReadWriteLock()
+    private val readLock = readWriteLock.readLock()
+    private val writeLock = readWriteLock.writeLock()
+
+    var sendPreprocessor = initialSendPreprocessor
+        get() = readLock.withLock { field }
+        set(value) = writeLock.withLock { field = value }
+    var sendHandler = initialSendHandler
+        get() = readLock.withLock { field }
+        set(value) = writeLock.withLock { field = value }
+}
