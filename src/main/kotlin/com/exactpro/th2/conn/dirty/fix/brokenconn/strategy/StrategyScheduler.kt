@@ -24,7 +24,7 @@ class StrategyScheduler(
 ) {
     private val totalWeight = rules.asSequence().map { it.weight ?: 0 }.sum()
     private var strategyIndex = AtomicInteger(0)
-    private val nextFunction = if(schedulerType == SchedulerType.CONSECUTIVE) ::nextConsecutiveRule else ::nextWeightedRule
+    private val nextFunction = generateSequence(if(schedulerType == SchedulerType.CONSECUTIVE) ::nextConsecutiveRule else ::nextWeightedRule).iterator()::next
 
     fun next(): RuleConfiguration {
         return nextFunction()

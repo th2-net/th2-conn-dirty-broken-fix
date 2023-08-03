@@ -23,6 +23,7 @@ data class TransformMessageConfiguration(
     val actions: List<Action> = emptyList(),
     val messageType: String,
     val numberOfTimesToTransform: Int,
+    val useOldPasswords: Boolean = false,
     val newUsername: String? = null,
     val newPassword: String? = null,
     val newCompId: String? = null,
@@ -36,18 +37,6 @@ data class TransformMessageConfiguration(
                 Action(
                     set = FieldDefinition(
                         tag = Constants.USERNAME_TAG,
-                        value = it,
-                        tagOneOf = null,
-                        valueOneOf = null
-                    )
-                )
-            )
-        }
-        newPassword?.let {
-            simpleActions.add(
-                Action(
-                    set = FieldDefinition(
-                        tag = Constants.PASSWORD_TAG,
                         value = it,
                         tagOneOf = null,
                         valueOneOf = null

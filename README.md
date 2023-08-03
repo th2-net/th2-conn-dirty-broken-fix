@@ -30,8 +30,9 @@ This microservice allows sending and receiving messages via FIX protocol
 + *senderSubID* - assigned value used to identify specific message originator (desk, trader, etc.)
 + *encryptMethod* - encryption method
 + *username* - user name
-+ *password* - user password. FIX client uses the Password(554) tag for unencrypted mode and the EncryptedPassword(1402) tag for encrypted. The encryption is enabled via *passwordEncryptKeyFilePath* option.
-+ *newPassword* - user new password. FIX client uses the NewPassword(925) tag for unencrypted mode and the NewEncryptedPassword(1404) tag for encrypted. The encryption is enabled via *passwordEncryptKeyFilePath* option.
++ *password* - user password. FIX client uses the Password(554) tag for unencrypted mode and the EncryptedPassword(1402) tag for encrypted. The encryption is enabled via *passwordEncryptKeyFilePath* option. It is a good practice to pass this variable as kubernetes secret. 
++ *newPassword* - user new password. FIX client uses the NewPassword(925) tag for unencrypted mode and the NewEncryptedPassword(1404) tag for encrypted. The encryption is enabled via *passwordEncryptKeyFilePath* option. It is a good practice to pass this variable as kubernetes secret.
++ *previousPasswords* - comma-separated list of passwords used for this user before.
 + *passwordEncryptKeyFilePath* - path to key file for encrypting. FIX client encrypts the *password* value via `RSA` algorithm using specified file if this option is specified.
 + *passwordEncryptKeyFileType* - type of key file content. Supported values: `[PEM_PUBLIC_KEY]`. Default value is `PEM_PUBLIC_KEY`
 + *passwordKeyEncryptAlgorithm* - encrypt algorithm for reading key from file specified in the *passwordEncryptKeyFilePath*. See the KeyFactory section in the [Java Cryptography Architecture Standard Algorithm Name](https://docs.oracle.com/javase/8/docs/technotes/guides/security/StandardNames.html#KeyFactory) for information about standard algorithm names. Default value is `RSA`

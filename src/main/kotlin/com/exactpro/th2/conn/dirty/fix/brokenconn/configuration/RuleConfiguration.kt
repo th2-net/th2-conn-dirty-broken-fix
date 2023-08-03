@@ -24,6 +24,7 @@ data class RuleConfiguration(
     val duration: Duration,
     val cleanUpDuration: Duration,
     val weight: Int? = null,
+    val gracefulDisconnect: Boolean = false,
     val blockIncomingMessagesStrategy: BlockMessageConfiguration? = null,
     val blockOutgoingMessagesConfiguration: BlockMessageConfiguration? = null,
     val missIncomingMessagesConfiguration: MissMessageConfiguration? = null,

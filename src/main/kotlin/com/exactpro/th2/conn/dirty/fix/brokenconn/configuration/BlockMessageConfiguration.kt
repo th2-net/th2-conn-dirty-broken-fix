@@ -15,4 +15,6 @@
  */
 package com.exactpro.th2.conn.dirty.fix.brokenconn.configuration
 
-data class BlockMessageConfiguration(val timeout: Long)
+import java.time.Duration
+
+data class BlockMessageConfiguration(val timeout: Duration)

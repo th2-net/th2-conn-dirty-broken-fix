@@ -83,7 +83,7 @@ class TestStrategies {
                     RuleType.DISCONNECT_WITH_RECONNECT,
                     duration = Duration.of(4, ChronoUnit.SECONDS),
                     cleanUpDuration = Duration.of(1, ChronoUnit.SECONDS),
-                    blockOutgoingMessagesConfiguration = BlockMessageConfiguration(5000)
+                    blockOutgoingMessagesConfiguration = BlockMessageConfiguration(Duration.of(5, ChronoUnit.SECONDS))
                 ),
             )
         ), enableAdditionalHandling = false)
@@ -97,13 +97,12 @@ class TestStrategies {
         verify(channel, timeout(businessRuleDuration.millis() + 100)).open()
 
         val captor = argumentCaptor<ByteBuf> {  }
-        verify(channel, timeout(businessRuleCleanupDuration.millis() + 100).times(3)).send(captor.capture(), any(), anyOrNull(), any())
+        verify(channel, timeout(businessRuleCleanupDuration.millis() + 100).times(2)).send(captor.capture(), any(), anyOrNull(), any())
 
         channel.close()
 
         captor.firstValue.apply { contains("35=A") }
-        captor.secondValue.apply { contains("35=5") }
-        captor.thirdValue.apply { contains("35=AE") }
+        captor.secondValue.apply { contains("35=AE") }
     }
 
     @Test
@@ -245,19 +244,18 @@ class TestStrategies {
         verify(channel, timeout(defaultRuleDuration.millis() + businessRuleDuration.millis() + 200).times(3)).open()
 
         // start
-        verify(channel, timeout(100).times(5)).send(any(), any(), anyOrNull(), any())
+        verify(channel, timeout(100).times(4)).send(any(), any(), anyOrNull(), any())
 
-        messages[0].apply { assertTrue { first.contains("35=5") } }
-        messages[1].apply {
+        messages[0].apply {
             assertTrue { first.contains("35=A") }
             assertTrue { first.contains("${Constants.PASSWORD_TAG}=mangledPassword") }
         }
-        messages[2].apply { assertTrue { first.contains("35=5") } }
+        messages[1].apply { assertTrue { first.contains("35=5") } }
+        messages[2].apply {
+            assertTrue { first.contains("35=A") }
+            assertTrue { first.contains("${Constants.PASSWORD_TAG}=mangledPassword") }
+        }
         messages[3].apply {
-            assertTrue { first.contains("35=A") }
-            assertTrue { first.contains("${Constants.PASSWORD_TAG}=mangledPassword") }
-        }
-        messages[4].apply {
             assertTrue { first.contains("35=A") }
             assertTrue { first.contains("${Constants.PASSWORD_TAG}=pass") }
         }
@@ -367,11 +365,15 @@ class TestStrategies {
         handler.onOutgoing(channel, businessMessage(4).asExpandable(), Collections.emptyMap());
         handler.onOutgoing(channel, businessMessage(5).asExpandable(), Collections.emptyMap())
 
-        verify(channel, timeout(businessRuleDuration.millis() + 200)).open()
+        verify(channel, timeout(businessRuleDuration.millis() + businessRuleCleanupDuration.millis() + 200)).open()
         verify(channel).send(any(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
         messages.clear()
         handler.onIncoming(channel, resendRequest(3, 3, 5))
+
+        messages.forEach {
+            println(it.first.toString(Charsets.US_ASCII))
+        }
 
         messages.forEachIndexed { idx, message ->
             val buff = message.first
@@ -497,7 +499,7 @@ class TestStrategies {
         val channel = testContext.channel
         val handler = testContext.fixHandler
 
-        verify(channel, timeout(defaultRuleDuration.millis() + 100)).open()
+        verify(channel, timeout(defaultRuleDuration.millis() + businessRuleCleanupDuration.millis() + 100)).open()
         messages.clear()
         verify(channel).send(any(), any(), anyOrNull(), any()) // Logon
 

@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
+import mu.KotlinLogging
 
 class StrategyState(val config: RuleConfiguration? = null) {
     val startTime: Instant = Instant.now()
@@ -34,19 +35,27 @@ class StrategyState(val config: RuleConfiguration? = null) {
     private val writeLock = ReentrantLock()
     private val missedMessagesCache: MutableMap<Int, ByteBuf> = ConcurrentHashMap<Int, ByteBuf>()
 
-    val batchMessageCacheSize = AtomicInteger(0)
+    private val batchMessageCacheSize = AtomicInteger(0)
+    fun getBatchMessageCacheSize() = batchMessageCacheSize.get()
 
-    val missedIncomingMessagesCount = AtomicInteger(0)
+    private val missedIncomingMessagesCount = AtomicInteger(0)
+    fun getMissedIncomingMessagesCount() = missedIncomingMessagesCount.get()
 
-    val missedOutgoingMessagesCount = AtomicInteger(0)
+    private val missedOutgoingMessagesCount = AtomicInteger(0)
+    fun getMissedOutgoingMessagesCount() = missedOutgoingMessagesCount.get()
 
     val transformedIncomingMessagesCount = AtomicInteger(0)
 
     fun incrementMissedIncomingMessages() { missedIncomingMessagesCount.incrementAndGet() }
-    fun incrementMissedOutgoingMessages() { missedOutgoingMessagesCount.incrementAndGet() }
     fun incrementIncomingTransformedMessages() { transformedIncomingMessagesCount.incrementAndGet() }
 
-    fun addMissedMessageToCache(sequence: Int, message: ByteBuf) = missedMessagesCache.put(sequence, message)
+    fun addMissedMessageToCache(sequence: Int, message: ByteBuf) {
+        writeLock.withLock {
+            missedMessagesCache[sequence] = message
+            missedOutgoingMessagesCount.incrementAndGet()
+        }
+    }
+
     fun getMissedMessage(sequence: Int): ByteBuf? = missedMessagesCache[sequence]
 
     fun addMessageToBatchCache(message: ByteBuf) {

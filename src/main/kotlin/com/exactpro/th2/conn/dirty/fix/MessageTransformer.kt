@@ -30,7 +30,7 @@ object MessageTransformer {
 
     fun transformWithoutResults(message: ByteBuf, actions: List<Action>) {
         logger.debug { "Applying rule directly from handler: ${actions}." }
-        transform(message, actions).toList() // unwinding sequence
+        transform(message, actions).forEach { _ -> }
     }
 
     fun transform(message: ByteBuf, rule: Rule, unconditionally: Boolean = false): TransformResult? {

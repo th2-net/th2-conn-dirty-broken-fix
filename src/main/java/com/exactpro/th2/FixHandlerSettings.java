@@ -41,6 +41,7 @@ public class FixHandlerSettings implements IHandlerSettings {
     private String username;
     private String password;
     private String newPassword;
+    private String previousPasswords;
     private String passwordEncryptKeyFilePath;
     private KeyFileType passwordEncryptKeyFileType = KeyFileType.PEM_PUBLIC_KEY;
     /**
@@ -173,6 +174,8 @@ public class FixHandlerSettings implements IHandlerSettings {
         return newPassword;
     }
 
+    public String getPreviousPasswords() { return previousPasswords; }
+
     public String getPasswordEncryptKeyFilePath() {
         return passwordEncryptKeyFilePath;
     }
@@ -212,6 +215,8 @@ public class FixHandlerSettings implements IHandlerSettings {
     public void setNewPassword(String newPassword) {
         this.newPassword = newPassword;
     }
+
+    public void setPreviousPasswords(String previousPasswords) { this.previousPasswords = previousPasswords; }
 
     public void setPasswordEncryptKeyFilePath(String passwordEncryptKeyFilePath) {
         this.passwordEncryptKeyFilePath = passwordEncryptKeyFilePath;

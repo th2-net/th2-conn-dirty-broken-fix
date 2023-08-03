@@ -20,21 +20,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.withLock
 
 class IncomingMessagesStrategy(
-    initialIncomingMessagesPreprocessor: MessageProcessor,
-    initialTestRequestProcessor: MessageProcessor,
-    initialLogonStrategy: MessageProcessor
-) {
-    private val readWriteLock = ReentrantReadWriteLock()
-    private val readLock = readWriteLock.readLock()
-    private val writeLock = readWriteLock.writeLock()
-
-    var incomingMessagesPreprocessor = initialIncomingMessagesPreprocessor
-        get() = readLock.withLock { field }
-        set(value) = writeLock.withLock { field = value }
-    var testRequestProcessor = initialTestRequestProcessor
-        get() = readLock.withLock { field }
-        set(value) = writeLock.withLock { field = value }
-    var logonStrategy = initialLogonStrategy
-        get() = readLock.withLock { field }
-        set(value) = writeLock.withLock { field = value }
-}
+    var incomingMessagesPreprocessor: MessageProcessor,
+    var testRequestProcessor: MessageProcessor,
+    var logonStrategy: MessageProcessor
+)

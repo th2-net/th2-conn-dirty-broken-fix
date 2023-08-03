@@ -27,7 +27,9 @@ import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.RecoveryHandler
 import java.time.Instant
 import java.util.concurrent.locks.ReentrantLock
 import java.util.concurrent.locks.ReentrantReadWriteLock
+import kotlin.concurrent.read
 import kotlin.concurrent.withLock
+import kotlin.concurrent.write
 
 class StatefulStrategy(
     initialSendStrategy: SendStrategy,
@@ -39,8 +41,6 @@ class StatefulStrategy(
     private val defaultStrategy: DefaultStrategyHolder
 ) {
     private val lock = ReentrantReadWriteLock()
-    private val stateReadLock = lock.readLock()
-    private val stateWriteLock = lock.writeLock()
 
     // configurations
     var blockIncomingMessagesConfiguration: BlockMessageConfiguration? = null
@@ -67,60 +67,62 @@ class StatefulStrategy(
 
 
     // strategies
+    fun updateSendStrategy(func: SendStrategy.() -> Unit) = lock.write {
+        sendStrategy.func()
+    }
 
-    var sendStrategy = initialSendStrategy
-        get() = stateReadLock.withLock { field }
-        set(value) = stateWriteLock.withLock { field = value }
+    fun <T> getSendStrategy(func: SendStrategy.() -> T) = lock.read {
+        sendStrategy.func()
+    }
 
-    var incomingMessagesStrategy = initialIncomingMessagesStrategy
-        get() = stateReadLock.withLock { field }
-        set(value) = stateWriteLock.withLock { field = value }
+    fun updateIncomingMessageStrategy(func: IncomingMessagesStrategy.() -> Unit) = lock.write {
+        incomingMessagesStrategy.func()
+    }
 
-    var outgoingMessagesStrategy = initialOutgoingMessagesStrategy
-        get() = stateReadLock.withLock { field }
-        set(value) = stateWriteLock.withLock { field = value }
+    fun <T> getIncomingMessageStrategy(func: IncomingMessagesStrategy.() -> T) = lock.read {
+        incomingMessagesStrategy.func()
+    }
 
-    var receiveStrategy = initialReceiveStrategy
-        get() = stateReadLock.withLock { field }
-        set(value) = stateWriteLock.withLock { field = value }
+    fun updateOutgoingMessageStrategy(func: OutgoingMessagesStrategy.() -> Unit) = lock.write {
+        outgoingMessagesStrategy.func()
+    }
 
-    var cleanupHandler = initialCleanupHandler
-        get() = stateReadLock.withLock { field }
-        set(value) = stateWriteLock.withLock { field = value }
+    fun <T> getOutgoingMessageStrategy(func: OutgoingMessagesStrategy.() -> T) = lock.read {
+        outgoingMessagesStrategy.func()
+    }
 
-    var recoveryHandler = initialRecoveryHandler
-        get() = stateReadLock.withLock { field }
-        set(value) = stateWriteLock.withLock { field = value }
+    fun updateReceiveMessageStrategy(func: ReceiveStrategy.() -> Unit) = lock.write {
+        receiveStrategy.func()
+    }
 
-    // send strategies aliases
-    var presendStrategy: MessageProcessor = sendStrategy.sendPreprocessor
-        get() = stateReadLock.withLock { sendStrategy.sendPreprocessor }
-        private set
+    fun <T> getReceiveMessageStrategy(func: ReceiveStrategy.() -> T) = lock.read {
+        receiveStrategy.func()
+    }
 
-    // incoming message strategies aliases
-    var incomingMessagesPreprocessor: MessageProcessor = incomingMessagesStrategy.incomingMessagesPreprocessor
-        get() = stateReadLock.withLock { incomingMessagesStrategy.incomingMessagesPreprocessor }
-        private set
+    fun getCleanupHandler(): CleanupHandler = lock.read { cleanupHandler }
+    fun setCleanupHandler(handler: CleanupHandler) = lock.write { cleanupHandler = handler }
 
-    var testRequestProcessor: MessageProcessor = incomingMessagesStrategy.testRequestProcessor
-        get() = stateReadLock.withLock { incomingMessagesStrategy.testRequestProcessor }
-        private set
-    var logonProcessor: MessageProcessor = incomingMessagesStrategy.logonStrategy
-        get() = stateReadLock.withLock { incomingMessagesStrategy.logonStrategy }
-        private set
+    fun getRecoveryHandler(): RecoveryHandler = lock.read { recoveryHandler }
+    fun setRecoveryHandler(handler: RecoveryHandler) = lock.write { recoveryHandler = handler }
 
-    // outgoing message strategies aliases
-    var outgoingMessageProcessor: MessageProcessor = outgoingMessagesStrategy.outgoingMessageProcessor
-        get() = stateReadLock.withLock { outgoingMessagesStrategy.outgoingMessageProcessor }
-        private set
+    private var sendStrategy = initialSendStrategy
 
-    // receive message strategies aliases
-    var receivePreprocessor: MessageProcessor = receiveStrategy.receivePreprocessor
-        get() = stateReadLock.withLock { receiveStrategy.receivePreprocessor }
+    private var incomingMessagesStrategy = initialIncomingMessagesStrategy
+
+    private var outgoingMessagesStrategy = initialOutgoingMessagesStrategy
+
+    private var receiveStrategy = initialReceiveStrategy
+
+    private var cleanupHandler = initialCleanupHandler
+
+    private var recoveryHandler = initialRecoveryHandler
+
+    var gracefulDisconnect = false
+        get() = state.config?.gracefulDisconnect ?: false
         private set
 
     var state: StrategyState = StrategyState()
-        get() = stateReadLock.withLock { field }
+        get() = lock.read { field }
         private set
 
     val type: RuleType
@@ -129,7 +131,7 @@ class StatefulStrategy(
         get() = state.startTime
 
     fun resetStrategyAndState(config: RuleConfiguration) {
-        stateWriteLock.withLock {
+        lock.write {
             state = StrategyState(config)
             sendStrategy = defaultStrategy.sendStrategy
             receiveStrategy = defaultStrategy.receiveStrategy
@@ -141,7 +143,7 @@ class StatefulStrategy(
     }
 
     fun cleanupStrategy() {
-        stateWriteLock.withLock {
+        lock.write {
             state = StrategyState()
             sendStrategy = defaultStrategy.sendStrategy
             receiveStrategy = defaultStrategy.receiveStrategy
