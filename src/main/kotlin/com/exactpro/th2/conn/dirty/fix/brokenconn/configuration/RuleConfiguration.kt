@@ -59,7 +59,7 @@ data class RuleConfiguration(
                 require(resendRequestConfiguration != null) { "`resendRequestConfiguration` is required for $ruleType" }
             }
             RuleType.SLOW_CONSUMER -> {
-                require(blockOutgoingMessagesConfiguration != null) { "`blockOutgoingMessagesConfiguration` is required for $ruleType" }
+                require(blockIncomingMessagesStrategy != null) { "`blockOutgoingMessagesConfiguration` is required for $ruleType" }
             }
             RuleType.SEQUENCE_RESET -> {
                 require(changeSequenceConfiguration != null) { "`changeSequenceConfiguration` is required for $ruleType" }

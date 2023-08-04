@@ -136,9 +136,9 @@ class TestStrategies {
         verify(channel).send(any(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
 
-        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()))
-        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()))
-        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()))
+        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), MessageID.getDefaultInstance())
+        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), MessageID.getDefaultInstance())
+        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), MessageID.getDefaultInstance())
 
         verify(channel, timeout(businessRuleDuration.millis() + businessRuleCleanupDuration.millis() + 100)).open()
         verify(channel).send(captor.capture(), any(), anyOrNull(), any()) // Logon
@@ -184,10 +184,10 @@ class TestStrategies {
         verify(channel).send(any(), any(), anyOrNull(), any()) // Logon // 2
         clearInvocations(channel)
 
-        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet())) // 3
-        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet())) // 4
-        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet())) // 5
-        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet())) // 6
+        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), MessageID.getDefaultInstance()) // 3
+        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), MessageID.getDefaultInstance()) // 4
+        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), MessageID.getDefaultInstance()) // 5
+        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), MessageID.getDefaultInstance()) // 6
 
         verify(channel, timeout(businessRuleDuration.millis() + businessRuleCleanupDuration.millis() + 100)).open()
         verify(channel, times(2)).send(captor.capture(), any(), anyOrNull(), any()) // Logon
@@ -290,21 +290,21 @@ class TestStrategies {
         messages.clear()
         Thread.sleep(100) // Waiting for strategies to apply ( they are applied after logon response to permit session login )
 
-        handler.onIncoming(channel, businessMessage(3))
-        handler.onIncoming(channel, businessMessage(4))
+        handler.onIncoming(channel, businessMessage(3), MessageID.getDefaultInstance())
+        handler.onIncoming(channel, businessMessage(4), MessageID.getDefaultInstance())
 
         handler.onOutgoing(channel, businessMessage(3).asExpandable(), Collections.emptyMap())
         handler.onOutgoing(channel, businessMessage(4).asExpandable(), Collections.emptyMap())
 
         // Trigger resend request
-        handler.onIncoming(channel, businessMessage(5))
+        handler.onIncoming(channel, businessMessage(5), MessageID.getDefaultInstance())
 
-        handler.onIncoming(channel, businessMessage(3))
-        handler.onIncoming(channel, businessMessage(4))
+        handler.onIncoming(channel, businessMessage(3), MessageID.getDefaultInstance())
+        handler.onIncoming(channel, businessMessage(4), MessageID.getDefaultInstance())
         // end
 
         // Trigger recovery
-        handler.onIncoming(channel, resendRequest(6, 3, 4))
+        handler.onIncoming(channel, resendRequest(6, 3, 4), MessageID.getDefaultInstance())
         // end
 
         messages[0].apply {
@@ -369,7 +369,7 @@ class TestStrategies {
         verify(channel).send(any(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
         messages.clear()
-        handler.onIncoming(channel, resendRequest(3, 3, 5))
+        handler.onIncoming(channel, resendRequest(3, 3, 5), MessageID.getDefaultInstance())
 
         messages.forEach {
             println(it.first.toString(Charsets.US_ASCII))
@@ -415,9 +415,9 @@ class TestStrategies {
         Thread.sleep(defaultRuleDuration.millis() + 100) // Waiting for strategy to apply
         messages.clear()
 
-        handler.onIncoming(channel, testRequest(3).asExpandable());
-        handler.onIncoming(channel, testRequest(4).asExpandable());
-        handler.onIncoming(channel, testRequest(5).asExpandable())
+        handler.onIncoming(channel, testRequest(3).asExpandable(), MessageID.getDefaultInstance());
+        handler.onIncoming(channel, testRequest(4).asExpandable(), MessageID.getDefaultInstance());
+        handler.onIncoming(channel, testRequest(5).asExpandable(), MessageID.getDefaultInstance())
 
         clearInvocations(channel)
 
@@ -458,9 +458,9 @@ class TestStrategies {
         Thread.sleep(defaultRuleDuration.millis() + 100) // Waiting for strategy to apply
         messages.clear()
 
-        handler.onIncoming(channel, testRequest(3).asExpandable());
-        handler.onIncoming(channel, testRequest(4).asExpandable());
-        handler.onIncoming(channel, testRequest(5).asExpandable())
+        handler.onIncoming(channel, testRequest(3).asExpandable(), MessageID.getDefaultInstance());
+        handler.onIncoming(channel, testRequest(4).asExpandable(), MessageID.getDefaultInstance());
+        handler.onIncoming(channel, testRequest(5).asExpandable(), MessageID.getDefaultInstance())
 
         clearInvocations(channel)
 
@@ -503,7 +503,7 @@ class TestStrategies {
         messages.clear()
         verify(channel).send(any(), any(), anyOrNull(), any()) // Logon
 
-        handler.onIncoming(channel, resendRequest(3, 3, 8))
+        handler.onIncoming(channel, resendRequest(3, 3, 8), MessageID.getDefaultInstance())
 
         clearInvocations(channel)
 
@@ -543,11 +543,11 @@ class TestStrategies {
 
         val captor = argumentCaptor<ByteBuf> {}
 
-        handler.onIncoming(channel, businessMessage(2).asExpandable());
-        handler.onIncoming(channel, businessMessage(3).asExpandable());
-        handler.onIncoming(channel, businessMessage(4).asExpandable());
-        handler.onIncoming(channel, businessMessage(5).asExpandable());
-        handler.onIncoming(channel, businessMessage(6).asExpandable());
+        handler.onIncoming(channel, businessMessage(2).asExpandable(), MessageID.getDefaultInstance());
+        handler.onIncoming(channel, businessMessage(3).asExpandable(), MessageID.getDefaultInstance());
+        handler.onIncoming(channel, businessMessage(4).asExpandable(), MessageID.getDefaultInstance());
+        handler.onIncoming(channel, businessMessage(5).asExpandable(), MessageID.getDefaultInstance());
+        handler.onIncoming(channel, businessMessage(6).asExpandable(), MessageID.getDefaultInstance());
         verify(channel, timeout(defaultRuleDuration.millis() + 100).times(1)).send(captor.capture(), any(), anyOrNull(), any())
 
         captor.firstValue.apply {
@@ -588,9 +588,9 @@ class TestStrategies {
             }
             if(msg.contains("35=A\u0001")) {
                 if(useNextExpectedSeqNum) {
-                    handler.onIncoming(channel, logonResponseWithNextExpectedSeq(incomingSequence.incrementAndGet(), outgoingSequence))
+                    handler.onIncoming(channel, logonResponseWithNextExpectedSeq(incomingSequence.incrementAndGet(), outgoingSequence), MessageID.getDefaultInstance())
                 } else {
-                    handler.onIncoming(channel, logonResponse(incomingSequence.incrementAndGet()))
+                    handler.onIncoming(channel, logonResponse(incomingSequence.incrementAndGet()), MessageID.getDefaultInstance())
                 }
             }
             CompletableFuture.completedFuture(MessageID.getDefaultInstance())

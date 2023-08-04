@@ -15,11 +15,14 @@
  */
 package com.exactpro.th2.conn.dirty.fix.brokenconn.strategy
 
+import com.exactpro.th2.common.grpc.MessageID
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RuleConfiguration
+import com.google.protobuf.TextFormat.shortDebugString
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.CompositeByteBuf
 import io.netty.buffer.Unpooled
 import java.time.Instant
+import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -31,6 +34,8 @@ class StrategyState(val config: RuleConfiguration? = null) {
     val startTime: Instant = Instant.now()
     val type = config?.ruleType ?: RuleType.DEFAULT
     val batchMessageCache: CompositeByteBuf = Unpooled.compositeBuffer()
+    val messageIDs = Collections.synchronizedList(ArrayList<MessageID>())
+
 
     private val writeLock = ReentrantLock()
     private val missedMessagesCache: MutableMap<Int, ByteBuf> = ConcurrentHashMap<Int, ByteBuf>()
@@ -70,5 +75,19 @@ class StrategyState(val config: RuleConfiguration? = null) {
             batchMessageCacheSize.set(0)
             batchMessageCache.clear()
         }
+    }
+
+    fun addMessageID(messageID: MessageID?) {
+        writeLock.withLock {
+            if(messageIDs.size + 1 >= TOO_BIG_MESSAGE_IDS_LIST) {
+                K_LOGGER.warn { "Strategy ${type} messageIDs list is too big. Skiping messageID: ${shortDebugString(messageID)}" }
+            }
+            messageID?.let { messageIDs.add(it) }
+        }
+    }
+
+    companion object {
+        private const val TOO_BIG_MESSAGE_IDS_LIST = 300;
+        private val K_LOGGER = KotlinLogging.logger {  }
     }
 }

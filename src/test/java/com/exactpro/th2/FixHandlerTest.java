@@ -16,6 +16,7 @@
 
 package com.exactpro.th2;
 
+import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.conn.dirty.fix.FixField;
 import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerContext;
 import com.exactpro.th2.util.MessageUtil;
@@ -76,7 +77,7 @@ class FixHandlerTest {
         fixHandler = channel.getFixHandler();
         fixHandler.onOpen(channel);
         ByteBuf logonResponse = Unpooled.wrappedBuffer("8=FIXT.1.1\0019=105\00135=A\00134=1\00149=server\00156=client\00150=system\00152=2014-12-22T10:15:30Z\00198=0\001108=30\0011137=9\0011409=0\00110=203\001".getBytes(US_ASCII));
-        fixHandler.onIncoming(channel, logonResponse);
+        fixHandler.onIncoming(channel, logonResponse, MessageID.getDefaultInstance());
     }
 
     @AfterAll
@@ -145,7 +146,7 @@ class FixHandlerTest {
 
         channel.clearQueue();
         fixHandler.sendLogon();
-        fixHandler.onIncoming(channel, logonResponse);
+        fixHandler.onIncoming(channel, logonResponse, MessageID.getDefaultInstance());
         fixHandler.sendResendRequest(1);
         assertEquals(expectedLogon, new String(channel.getQueue().get(0).array()));
         //assertEquals(expectedHeartbeat, new String(client.getQueue().get(1).array()));
@@ -192,7 +193,7 @@ class FixHandlerTest {
         channel.clearQueue();
         fixHandler.onOpen(channel);
         ByteBuf logonResponse = Unpooled.wrappedBuffer("8=FIXT.1.1\0019=105\00135=A\00134=1\00149=server\00156=client\00150=system\00152=2014-12-22T10:15:30Z\00198=0\001108=30\0011137=9\0011409=0\00110=203\001".getBytes(US_ASCII));
-        fixHandler.onIncoming(channel, logonResponse);
+        fixHandler.onIncoming(channel, logonResponse, MessageID.getDefaultInstance());
         try {
             Thread.sleep(10000);
         } catch (InterruptedException e) {
@@ -302,7 +303,7 @@ class FixHandlerTest {
         }
         ByteBuf resendRequest = Unpooled.wrappedBuffer("8=FIXT.1.1\u00019=70\u000135=2\u000134=2\u00017=1\u000116=0\u000149=client\u000156=server\u000150=trader\u000152=2014-12-22T10:15:30Z\u000110=101\u0001".getBytes(US_ASCII));
         channel.clearQueue();
-        fixHandler.onIncoming(channel, resendRequest);
+        fixHandler.onIncoming(channel, resendRequest, MessageID.getDefaultInstance());
         ByteBuf sequenceReset = channel.getQueue().get(0);
         assertEquals("8=FIXT.1.1\u00019=75\u000135=4\u000134=1\u000149=client\u000156=server\u000150=trader\u000152=2014-12-22T10:15:30Z\u0001123=Y\u000136=5\u000110=115\u0001", new String(sequenceReset.array()));
         channel.clearQueue();
@@ -398,7 +399,7 @@ class FixHandlerTest {
         MyFixHandler fixHandler = channel.getFixHandler();
         fixHandler.onOpen(channel);
         ByteBuf logonResponse = Unpooled.wrappedBuffer("8=FIXT.1.1\0019=105\00135=A\00134=1\00149=server\00156=client\00150=system\00152=2014-12-22T10:15:30Z\00198=0\001108=30\0011137=9\0011409=0\00110=203\001".getBytes(US_ASCII));
-        fixHandler.onIncoming(channel, logonResponse);
+        fixHandler.onIncoming(channel, logonResponse, MessageID.getDefaultInstance());
 
         ByteBuf buf = asExpandable(Unpooled.wrappedBuffer(source.getBytes(UTF_8)));
         fixHandler.onOutgoingUpdateTag(buf, emptyMap());
