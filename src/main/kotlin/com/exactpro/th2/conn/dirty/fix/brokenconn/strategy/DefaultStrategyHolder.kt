@@ -16,6 +16,7 @@
 package com.exactpro.th2.conn.dirty.fix.brokenconn.strategy
 
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.CleanupHandler
+import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.OnCloseHandler
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.RecoveryHandler
 
 data class DefaultStrategyHolder(
@@ -25,4 +26,5 @@ data class DefaultStrategyHolder(
     val receiveStrategy: ReceiveStrategy,
     val cleanupHandler: CleanupHandler,
     val recoveryHandler: RecoveryHandler,
+    val closeHandler: OnCloseHandler
 )

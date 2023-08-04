@@ -23,6 +23,7 @@ import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.SplitSendConfigu
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.TransformMessageConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.CleanupHandler
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.MessageProcessor
+import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.OnCloseHandler
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.RecoveryHandler
 import java.time.Instant
 import java.util.concurrent.locks.ReentrantLock
@@ -38,6 +39,7 @@ class StatefulStrategy(
     initialReceiveStrategy: ReceiveStrategy,
     initialCleanupHandler: CleanupHandler,
     initialRecoveryHandler: RecoveryHandler,
+    initialOnCloseHandler: OnCloseHandler,
     private val defaultStrategy: DefaultStrategyHolder
 ) {
     private val lock = ReentrantReadWriteLock()
@@ -105,6 +107,9 @@ class StatefulStrategy(
     fun getRecoveryHandler(): RecoveryHandler = lock.read { recoveryHandler }
     fun setRecoveryHandler(handler: RecoveryHandler) = lock.write { recoveryHandler = handler }
 
+    fun getOnCloseHandler(): OnCloseHandler = lock.read { onCloseHandler }
+    fun setOnCloseHandler(handler: OnCloseHandler) = lock.write { onCloseHandler = handler }
+
     private var sendStrategy = initialSendStrategy
 
     private var incomingMessagesStrategy = initialIncomingMessagesStrategy
@@ -116,6 +121,8 @@ class StatefulStrategy(
     private var cleanupHandler = initialCleanupHandler
 
     private var recoveryHandler = initialRecoveryHandler
+
+    private var onCloseHandler = initialOnCloseHandler
 
     var gracefulDisconnect = false
         get() = state.config?.gracefulDisconnect ?: false
@@ -139,6 +146,7 @@ class StatefulStrategy(
             outgoingMessagesStrategy = defaultStrategy.outgoingMessagesStrategy
             recoveryHandler = defaultStrategy.recoveryHandler
             cleanupHandler = defaultStrategy.cleanupHandler
+            onCloseHandler = defaultStrategy.closeHandler
         }
     }
 
@@ -151,6 +159,7 @@ class StatefulStrategy(
             outgoingMessagesStrategy = defaultStrategy.outgoingMessagesStrategy
             recoveryHandler = defaultStrategy.recoveryHandler
             cleanupHandler = defaultStrategy.cleanupHandler
+            onCloseHandler = defaultStrategy.closeHandler
         }
     }
 }

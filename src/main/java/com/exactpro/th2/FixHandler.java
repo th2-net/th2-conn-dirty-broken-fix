@@ -919,6 +919,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     @Override
     public void onClose(@NotNull IChannel channel) {
+        strategy.getOnCloseHandler().close();
         enabled.set(false);
         cancelFuture(heartbeatTimer);
         cancelFuture(testRequestTimer);
@@ -1197,13 +1198,15 @@ public class FixHandler implements AutoCloseable, IHandler {
             receiveStrategy,
             this::defaultCleanupHandler,
             this::recovery,
+            this::defaultOnCloseHandler,
             new DefaultStrategyHolder(
                 sendStrategy,
                 incomingMessagesStrategy,
                 outgoingMessagesStrategy,
                 receiveStrategy,
                 this::defaultCleanupHandler,
-                this::recovery
+                this::recovery,
+                this::defaultOnCloseHandler
             )
         );
     }
@@ -1309,6 +1312,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             LOGGER.error(message, e);
             context.send(toErrorEvent(message, e), strategyRootEvent);
         }
+        strategy.setOnCloseHandler(this::outageOnCloseHandler);
         strategy.updateIncomingMessageStrategy(x -> {x.setIncomingMessagesPreprocessor(this::missIncomingMessages); return Unit.INSTANCE;});
         strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::missOutgoingMessages); return Unit.INSTANCE;});
         ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
@@ -1362,6 +1366,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::missHeartbeatsAndTestRequestReplies); return Unit.INSTANCE;});
         strategy.setCleanupHandler(this::cleanupClientOutageStrategy);
         ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
+        strategy.setOnCloseHandler(this::outageOnCloseHandler);
     }
 
     private void cleanupClientOutageStrategy() {
@@ -1374,6 +1379,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::missHeartbeats); return Unit.INSTANCE;});
         strategy.setCleanupHandler(this::cleanupPartialClientOutageStrategy);
         ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
+        strategy.setOnCloseHandler(this::outageOnCloseHandler);
     }
 
     private void cleanupPartialClientOutageStrategy() {
@@ -1402,6 +1408,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.resetStrategyAndState(configuration);
         strategy.updateReceiveMessageStrategy(x -> {x.setReceivePreprocessor(this::blockReceiveQueue); return Unit.INSTANCE;});
         strategy.setCleanupHandler(this::cleanupSlowConsumerStrategy);
+        strategy.setOnCloseHandler(this::outageOnCloseHandler);
     }
 
     private void cleanupSlowConsumerStrategy() {
@@ -1549,6 +1556,15 @@ public class FixHandler implements AutoCloseable, IHandler {
     // </editor-fold>
 
     // <editor-fold desc="utility">
+
+    private void defaultOnCloseHandler() {}
+
+    private void outageOnCloseHandler() {
+        strategy.setOnCloseHandler(this::defaultOnCloseHandler);
+        strategy.setCleanupHandler(this::defaultCleanupHandler);
+        strategy.cleanupStrategy();
+    }
+
     private StringBuilder createSequenceReset(int seqNo, int newSeqNo) {
         StringBuilder sequenceReset = new StringBuilder();
         String time = getTime();
