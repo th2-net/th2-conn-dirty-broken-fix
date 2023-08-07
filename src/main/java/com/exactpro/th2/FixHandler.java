@@ -1030,7 +1030,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             }
         }
 
-        if(config.getUseOldPasswords()) {
+        if(config.getUseOldPasswords() && !previouslyUsedPasswords.isEmpty()) {
             if(settings.getPasswordEncryptKeyFilePath() != null) {
                 FixField encryptedPassword = findField(message, ENCRYPTED_PASSWORD_TAG);
                 if(encryptedPassword != null) {
@@ -1091,7 +1091,6 @@ public class FixHandler implements AutoCloseable, IHandler {
         TransformMessageConfiguration config = state.getConfig().getTransformMessageConfiguration();
         if(state.getTransformedIncomingMessagesCount().get() < config.getNumberOfTimesToTransform()) {
             handleLogon(message, metadata);
-            sendLogout();
             try {
                 disconnect(strategy.getGracefulDisconnect());
                 channel.open().get();
