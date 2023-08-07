@@ -244,18 +244,17 @@ class TestStrategies {
         verify(channel, timeout(defaultRuleDuration.millis() + businessRuleDuration.millis() + 200).times(3)).open()
 
         // start
-        verify(channel, timeout(100).times(4)).send(any(), any(), anyOrNull(), any())
+        verify(channel, timeout(100).times(3)).send(any(), any(), anyOrNull(), any())
 
         messages[0].apply {
             assertTrue { first.contains("35=A") }
             assertTrue { first.contains("${Constants.PASSWORD_TAG}=mangledPassword") }
         }
-        messages[1].apply { assertTrue { first.contains("35=5") } }
-        messages[2].apply {
+        messages[1].apply {
             assertTrue { first.contains("35=A") }
             assertTrue { first.contains("${Constants.PASSWORD_TAG}=mangledPassword") }
         }
-        messages[3].apply {
+        messages[2].apply {
             assertTrue { first.contains("35=A") }
             assertTrue { first.contains("${Constants.PASSWORD_TAG}=pass") }
         }

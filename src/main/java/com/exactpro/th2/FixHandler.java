@@ -172,6 +172,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     private static final String STUBBING_VALUE = "XXX";
     private static final String SPLIT_SEND_TIMESTAMPS_PROPERTY = "BufferSlicesSendingTimes";
     private static final String STRATEGY_EVENT_TYPE = "StrategyState";
+    private static final String UNGRACEFUL_DISCONNECT_PROPERTY = "ungracefulDisconnect";
     private static final DateTimeFormatter formatter = DateTimeFormatter.ISO_INSTANT;
 
     private final Random random = new Random();
@@ -301,11 +302,26 @@ public class FixHandler implements AutoCloseable, IHandler {
             throw new IllegalStateException("Session is not active. It is not possible to send messages.");
         }
 
+        FixField msgType = findField(body, MSG_TYPE_TAG);
+        boolean isLogout = msgType != null && Objects.equals(msgType.getValue(), MSG_TYPE_LOGOUT);
+        if(isLogout && !channel.isOpen()) {
+            LOGGER.warn("Logout ignored as channel is already closed.");
+            return CompletableFuture.completedFuture(null);
+        }
+
         if (!channel.isOpen()) {
             try {
                 channel.open().get();
             } catch (Exception e) {
                 ExceptionUtils.rethrow(e);
+            }
+        }
+
+        boolean isUngracefulDisconnect = Boolean.getBoolean(properties.get(UNGRACEFUL_DISCONNECT_PROPERTY));
+        if(isLogout) {
+            if(isUngracefulDisconnect) {
+                channel.close();
+                return CompletableFuture.completedFuture(null);
             }
         }
 
@@ -900,6 +916,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                         SendMode.HANDLE_AND_MANGLE
                 ).get();
                 strategy.getState().addMessageID(messageID);
+                waitLogoutResponse();
 
                 LOGGER.info("Sent logout - {}", logout);
             } catch (Exception e) {
@@ -1091,7 +1108,6 @@ public class FixHandler implements AutoCloseable, IHandler {
         TransformMessageConfiguration config = state.getConfig().getTransformMessageConfiguration();
         if(state.getTransformedIncomingMessagesCount().get() < config.getNumberOfTimesToTransform()) {
             handleLogon(message, metadata);
-            sendLogout();
             try {
                 disconnect(strategy.getGracefulDisconnect());
                 channel.open().get();
