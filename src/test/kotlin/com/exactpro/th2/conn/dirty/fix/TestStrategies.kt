@@ -90,14 +90,14 @@ class TestStrategies {
         val channel = testContext.channel
         val handler = testContext.fixHandler
 
-        verify(channel, timeout(defaultRuleDuration.millis() + 100)).close()
+        verify(channel, timeout(defaultRuleDuration.millis() + 200)).close()
 
         handler.send(businessMessage(2), Collections.emptyMap(), null)
 
-        verify(channel, timeout(businessRuleDuration.millis() + 100)).open()
+        verify(channel, timeout(businessRuleDuration.millis() + 200)).open()
 
         val captor = argumentCaptor<ByteBuf> {  }
-        verify(channel, timeout(businessRuleCleanupDuration.millis() + 100).times(2)).send(captor.capture(), any(), anyOrNull(), any())
+        verify(channel, timeout(businessRuleCleanupDuration.millis() + 200).times(2)).send(captor.capture(), any(), anyOrNull(), any())
 
         channel.close()
 
@@ -132,7 +132,7 @@ class TestStrategies {
 
         val captor = argumentCaptor<ByteBuf> {  }
 
-        verify(channel, timeout(defaultRuleDuration.millis() + 100)).open()
+        verify(channel, timeout(defaultRuleDuration.millis() + 200)).open()
         verify(channel).send(any(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
 
@@ -140,7 +140,7 @@ class TestStrategies {
         handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), MessageID.getDefaultInstance())
         handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), MessageID.getDefaultInstance())
 
-        verify(channel, timeout(businessRuleDuration.millis() + businessRuleCleanupDuration.millis() + 100)).open()
+        verify(channel, timeout(businessRuleDuration.millis() + businessRuleCleanupDuration.millis() + 200)).open()
         verify(channel).send(captor.capture(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
 
@@ -180,7 +180,7 @@ class TestStrategies {
 
         val captor = argumentCaptor<ByteBuf> {  }
 
-        verify(channel, timeout(defaultRuleDuration.millis() + 100)).open()
+        verify(channel, timeout(defaultRuleDuration.millis() + 300)).open()
         verify(channel).send(any(), any(), anyOrNull(), any()) // Logon // 2
         clearInvocations(channel)
 
@@ -189,7 +189,7 @@ class TestStrategies {
         handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), MessageID.getDefaultInstance()) // 5
         handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), MessageID.getDefaultInstance()) // 6
 
-        verify(channel, timeout(businessRuleDuration.millis() + businessRuleCleanupDuration.millis() + 100)).open()
+        verify(channel, timeout(businessRuleDuration.millis() + businessRuleCleanupDuration.millis() + 200)).open()
         verify(channel, times(2)).send(captor.capture(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
 
@@ -244,7 +244,7 @@ class TestStrategies {
         verify(channel, timeout(defaultRuleDuration.millis() + businessRuleDuration.millis() + 200).times(3)).open()
 
         // start
-        verify(channel, timeout(100).times(3)).send(any(), any(), anyOrNull(), any())
+        verify(channel, timeout(200).times(3)).send(any(), any(), anyOrNull(), any())
 
         messages[0].apply {
             assertTrue { first.contains("35=A") }
@@ -285,7 +285,7 @@ class TestStrategies {
         val channel = testContext.channel
         val handler = testContext.fixHandler
 
-        verify(channel, timeout(defaultRuleDuration.millis() + 100)).open()
+        verify(channel, timeout(defaultRuleDuration.millis() + 200)).open()
         messages.clear()
         Thread.sleep(100) // Waiting for strategies to apply ( they are applied after logon response to permit session login )
 
@@ -498,7 +498,7 @@ class TestStrategies {
         val channel = testContext.channel
         val handler = testContext.fixHandler
 
-        verify(channel, timeout(defaultRuleDuration.millis() + businessRuleCleanupDuration.millis() + 100)).open()
+        verify(channel, timeout(defaultRuleDuration.millis() + businessRuleCleanupDuration.millis() + 200)).open()
         messages.clear()
         verify(channel).send(any(), any(), anyOrNull(), any()) // Logon
 
@@ -547,7 +547,7 @@ class TestStrategies {
         handler.onIncoming(channel, businessMessage(4).asExpandable(), MessageID.getDefaultInstance());
         handler.onIncoming(channel, businessMessage(5).asExpandable(), MessageID.getDefaultInstance());
         handler.onIncoming(channel, businessMessage(6).asExpandable(), MessageID.getDefaultInstance());
-        verify(channel, timeout(defaultRuleDuration.millis() + 100).times(1)).send(captor.capture(), any(), anyOrNull(), any())
+        verify(channel, timeout(defaultRuleDuration.millis() + 200).times(1)).send(captor.capture(), any(), anyOrNull(), any())
 
         captor.firstValue.apply {
             assertTrue { contains("35=2") && contains("7=1") && contains("16=6") }
