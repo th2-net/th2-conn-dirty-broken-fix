@@ -52,6 +52,7 @@ import io.netty.buffer.Unpooled;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -1485,6 +1486,12 @@ public class FixHandler implements AutoCloseable, IHandler {
             String message = String.format("Error while cleaning up strategy: %s", strategy.getState().getType());
             LOGGER.error(message, e);
             ruleErrorEvent(strategy.getState().getType(), e);
+        }
+
+        if(!sessionActive.get()) {
+            strategy.resetStrategyAndState(new RuleConfiguration(RuleType.DEFAULT, Duration.of(10, ChronoUnit.MINUTES), Duration.of(1, ChronoUnit.SECONDS), null, false, null, null, null, null, null, null, null, null, null));
+            executorService.schedule(this::applyNextStrategy, Duration.of(10, ChronoUnit.MINUTES).toMinutes(), TimeUnit.MINUTES);
+            return;
         }
 
         RuleConfiguration nextStrategyConfig = scheduler.next();
