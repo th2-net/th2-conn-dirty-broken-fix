@@ -864,14 +864,14 @@ public class FixHandler implements AutoCloseable, IHandler {
         if (settings.getDefaultApplVerID() != null) logon.append(DEFAULT_APPL_VER_ID).append(settings.getDefaultApplVerID());
         if (settings.getUsername() != null) logon.append(USERNAME).append(settings.getUsername());
         if (settings.getPassword() != null) {
-            if (settings.getPasswordEncryptKeyFilePath() != null) {
+            if (settings.getPasswordEncryptKey() != null) {
                 logon.append(ENCRYPTED_PASSWORD).append(encrypt(settings.getPassword()));
             } else {
                 logon.append(PASSWORD).append(settings.getPassword());
             }
         }
         if (settings.getNewPassword() != null) {
-            if (settings.getPasswordEncryptKeyFilePath() != null) {
+            if (settings.getPasswordEncryptKey() != null) {
                 logon.append(NEW_ENCRYPTED_PASSWORD).append(encrypt(settings.getNewPassword()));
             } else {
                 logon.append(NEW_PASSWORD).append(settings.getNewPassword());
@@ -910,7 +910,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private String encrypt(String password) {
         return settings.getPasswordEncryptKeyFileType()
-                .encrypt(Paths.get(settings.getPasswordEncryptKeyFilePath()),
+                .encrypt(settings.getPasswordEncryptKey(),
                         password,
                         settings.getPasswordKeyEncryptAlgorithm(),
                         settings.getPasswordEncryptAlgorithm(),
@@ -1017,7 +1017,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         messageTransformer.transformWithoutResults(message, config.getActions());
 
         if(config.getNewPassword() != null) {
-            if(settings.getPasswordEncryptKeyFilePath() != null) {
+            if(settings.getPasswordEncryptKey() != null) {
                 FixField encryptedPassword = findField(message, ENCRYPTED_PASSWORD_TAG);
                 if(encryptedPassword != null) {
                     encryptedPassword.setValue(encrypt(config.getNewPassword()));
@@ -1031,7 +1031,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
 
         if(config.getUseOldPasswords() && !previouslyUsedPasswords.isEmpty()) {
-            if(settings.getPasswordEncryptKeyFilePath() != null) {
+            if(settings.getPasswordEncryptKey() != null) {
                 FixField encryptedPassword = findField(message, ENCRYPTED_PASSWORD_TAG);
                 if(encryptedPassword != null) {
                     encryptedPassword.setValue(encrypt(getRandomOldPassword()));
