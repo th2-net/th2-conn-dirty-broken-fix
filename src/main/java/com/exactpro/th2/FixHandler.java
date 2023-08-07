@@ -416,9 +416,11 @@ public class FixHandler implements AutoCloseable, IHandler {
             return metadata;
         }
 
+        boolean isSequenceReset = Objects.equals(msgTypeValue, MSG_TYPE_SEQUENCE_RESET);
+
         int receivedMsgSeqNum = Integer.parseInt(requireNonNull(msgSeqNumValue.getValue()));
 
-        if(receivedMsgSeqNum < serverMsgSeqNum.get() && !isDup) {
+        if(receivedMsgSeqNum < serverMsgSeqNum.get() && !isDup && !isSequenceReset) {
             metadata.put(REJECT_REASON, "SeqNum is less than expected.");
             if (LOGGER.isErrorEnabled()) LOGGER.error("Invalid message. SeqNum is less than expected {}: {}", serverMsgSeqNum.get(), message.toString(US_ASCII));
             sendLogout();
@@ -428,7 +430,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         serverMsgSeqNum.incrementAndGet();
 
-        if (serverMsgSeqNum.get() < receivedMsgSeqNum && !isDup && enabled.get()) {
+        if (serverMsgSeqNum.get() < receivedMsgSeqNum && !isDup && !isSequenceReset && enabled.get()) {
             sendResendRequest(serverMsgSeqNum.get(), receivedMsgSeqNum - 1);
         }
 
