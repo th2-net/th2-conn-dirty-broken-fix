@@ -55,7 +55,7 @@ class StatefulStrategy(
         get() = state.config?.missIncomingMessagesConfiguration ?: error("Miss incoming messages config isn't present.")
         private set
     var missOutgoingMessagesConfiguration: MissMessageConfiguration? = null
-        get() = state.config?.missOutgoingMessagesConfiguration ?: error("Miss incoming messages config isn't present.")
+        get() = state.config?.missOutgoingMessagesConfiguration ?: error("Miss outgoing messages config isn't present.")
         private set
     var transformMessageConfiguration: TransformMessageConfiguration? = null
         get() = state.config?.transformMessageConfiguration ?: error("Transform message config isn't present.")

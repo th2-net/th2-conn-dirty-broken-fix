@@ -41,6 +41,7 @@ import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.SendStrategy;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.StatefulStrategy;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.StrategyScheduler;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.StrategyState;
+import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.CleanupHandler;
 import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel;
 import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel.SendMode;
 import com.exactpro.th2.conn.dirty.tcp.core.api.IHandler;
@@ -593,8 +594,8 @@ public class FixHandler implements AutoCloseable, IHandler {
         LOGGER.info("Sending resend request: {} - {}", beginSeqNo, endSeqNo);
         StringBuilder resendRequest = new StringBuilder();
         setHeader(resendRequest, MSG_TYPE_RESEND_REQUEST, msgSeqNum.incrementAndGet());
-        resendRequest.append(BEGIN_SEQ_NO).append(beginSeqNo).append(SOH);
-        resendRequest.append(END_SEQ_NO).append(endSeqNo).append(SOH);
+        resendRequest.append(BEGIN_SEQ_NO).append(beginSeqNo);
+        resendRequest.append(END_SEQ_NO).append(endSeqNo);
         setChecksumAndBodyLength(resendRequest);
         channel.send(Unpooled.wrappedBuffer(resendRequest.toString().getBytes(StandardCharsets.UTF_8)), Collections.emptyMap(), null, SendMode.HANDLE_AND_MANGLE)
             .thenAcceptAsync(x -> strategy.getState().addMessageID(x));
@@ -1566,9 +1567,10 @@ public class FixHandler implements AutoCloseable, IHandler {
     private void defaultOnCloseHandler() {}
 
     private void outageOnCloseHandler() {
+        CleanupHandler cleanup = strategy.getCleanupHandler();
         strategy.setOnCloseHandler(this::defaultOnCloseHandler);
         strategy.setCleanupHandler(this::defaultCleanupHandler);
-        strategy.cleanupStrategy();
+        cleanup.cleanup();
     }
 
     private StringBuilder createSequenceReset(int seqNo, int newSeqNo) {
