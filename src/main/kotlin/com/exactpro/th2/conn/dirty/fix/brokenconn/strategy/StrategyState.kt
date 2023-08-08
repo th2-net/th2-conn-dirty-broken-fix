@@ -66,7 +66,7 @@ class StrategyState(val config: RuleConfiguration? = null) {
     fun addMessageToBatchCache(message: ByteBuf) {
         writeLock.withLock {
             batchMessageCacheSize.incrementAndGet()
-            batchMessageCache.addComponent(message)
+            batchMessageCache.addComponent(true, message.copy())
         }
     }
 

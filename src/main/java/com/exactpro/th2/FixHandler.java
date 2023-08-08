@@ -41,6 +41,7 @@ import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.SendStrategy;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.StatefulStrategy;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.StrategyScheduler;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.StrategyState;
+import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.CleanupHandler;
 import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel;
 import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel.SendMode;
 import com.exactpro.th2.conn.dirty.tcp.core.api.IHandler;
@@ -52,6 +53,7 @@ import io.netty.buffer.Unpooled;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -410,6 +412,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         String msgTypeValue = requireNonNull(msgType.getValue());
         if(msgTypeValue.equals(MSG_TYPE_LOGOUT)) {
             serverMsgSeqNum.incrementAndGet();
+            strategy.getState().addMessageID(messageId);
             handleLogout(message);
             return metadata;
         }
@@ -571,11 +574,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         FixField seqNumValue = findField(message, NEW_SEQ_NO_TAG);
 
         if(seqNumValue != null) {
-            if(gapFillMode == null || gapFillMode.getValue() == null || gapFillMode.getValue().equals("N")) {
-                serverMsgSeqNum.set(Integer.parseInt(requireNonNull(seqNumValue.getValue())));
-            } else {
-                serverMsgSeqNum.set(Integer.parseInt(requireNonNull(seqNumValue.getValue())) - 1);
-            }
+            serverMsgSeqNum.set(Integer.parseInt(requireNonNull(seqNumValue.getValue())));
         } else {
             LOGGER.trace("Failed to reset servers MsgSeqNum. No such tag in message: {}", message.toString(US_ASCII));
         }
@@ -592,8 +591,8 @@ public class FixHandler implements AutoCloseable, IHandler {
         LOGGER.info("Sending resend request: {} - {}", beginSeqNo, endSeqNo);
         StringBuilder resendRequest = new StringBuilder();
         setHeader(resendRequest, MSG_TYPE_RESEND_REQUEST, msgSeqNum.incrementAndGet());
-        resendRequest.append(BEGIN_SEQ_NO).append(beginSeqNo).append(SOH);
-        resendRequest.append(END_SEQ_NO).append(endSeqNo).append(SOH);
+        resendRequest.append(BEGIN_SEQ_NO).append(beginSeqNo);
+        resendRequest.append(END_SEQ_NO).append(endSeqNo);
         setChecksumAndBodyLength(resendRequest);
         channel.send(Unpooled.wrappedBuffer(resendRequest.toString().getBytes(StandardCharsets.UTF_8)), Collections.emptyMap(), null, SendMode.HANDLE_AND_MANGLE)
             .thenAcceptAsync(x -> strategy.getState().addMessageID(x));
@@ -864,14 +863,14 @@ public class FixHandler implements AutoCloseable, IHandler {
         if (settings.getDefaultApplVerID() != null) logon.append(DEFAULT_APPL_VER_ID).append(settings.getDefaultApplVerID());
         if (settings.getUsername() != null) logon.append(USERNAME).append(settings.getUsername());
         if (settings.getPassword() != null) {
-            if (settings.getPasswordEncryptKeyFilePath() != null) {
+            if (settings.getPasswordEncryptKey() != null) {
                 logon.append(ENCRYPTED_PASSWORD).append(encrypt(settings.getPassword()));
             } else {
                 logon.append(PASSWORD).append(settings.getPassword());
             }
         }
         if (settings.getNewPassword() != null) {
-            if (settings.getPasswordEncryptKeyFilePath() != null) {
+            if (settings.getPasswordEncryptKey() != null) {
                 logon.append(NEW_ENCRYPTED_PASSWORD).append(encrypt(settings.getNewPassword()));
             } else {
                 logon.append(NEW_PASSWORD).append(settings.getNewPassword());
@@ -910,7 +909,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private String encrypt(String password) {
         return settings.getPasswordEncryptKeyFileType()
-                .encrypt(Paths.get(settings.getPasswordEncryptKeyFilePath()),
+                .encrypt(settings.getPasswordEncryptKey(),
                         password,
                         settings.getPasswordKeyEncryptAlgorithm(),
                         settings.getPasswordEncryptAlgorithm(),
@@ -936,7 +935,9 @@ public class FixHandler implements AutoCloseable, IHandler {
     // <editor-fold desc="send strategies definitions goes here."
 
     private CompletableFuture<MessageID> defaultSend(IChannel channel, ByteBuf message, Map<String, String> properties, EventID eventID) {
-        return channel.send(message, properties, eventID, SendMode.HANDLE_AND_MANGLE);
+        CompletableFuture<MessageID> messageId = channel.send(message, properties, eventID, SendMode.HANDLE_AND_MANGLE);
+        messageId.thenAcceptAsync(x -> strategy.getState().addMessageID(x));
+        return messageId;
     }
 
     private CompletableFuture<MessageID> bulkSend(IChannel channel, ByteBuf message, Map<String, String> properties, EventID eventID) {
@@ -1017,7 +1018,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         messageTransformer.transformWithoutResults(message, config.getActions());
 
         if(config.getNewPassword() != null) {
-            if(settings.getPasswordEncryptKeyFilePath() != null) {
+            if(settings.getPasswordEncryptKey() != null) {
                 FixField encryptedPassword = findField(message, ENCRYPTED_PASSWORD_TAG);
                 if(encryptedPassword != null) {
                     encryptedPassword.setValue(encrypt(config.getNewPassword()));
@@ -1031,7 +1032,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
 
         if(config.getUseOldPasswords() && !previouslyUsedPasswords.isEmpty()) {
-            if(settings.getPasswordEncryptKeyFilePath() != null) {
+            if(settings.getPasswordEncryptKey() != null) {
                 FixField encryptedPassword = findField(message, ENCRYPTED_PASSWORD_TAG);
                 if(encryptedPassword != null) {
                     encryptedPassword.setValue(encrypt(getRandomOldPassword()));
@@ -1076,6 +1077,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         if(strategyState.getMissedIncomingMessagesCount() == countToMiss) {
             return null;
         }
+        resetTestRequestTask();
         strategyState.incrementMissedIncomingMessages();
         metadata.put(REJECT_REASON, "Missed incoming message due to `miss incoming messages` strategy");
         return metadata;
@@ -1156,9 +1158,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             message.clear();
             return null;
         } else {
-            if(!ADMIN_MESSAGES.contains(msgType)) {
-                strategy.getState().addMissedMessageToCache(msgSeqNum.get(), message.copy());
-            }
+            strategy.getState().addMissedMessageToCache(msgSeqNum.get(), message.copy());
             message.clear();
         }
 
@@ -1185,11 +1185,17 @@ public class FixHandler implements AutoCloseable, IHandler {
     // <editor-fold desc="strategy setup and cleanup">
     private StatefulStrategy defaultStrategyHolder() {
         var receiveStrategy = new ReceiveStrategy((msg, mtd) -> null);
+        var receiveStrategyCopy = new ReceiveStrategy((msg, mtd) -> null);
         var sendStrategy = new SendStrategy(this::defaultMessageProcessor, this::defaultSend);
+        var sendStrategyCopy = new SendStrategy(this::defaultMessageProcessor, this::defaultSend);
         var incomingMessagesStrategy = new IncomingMessagesStrategy(
             this::defaultMessageProcessor, this::handleTestRequest, this::handleLogon
         );
+        var incomingMessagesStrategyCopy = new IncomingMessagesStrategy(
+            this::defaultMessageProcessor, this::handleTestRequest, this::handleLogon
+        );
         var outgoingMessagesStrategy = new OutgoingMessagesStrategy(this::defaultOutgoingStrategy);
+        var outgoingMessagesStrategyCopy = new OutgoingMessagesStrategy(this::defaultOutgoingStrategy);
         return new StatefulStrategy(
             sendStrategy,
             incomingMessagesStrategy,
@@ -1199,10 +1205,10 @@ public class FixHandler implements AutoCloseable, IHandler {
             this::recovery,
             this::defaultOnCloseHandler,
             new DefaultStrategyHolder(
-                sendStrategy,
-                incomingMessagesStrategy,
-                outgoingMessagesStrategy,
-                receiveStrategy,
+                sendStrategyCopy,
+                incomingMessagesStrategyCopy,
+                outgoingMessagesStrategyCopy,
+                receiveStrategyCopy,
                 this::defaultCleanupHandler,
                 this::recovery,
                 this::defaultOnCloseHandler
@@ -1361,11 +1367,11 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private void setupClientOutageStrategy(RuleConfiguration configuration) {
         strategy.resetStrategyAndState(configuration);
+        strategy.setCleanupHandler(this::cleanupClientOutageStrategy);
+        strategy.setOnCloseHandler(this::outageOnCloseHandler);
         strategy.updateIncomingMessageStrategy(x -> {x.setTestRequestProcessor(this::missTestRequest); return Unit.INSTANCE;});
         strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::missHeartbeatsAndTestRequestReplies); return Unit.INSTANCE;});
-        strategy.setCleanupHandler(this::cleanupClientOutageStrategy);
         ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
-        strategy.setOnCloseHandler(this::outageOnCloseHandler);
     }
 
     private void cleanupClientOutageStrategy() {
@@ -1375,10 +1381,10 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private void setupPartialClientOutageStrategy(RuleConfiguration configuration) {
         strategy.resetStrategyAndState(configuration);
-        strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::missHeartbeats); return Unit.INSTANCE;});
-        strategy.setCleanupHandler(this::cleanupPartialClientOutageStrategy);
-        ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
         strategy.setOnCloseHandler(this::outageOnCloseHandler);
+        strategy.setCleanupHandler(this::cleanupPartialClientOutageStrategy);
+        strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::missHeartbeats); return Unit.INSTANCE;});
+        ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
     }
 
     private void cleanupPartialClientOutageStrategy() {
@@ -1448,12 +1454,14 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.resetStrategyAndState(configuration);
         strategy.updateSendStrategy(x -> {x.setSendHandler(this::bulkSend); return Unit.INSTANCE;});
         strategy.setCleanupHandler(this::cleanupBatchSendStrategy);
+        ruleStartEvent(strategy.getType(), strategy.getStartTime());
     }
 
     private void cleanupBatchSendStrategy() {
         var state = strategy.getState();
         if(state.getBatchMessageCacheSize() > 0) {
-            defaultSend(channel, state.getBatchMessageCache(), Collections.emptyMap(), null);
+            channel.send(state.getBatchMessageCache(), Collections.emptyMap(), null, SendMode.DIRECT)
+                .thenAcceptAsync(x -> strategy.getState().addMessageID(x));
         }
         strategy.updateSendStrategy(x -> {x.setSendHandler(this::defaultSend); return Unit.INSTANCE;});
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
@@ -1464,6 +1472,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.resetStrategyAndState(configuration);
         strategy.updateSendStrategy(x -> {x.setSendHandler(this::splitSend); return Unit.INSTANCE;});
         strategy.setCleanupHandler(this::cleanupSplitSendStrategy);
+        ruleStartEvent(strategy.getType(), strategy.getStartTime());
     }
 
     private void cleanupSplitSendStrategy() {
@@ -1485,6 +1494,12 @@ public class FixHandler implements AutoCloseable, IHandler {
             String message = String.format("Error while cleaning up strategy: %s", strategy.getState().getType());
             LOGGER.error(message, e);
             ruleErrorEvent(strategy.getState().getType(), e);
+        }
+
+        if(!sessionActive.get()) {
+            strategy.resetStrategyAndState(new RuleConfiguration(RuleType.DEFAULT, Duration.of(10, ChronoUnit.MINUTES), Duration.of(1, ChronoUnit.SECONDS), null, false, null, null, null, null, null, null, null, null, null));
+            executorService.schedule(this::applyNextStrategy, Duration.of(10, ChronoUnit.MINUTES).toMinutes(), TimeUnit.MINUTES);
+            return;
         }
 
         RuleConfiguration nextStrategyConfig = scheduler.next();
@@ -1538,14 +1553,25 @@ public class FixHandler implements AutoCloseable, IHandler {
                 recovery(i, endSeqNo);
                 break;
             } else {
-                setTime(missedMessage);
-                setPossDup(missedMessage);
-                updateLength(missedMessage);
-                updateChecksum(missedMessage);
+                FixField msgType = findField(missedMessage, MSG_TYPE_TAG);
+                if(msgType == null || ADMIN_MESSAGES.contains(msgType.getValue())) {
+                    int newSeqNo = i == endSeqNo ? msgSeqNum.get() + 1 : i + 1;
+                    StringBuilder seqReset = createSequenceReset(i, newSeqNo);
 
-                LOGGER.info("Sending recovery message from state: {}", missedMessage.toString(US_ASCII));
-                channel.send(missedMessage, Collections.emptyMap(), null, SendMode.MANGLE)
-                    .thenAcceptAsync(x -> strategy.getState().addMessageID(x));
+                    channel.send(
+                        Unpooled.wrappedBuffer(seqReset.toString().getBytes(StandardCharsets.UTF_8)),
+                        Collections.emptyMap(), null, SendMode.MANGLE
+                    ).thenAcceptAsync(x -> strategy.getState().addMessageID(x));
+                } else {
+                    setTime(missedMessage);
+                    setPossDup(missedMessage);
+                    updateLength(missedMessage);
+                    updateChecksum(missedMessage);
+
+                    LOGGER.info("Sending recovery message from state: {}", missedMessage.toString(US_ASCII));
+                    channel.send(missedMessage, Collections.emptyMap(), null, SendMode.MANGLE)
+                        .thenAcceptAsync(x -> strategy.getState().addMessageID(x));
+                }
             }
         }
     }
@@ -1559,9 +1585,10 @@ public class FixHandler implements AutoCloseable, IHandler {
     private void defaultOnCloseHandler() {}
 
     private void outageOnCloseHandler() {
+        CleanupHandler cleanup = strategy.getCleanupHandler();
         strategy.setOnCloseHandler(this::defaultOnCloseHandler);
         strategy.setCleanupHandler(this::defaultCleanupHandler);
-        strategy.cleanupStrategy();
+        cleanup.cleanup();
     }
 
     private StringBuilder createSequenceReset(int seqNo, int newSeqNo) {

@@ -42,7 +42,7 @@ public class FixHandlerSettings implements IHandlerSettings {
     private String password;
     private String newPassword;
     private String previousPasswords;
-    private String passwordEncryptKeyFilePath;
+    private String passwordEncryptKey;
     private KeyFileType passwordEncryptKeyFileType = KeyFileType.PEM_PUBLIC_KEY;
     /**
      * Value from Java Security Standard Algorithm Names
@@ -176,9 +176,7 @@ public class FixHandlerSettings implements IHandlerSettings {
 
     public String getPreviousPasswords() { return previousPasswords; }
 
-    public String getPasswordEncryptKeyFilePath() {
-        return passwordEncryptKeyFilePath;
-    }
+    public String getPasswordEncryptKey() {return passwordEncryptKey;}
 
     public KeyFileType getPasswordEncryptKeyFileType() {
         return passwordEncryptKeyFileType;
@@ -218,9 +216,7 @@ public class FixHandlerSettings implements IHandlerSettings {
 
     public void setPreviousPasswords(String previousPasswords) { this.previousPasswords = previousPasswords; }
 
-    public void setPasswordEncryptKeyFilePath(String passwordEncryptKeyFilePath) {
-        this.passwordEncryptKeyFilePath = passwordEncryptKeyFilePath;
-    }
+    public void setPasswordEncryptKey(String passwordEncryptKey) {this.passwordEncryptKey = passwordEncryptKey;}
 
     public void setPasswordEncryptKeyFileType(KeyFileType passwordEncryptKeyFileType) {
         this.passwordEncryptKeyFileType = passwordEncryptKeyFileType;
