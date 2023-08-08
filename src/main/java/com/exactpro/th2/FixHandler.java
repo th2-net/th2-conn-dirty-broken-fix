@@ -1452,6 +1452,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.resetStrategyAndState(configuration);
         strategy.updateSendStrategy(x -> {x.setSendHandler(this::bulkSend); return Unit.INSTANCE;});
         strategy.setCleanupHandler(this::cleanupBatchSendStrategy);
+        ruleStartEvent(strategy.getType(), strategy.getStartTime());
     }
 
     private void cleanupBatchSendStrategy() {
@@ -1468,6 +1469,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.resetStrategyAndState(configuration);
         strategy.updateSendStrategy(x -> {x.setSendHandler(this::splitSend); return Unit.INSTANCE;});
         strategy.setCleanupHandler(this::cleanupSplitSendStrategy);
+        ruleStartEvent(strategy.getType(), strategy.getStartTime());
     }
 
     private void cleanupSplitSendStrategy() {
