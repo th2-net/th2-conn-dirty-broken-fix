@@ -1360,11 +1360,11 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private void setupClientOutageStrategy(RuleConfiguration configuration) {
         strategy.resetStrategyAndState(configuration);
+        strategy.setOnCloseHandler(this::outageOnCloseHandler);
+        strategy.setCleanupHandler(this::cleanupClientOutageStrategy);
         strategy.updateIncomingMessageStrategy(x -> {x.setTestRequestProcessor(this::missTestRequest); return Unit.INSTANCE;});
         strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::missHeartbeatsAndTestRequestReplies); return Unit.INSTANCE;});
-        strategy.setCleanupHandler(this::cleanupClientOutageStrategy);
         ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
-        strategy.setOnCloseHandler(this::outageOnCloseHandler);
     }
 
     private void cleanupClientOutageStrategy() {
@@ -1374,10 +1374,10 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private void setupPartialClientOutageStrategy(RuleConfiguration configuration) {
         strategy.resetStrategyAndState(configuration);
-        strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::missHeartbeats); return Unit.INSTANCE;});
-        strategy.setCleanupHandler(this::cleanupPartialClientOutageStrategy);
-        ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
         strategy.setOnCloseHandler(this::outageOnCloseHandler);
+        strategy.setCleanupHandler(this::cleanupPartialClientOutageStrategy);
+        strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::missHeartbeats); return Unit.INSTANCE;});
+        ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
     }
 
     private void cleanupPartialClientOutageStrategy() {
