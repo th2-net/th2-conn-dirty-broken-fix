@@ -412,6 +412,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         String msgTypeValue = requireNonNull(msgType.getValue());
         if(msgTypeValue.equals(MSG_TYPE_LOGOUT)) {
             serverMsgSeqNum.incrementAndGet();
+            strategy.getState().addMessageID(messageId);
             handleLogout(message);
             return metadata;
         }
@@ -1553,6 +1554,9 @@ public class FixHandler implements AutoCloseable, IHandler {
                     setPossDup(missedMessage);
                     updateLength(missedMessage);
                     updateChecksum(missedMessage);
+                    LOGGER.info("Sending recovery message from state: {}", missedMessage.toString(US_ASCII));
+                    channel.send(missedMessage, Collections.emptyMap(), null, SendMode.MANGLE)
+                        .thenAcceptAsync(x -> strategy.getState().addMessageID(x));
                 } else {
                     int newSeqNo = i == endSeqNo ? msgSeqNum.get() + 1 : i + 1;
                     StringBuilder seqReset = createSequenceReset(i, newSeqNo);
@@ -1560,12 +1564,8 @@ public class FixHandler implements AutoCloseable, IHandler {
                     channel.send(
                         Unpooled.wrappedBuffer(seqReset.toString().getBytes(StandardCharsets.UTF_8)),
                         Collections.emptyMap(), null, SendMode.MANGLE
-                    );
+                    ).thenAcceptAsync(x -> strategy.getState().addMessageID(x));
                 }
-
-                LOGGER.info("Sending recovery message from state: {}", missedMessage.toString(US_ASCII));
-                channel.send(missedMessage, Collections.emptyMap(), null, SendMode.MANGLE)
-                    .thenAcceptAsync(x -> strategy.getState().addMessageID(x));
             }
         }
     }
