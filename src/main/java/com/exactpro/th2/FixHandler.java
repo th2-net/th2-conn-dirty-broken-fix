@@ -416,11 +416,9 @@ public class FixHandler implements AutoCloseable, IHandler {
             return metadata;
         }
 
-        boolean isSequenceReset = Objects.equals(msgTypeValue, MSG_TYPE_SEQUENCE_RESET);
-
         int receivedMsgSeqNum = Integer.parseInt(requireNonNull(msgSeqNumValue.getValue()));
 
-        if(receivedMsgSeqNum < serverMsgSeqNum.get() && !isDup && !isSequenceReset) {
+        if(receivedMsgSeqNum < serverMsgSeqNum.get() && !isDup) {
             metadata.put(REJECT_REASON, "SeqNum is less than expected.");
             if (LOGGER.isErrorEnabled()) LOGGER.error("Invalid message. SeqNum is less than expected {}: {}", serverMsgSeqNum.get(), message.toString(US_ASCII));
             sendLogout();
@@ -430,7 +428,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         serverMsgSeqNum.incrementAndGet();
 
-        if (serverMsgSeqNum.get() < receivedMsgSeqNum && !isDup && !isSequenceReset && enabled.get()) {
+        if (serverMsgSeqNum.get() < receivedMsgSeqNum && !isDup && enabled.get()) {
             sendResendRequest(serverMsgSeqNum.get(), receivedMsgSeqNum - 1);
         }
 
@@ -575,11 +573,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         FixField seqNumValue = findField(message, NEW_SEQ_NO_TAG);
 
         if(seqNumValue != null) {
-            if(gapFillMode == null || gapFillMode.getValue() == null || gapFillMode.getValue().equals("N")) {
-                serverMsgSeqNum.set(Integer.parseInt(requireNonNull(seqNumValue.getValue())));
-            } else {
-                serverMsgSeqNum.set(Integer.parseInt(requireNonNull(seqNumValue.getValue())) - 1);
-            }
+            serverMsgSeqNum.set(Integer.parseInt(requireNonNull(seqNumValue.getValue())));
         } else {
             LOGGER.trace("Failed to reset servers MsgSeqNum. No such tag in message: {}", message.toString(US_ASCII));
         }
@@ -1080,6 +1074,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         if(strategyState.getMissedIncomingMessagesCount() == countToMiss) {
             return null;
         }
+        resetTestRequestTask();
         strategyState.incrementMissedIncomingMessages();
         metadata.put(REJECT_REASON, "Missed incoming message due to `miss incoming messages` strategy");
         return metadata;
