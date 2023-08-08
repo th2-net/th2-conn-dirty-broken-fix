@@ -52,7 +52,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;

@@ -193,8 +193,8 @@ class TestStrategies {
         handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), getMessageId()) // 5
         handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), getMessageId()) // 6
 
-        verify(channel, timeout(businessRuleDuration.millis() + businessRuleCleanupDuration.millis() + 300)).open()
-        verify(channel, times(2)).send(captor.capture(), any(), anyOrNull(), any()) // Logon
+        verify(channel, timeout(businessRuleDuration.millis() + businessRuleCleanupDuration.millis() + 100)).open()
+        verify(channel, timeout(300).times(2)).send(captor.capture(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
 
         channel.close()
