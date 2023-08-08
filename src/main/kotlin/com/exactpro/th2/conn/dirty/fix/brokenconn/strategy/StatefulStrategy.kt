@@ -140,10 +140,13 @@ class StatefulStrategy(
     fun resetStrategyAndState(config: RuleConfiguration) {
         lock.write {
             state = StrategyState(config)
-            sendStrategy = defaultStrategy.sendStrategy
-            receiveStrategy = defaultStrategy.receiveStrategy
-            incomingMessagesStrategy = defaultStrategy.incomingMessagesStrategy
-            outgoingMessagesStrategy = defaultStrategy.outgoingMessagesStrategy
+            sendStrategy.sendHandler = defaultStrategy.sendStrategy.sendHandler
+            sendStrategy.sendPreprocessor = defaultStrategy.sendStrategy.sendPreprocessor
+            receiveStrategy.receivePreprocessor = defaultStrategy.receiveStrategy.receivePreprocessor
+            incomingMessagesStrategy.logonStrategy = defaultStrategy.incomingMessagesStrategy.logonStrategy
+            incomingMessagesStrategy.incomingMessagesPreprocessor = defaultStrategy.incomingMessagesStrategy.incomingMessagesPreprocessor
+            incomingMessagesStrategy.testRequestProcessor = defaultStrategy.incomingMessagesStrategy.testRequestProcessor
+            outgoingMessagesStrategy.outgoingMessageProcessor = defaultStrategy.outgoingMessagesStrategy.outgoingMessageProcessor
             recoveryHandler = defaultStrategy.recoveryHandler
             cleanupHandler = defaultStrategy.cleanupHandler
             onCloseHandler = defaultStrategy.closeHandler
@@ -153,10 +156,13 @@ class StatefulStrategy(
     fun cleanupStrategy() {
         lock.write {
             state = StrategyState()
-            sendStrategy = defaultStrategy.sendStrategy
-            receiveStrategy = defaultStrategy.receiveStrategy
-            incomingMessagesStrategy = defaultStrategy.incomingMessagesStrategy
-            outgoingMessagesStrategy = defaultStrategy.outgoingMessagesStrategy
+            sendStrategy.sendHandler = defaultStrategy.sendStrategy.sendHandler
+            sendStrategy.sendPreprocessor = defaultStrategy.sendStrategy.sendPreprocessor
+            receiveStrategy.receivePreprocessor = defaultStrategy.receiveStrategy.receivePreprocessor
+            incomingMessagesStrategy.logonStrategy = defaultStrategy.incomingMessagesStrategy.logonStrategy
+            incomingMessagesStrategy.incomingMessagesPreprocessor = defaultStrategy.incomingMessagesStrategy.incomingMessagesPreprocessor
+            incomingMessagesStrategy.testRequestProcessor = defaultStrategy.incomingMessagesStrategy.testRequestProcessor
+            outgoingMessagesStrategy.outgoingMessageProcessor = defaultStrategy.outgoingMessagesStrategy.outgoingMessageProcessor
             recoveryHandler = defaultStrategy.recoveryHandler
             cleanupHandler = defaultStrategy.cleanupHandler
             onCloseHandler = defaultStrategy.closeHandler

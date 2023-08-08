@@ -1155,9 +1155,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             message.clear();
             return null;
         } else {
-            if(!ADMIN_MESSAGES.contains(msgType)) {
-                strategy.getState().addMissedMessageToCache(msgSeqNum.get(), message.copy());
-            }
+            strategy.getState().addMissedMessageToCache(msgSeqNum.get(), message.copy());
             message.clear();
         }
 
@@ -1184,11 +1182,17 @@ public class FixHandler implements AutoCloseable, IHandler {
     // <editor-fold desc="strategy setup and cleanup">
     private StatefulStrategy defaultStrategyHolder() {
         var receiveStrategy = new ReceiveStrategy((msg, mtd) -> null);
+        var receiveStrategyCopy = new ReceiveStrategy((msg, mtd) -> null);
         var sendStrategy = new SendStrategy(this::defaultMessageProcessor, this::defaultSend);
+        var sendStrategyCopy = new SendStrategy(this::defaultMessageProcessor, this::defaultSend);
         var incomingMessagesStrategy = new IncomingMessagesStrategy(
             this::defaultMessageProcessor, this::handleTestRequest, this::handleLogon
         );
+        var incomingMessagesStrategyCopy = new IncomingMessagesStrategy(
+            this::defaultMessageProcessor, this::handleTestRequest, this::handleLogon
+        );
         var outgoingMessagesStrategy = new OutgoingMessagesStrategy(this::defaultOutgoingStrategy);
+        var outgoingMessagesStrategyCopy = new OutgoingMessagesStrategy(this::defaultOutgoingStrategy);
         return new StatefulStrategy(
             sendStrategy,
             incomingMessagesStrategy,
@@ -1198,10 +1202,10 @@ public class FixHandler implements AutoCloseable, IHandler {
             this::recovery,
             this::defaultOnCloseHandler,
             new DefaultStrategyHolder(
-                sendStrategy,
-                incomingMessagesStrategy,
-                outgoingMessagesStrategy,
-                receiveStrategy,
+                sendStrategyCopy,
+                incomingMessagesStrategyCopy,
+                outgoingMessagesStrategyCopy,
+                receiveStrategyCopy,
                 this::defaultCleanupHandler,
                 this::recovery,
                 this::defaultOnCloseHandler
