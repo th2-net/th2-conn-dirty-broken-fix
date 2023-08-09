@@ -33,7 +33,6 @@ enum class KeyFileType {
             encryptAlgorithm: String,
             operationMode: OperationMode
         ): String {
-
             val privateKeyPEM = key
                 .replace(BEGIN_PUBLIC_KEY, "")
                 .replace(System.lineSeparator(), "")

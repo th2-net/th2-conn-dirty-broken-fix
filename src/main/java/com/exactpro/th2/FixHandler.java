@@ -52,7 +52,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -935,7 +934,9 @@ public class FixHandler implements AutoCloseable, IHandler {
     // <editor-fold desc="send strategies definitions goes here."
 
     private CompletableFuture<MessageID> defaultSend(IChannel channel, ByteBuf message, Map<String, String> properties, EventID eventID) {
-        return channel.send(message, properties, eventID, SendMode.HANDLE_AND_MANGLE);
+        CompletableFuture<MessageID> messageId = channel.send(message, properties, eventID, SendMode.HANDLE_AND_MANGLE);
+        messageId.thenAcceptAsync(x -> strategy.getState().addMessageID(x));
+        return messageId;
     }
 
     private CompletableFuture<MessageID> bulkSend(IChannel channel, ByteBuf message, Map<String, String> properties, EventID eventID) {
@@ -1365,8 +1366,8 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private void setupClientOutageStrategy(RuleConfiguration configuration) {
         strategy.resetStrategyAndState(configuration);
-        strategy.setOnCloseHandler(this::outageOnCloseHandler);
         strategy.setCleanupHandler(this::cleanupClientOutageStrategy);
+        strategy.setOnCloseHandler(this::outageOnCloseHandler);
         strategy.updateIncomingMessageStrategy(x -> {x.setTestRequestProcessor(this::missTestRequest); return Unit.INSTANCE;});
         strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::missHeartbeatsAndTestRequestReplies); return Unit.INSTANCE;});
         ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
@@ -1458,7 +1459,8 @@ public class FixHandler implements AutoCloseable, IHandler {
     private void cleanupBatchSendStrategy() {
         var state = strategy.getState();
         if(state.getBatchMessageCacheSize() > 0) {
-            defaultSend(channel, state.getBatchMessageCache(), Collections.emptyMap(), null);
+            channel.send(state.getBatchMessageCache(), Collections.emptyMap(), null, SendMode.DIRECT)
+                .thenAcceptAsync(x -> strategy.getState().addMessageID(x));
         }
         strategy.updateSendStrategy(x -> {x.setSendHandler(this::defaultSend); return Unit.INSTANCE;});
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
