@@ -962,7 +962,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         SplitSendConfiguration config = strategy.getSplitSendConfiguration();
         onOutgoingUpdateTag(message, metadata);
         List<ByteBuf> slices = new ArrayList<>();
-        int numberOfSlices = config.getNumberOfParts();
+        int numberOfSlices = config.getNumberOfParts() % (message.readableBytes() - 1);
         int sliceSize = message.readableBytes() / numberOfSlices;
         int nextSliceStart = 0;
         for (int i = 0; i < numberOfSlices - 1; i++) {
