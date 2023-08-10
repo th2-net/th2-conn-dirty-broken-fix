@@ -104,6 +104,14 @@ compileTestKotlin {
     }
 }
 
+test {
+    testLogging {
+        events "passed", "skipped", "failed"
+        // You can adjust the logging level as needed
+        exceptionFormat "full"
+    }
+}
+
 dependencyCheck {
     formats=['SARIF', 'JSON', 'HTML']
     failBuildOnCVSS=5
