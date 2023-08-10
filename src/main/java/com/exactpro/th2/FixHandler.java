@@ -310,7 +310,9 @@ public class FixHandler implements AutoCloseable, IHandler {
         FixField msgType = findField(body, MSG_TYPE_TAG);
         boolean isLogout = msgType != null && Objects.equals(msgType.getValue(), MSG_TYPE_LOGOUT);
         if(isLogout && !channel.isOpen()) {
-            LOGGER.warn("Logout ignored as channel is already closed.");
+            String message = String.format("%s - %s: Logout ignored as channel is already closed.", channel.getSessionGroup(), channel.getSessionAlias());
+            LOGGER.warn(message);
+            context.send(CommonUtil.toEvent(message));
             return CompletableFuture.completedFuture(null);
         }
 
@@ -324,10 +326,13 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         boolean isUngracefulDisconnect = Boolean.getBoolean(properties.get(UNGRACEFUL_DISCONNECT_PROPERTY));
         if(isLogout) {
-            if(isUngracefulDisconnect) {
-                channel.close();
-                return CompletableFuture.completedFuture(null);
+            context.send(CommonUtil.toEvent(String.format("Closing session %s. Is graceful disconnect: %b", channel.getSessionAlias(), !isUngracefulDisconnect)));
+            try {
+                disconnect(!isUngracefulDisconnect);
+            } catch (Exception e) {
+                context.send(CommonUtil.toErrorEvent(String.format("Error while ending session %s by user logout. Is graceful disconnect: %b", channel.getSessionAlias(), !isUngracefulDisconnect), e));
             }
+            return CompletableFuture.completedFuture(null);
         }
 
         while (channel.isOpen() && !enabled.get()) {
@@ -918,7 +923,6 @@ public class FixHandler implements AutoCloseable, IHandler {
                         SendMode.HANDLE_AND_MANGLE
                 ).get();
                 strategy.getState().addMessageID(messageID);
-                waitLogoutResponse();
 
                 LOGGER.info("Sent logout - {}", logout);
             } catch (Exception e) {
