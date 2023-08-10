@@ -25,7 +25,6 @@ import com.exactpro.th2.conn.dirty.fix.FixField;
 import com.exactpro.th2.conn.dirty.fix.MessageTransformer;
 import com.exactpro.th2.conn.dirty.fix.SequenceLoader;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BatchSendConfiguration;
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BlockMessageConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.ChangeSequenceConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.ResendRequestConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RuleConfiguration;
@@ -80,6 +79,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import kotlin.Unit;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
@@ -263,7 +263,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         if(previousPasswords == null || previousPasswords.isEmpty()) {
             previouslyUsedPasswords = new ArrayList<>();
         } else {
-            previouslyUsedPasswords = Arrays.asList(previousPasswords.split(","));
+            previouslyUsedPasswords = List.of(previousPasswords.split(","));
         }
 
         String newPass = settings.getNewPassword();
@@ -573,7 +573,6 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void resetSequence(ByteBuf message) {
-        FixField gapFillMode = findField(message, GAP_FILL_FLAG_TAG);
         FixField seqNumValue = findField(message, NEW_SEQ_NO_TAG);
 
         if(seqNumValue != null) {
@@ -598,7 +597,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         resendRequest.append(END_SEQ_NO).append(endSeqNo);
         setChecksumAndBodyLength(resendRequest);
         channel.send(Unpooled.wrappedBuffer(resendRequest.toString().getBytes(StandardCharsets.UTF_8)), Collections.emptyMap(), null, SendMode.HANDLE_AND_MANGLE)
-            .thenAcceptAsync(x -> strategy.getState().addMessageID(x));
+            .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
         resetHeartbeatTask();
     }
 
@@ -611,7 +610,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         if (enabled.get()) {
             channel.send(Unpooled.wrappedBuffer(resendRequest.toString().getBytes(StandardCharsets.UTF_8)), Collections.emptyMap(), null, SendMode.HANDLE_AND_MANGLE)
-                .thenAcceptAsync(x -> strategy.getState().addMessageID(x));
+                .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
             resetHeartbeatTask();
         } else {
             sendLogon();
@@ -649,7 +648,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         setChecksumAndBodyLength(sequenceReset);
 
         channel.send(Unpooled.wrappedBuffer(sequenceReset.toString().getBytes(StandardCharsets.UTF_8)), Collections.emptyMap(), null, SendMode.HANDLE_AND_MANGLE)
-            .thenAcceptAsync(x -> strategy.getState().addMessageID(x));;
+            .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
         resetHeartbeatTask();
     }
 
@@ -661,7 +660,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         if (enabled.get()) {
             channel.send(Unpooled.wrappedBuffer(sequenceReset.toString().getBytes(StandardCharsets.UTF_8)), Collections.emptyMap(), null, SendMode.HANDLE_AND_MANGLE)
-                .thenAcceptAsync(x -> strategy.getState().addMessageID(x));;
+                .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
             resetHeartbeatTask();
         } else {
             sendLogon();
@@ -834,7 +833,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         setChecksumAndBodyLength(testRequest);
         if (enabled.get()) {
             channel.send(Unpooled.wrappedBuffer(testRequest.toString().getBytes(StandardCharsets.UTF_8)), Collections.emptyMap(), null, SendMode.HANDLE_AND_MANGLE)
-                .thenAcceptAsync(x -> strategy.getState().addMessageID(x));;
+                .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
             LOGGER.info("Send TestRequest to server - {}", testRequest);
             resetTestRequestTask();
             resetHeartbeatTask();
@@ -883,7 +882,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         setChecksumAndBodyLength(logon);
         LOGGER.info("Send logon - {}", logon);
         channel.send(Unpooled.wrappedBuffer(logon.toString().getBytes(StandardCharsets.UTF_8)), Collections.emptyMap(), null, SendMode.HANDLE_AND_MANGLE)
-            .thenAcceptAsync(x -> strategy.getState().addMessageID(x));;
+            .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
     }
 
     private void sendLogout() {
@@ -939,7 +938,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private CompletableFuture<MessageID> defaultSend(IChannel channel, ByteBuf message, Map<String, String> properties, EventID eventID) {
         CompletableFuture<MessageID> messageId = channel.send(message, properties, eventID, SendMode.HANDLE_AND_MANGLE);
-        messageId.thenAcceptAsync(x -> strategy.getState().addMessageID(x));
+        messageId.thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
         return messageId;
     }
 
@@ -954,7 +953,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         if(strategyState.getBatchMessageCacheSize() == config.getBatchSize()) {
             LOGGER.info("Sent batch of size: {}", config.getBatchSize());
             messageID = channel.send(asExpandable(strategyState.getBatchMessageCache().copy()), properties, eventID, SendMode.DIRECT);
-            messageID.thenAcceptAsync(strategyState::addMessageID);
+            messageID.thenAcceptAsync(strategyState::addMessageID, executorService);
             strategyState.resetBatchMessageCache();
         } else {
             messageID = CompletableFuture.completedFuture(null);
@@ -989,11 +988,11 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
 
 
-        String slicesTimestamps = sendingTimes.stream().map(formatter::format).reduce((i1, i2) -> i1 + "," + i2).orElse("");
+        String slicesTimestamps = sendingTimes.stream().map(formatter::format).collect(Collectors.joining(","));
         metadata.put(SPLIT_SEND_TIMESTAMPS_PROPERTY, slicesTimestamps);
         LOGGER.info("Sent message by slices: {}", slicesTimestamps);
         CompletableFuture<MessageID> messageID = channel.send(asExpandable(message), metadata, eventID, SendMode.DIRECT_MSTORE);
-        messageID.thenAcceptAsync(x -> strategy.getState().addMessageID(x));
+        messageID.thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
         return messageID;
     }
 
@@ -1462,7 +1461,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         var state = strategy.getState();
         if(state.getBatchMessageCacheSize() > 0) {
             channel.send(state.getBatchMessageCache(), Collections.emptyMap(), null, SendMode.DIRECT)
-                .thenAcceptAsync(x -> strategy.getState().addMessageID(x));
+                .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
         }
         strategy.updateSendStrategy(x -> {x.setSendHandler(this::defaultSend); return Unit.INSTANCE;});
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
@@ -1498,7 +1497,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
 
         if(!sessionActive.get()) {
-            strategy.resetStrategyAndState(new RuleConfiguration(RuleType.DEFAULT, Duration.of(10, ChronoUnit.MINUTES), Duration.of(1, ChronoUnit.SECONDS), null, false, null, null, null, null, null, null, null));
+            strategy.resetStrategyAndState(RuleConfiguration.Companion.defaultConfiguration());
             executorService.schedule(this::applyNextStrategy, Duration.of(10, ChronoUnit.MINUTES).toMinutes(), TimeUnit.MINUTES);
             return;
         }
@@ -1562,7 +1561,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                     channel.send(
                         Unpooled.wrappedBuffer(seqReset.toString().getBytes(StandardCharsets.UTF_8)),
                         Collections.emptyMap(), null, SendMode.MANGLE
-                    ).thenAcceptAsync(x -> strategy.getState().addMessageID(x));
+                    ).thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
                 } else {
                     setTime(missedMessage);
                     setPossDup(missedMessage);
@@ -1571,7 +1570,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
                     LOGGER.info("Sending recovery message from state: {}", missedMessage.toString(US_ASCII));
                     channel.send(missedMessage, Collections.emptyMap(), null, SendMode.MANGLE)
-                        .thenAcceptAsync(x -> strategy.getState().addMessageID(x));
+                        .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
                 }
             }
         }

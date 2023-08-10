@@ -17,12 +17,13 @@ package com.exactpro.th2.conn.dirty.fix.brokenconn.configuration
 
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.RuleType
 import java.time.Duration
+import java.time.temporal.ChronoUnit
 
 // TODO: disconnect type should be configurable
 data class RuleConfiguration(
-    val ruleType: RuleType,
-    val duration: Duration,
-    val cleanUpDuration: Duration,
+    val ruleType: RuleType = RuleType.DEFAULT,
+    val duration: Duration = Duration.of(1, ChronoUnit.MINUTES),
+    val cleanUpDuration: Duration = Duration.of(20, ChronoUnit.SECONDS),
     val weight: Int? = null,
     val gracefulDisconnect: Boolean = false,
     val missIncomingMessagesConfiguration: MissMessageConfiguration? = null,
@@ -65,5 +66,9 @@ data class RuleConfiguration(
                 require(splitSendConfiguration != null) { "`splitSendConfiguration` is required for $ruleType" }
             }
         }
+    }
+
+    companion object {
+        fun defaultConfiguration() = RuleConfiguration()
     }
 }
