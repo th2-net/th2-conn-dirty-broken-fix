@@ -48,6 +48,8 @@ import com.exactpro.th2.conn.dirty.tcp.core.api.IHandler;
 import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerContext;
 import com.exactpro.th2.conn.dirty.tcp.core.util.CommonUtil;
 import com.exactpro.th2.dataprovider.lw.grpc.DataProviderService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.net.InetSocketAddress;
@@ -86,6 +88,7 @@ import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static com.exactpro.th2.common.event.EventUtils.createMessageBean;
 import static com.exactpro.th2.conn.dirty.fix.FixByteBufUtilKt.findField;
 import static com.exactpro.th2.conn.dirty.fix.FixByteBufUtilKt.findLastField;
 import static com.exactpro.th2.conn.dirty.fix.FixByteBufUtilKt.firstField;
@@ -174,6 +177,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     private static final String SPLIT_SEND_TIMESTAMPS_PROPERTY = "BufferSlicesSendingTimes";
     private static final String STRATEGY_EVENT_TYPE = "StrategyState";
     private static final DateTimeFormatter formatter = DateTimeFormatter.ISO_INSTANT;
+    private static final ObjectMapper mapper = new ObjectMapper();
 
     private final Random random = new Random();
     private final AtomicInteger msgSeqNum = new AtomicInteger(0);
@@ -1055,8 +1059,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         ByteBuf message,
         Map<String, String> metadata
     ) {
-        BlockMessageConfiguration config = strategy.getBlockOutgoingMessagesConfiguration();
-        long timeToBlock = config.getTimeout().toMillis();
+        long timeToBlock = strategy.getConfig().getDuration().toMillis();
         long startTime = System.currentTimeMillis();
         while (System.currentTimeMillis() - startTime <= timeToBlock) {
             try {
@@ -1167,12 +1170,11 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     // <editor-fold desc="receive strategies"
     private Map<String, String> blockReceiveQueue(ByteBuf message, Map<String, String> metadata) {
-        BlockMessageConfiguration config = strategy.getBlockIncomingMessagesConfiguration();
-        long timeToBlock = config.getTimeout().toMillis();
+        long timeToBlock = strategy.getConfig().getDuration().toMillis();
         long startTime = System.currentTimeMillis();
         while (System.currentTimeMillis() - startTime <= timeToBlock) {
             try {
-                Thread.sleep(1000);
+                Thread.sleep(100);
             } catch (Exception e) {
                 LOGGER.error("Error while blocking receive.", e);
             }
@@ -1496,7 +1498,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
 
         if(!sessionActive.get()) {
-            strategy.resetStrategyAndState(new RuleConfiguration(RuleType.DEFAULT, Duration.of(10, ChronoUnit.MINUTES), Duration.of(1, ChronoUnit.SECONDS), null, false, null, null, null, null, null, null, null, null, null));
+            strategy.resetStrategyAndState(new RuleConfiguration(RuleType.DEFAULT, Duration.of(10, ChronoUnit.MINUTES), Duration.of(1, ChronoUnit.SECONDS), null, false, null, null, null, null, null, null, null));
             executorService.schedule(this::applyNextStrategy, Duration.of(10, ChronoUnit.MINUTES).toMinutes(), TimeUnit.MINUTES);
             return;
         }
@@ -1732,19 +1734,25 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void ruleEndEvent(RuleType type, Instant start, List<MessageID> messageIDS) {
-        String message = String.format("%s strategy finished: %s - %s", type.name(), start.toString(), Instant.now().toString());
+        Instant end = Instant.now();
+        String message = String.format("%s strategy finished: %s - %s", type.name(), start.toString(), end.toString());
         LOGGER.info(message);
-        Event event = Event
-            .start()
-            .endTimestamp()
-            .type(STRATEGY_EVENT_TYPE)
-            .name(message)
-            .status(Event.Status.PASSED);
-        messageIDS.forEach(event::messageID);
-        context.send(
-            event,
-            strategyRootEvent
-        );
+        try {
+            Event event = Event
+                .start()
+                .endTimestamp()
+                .type(STRATEGY_EVENT_TYPE)
+                .name(message)
+                .bodyData(createMessageBean(mapper.writeValueAsString(Map.of("StartTime", start.toString(), "EndTime", end.toString()))))
+                .status(Event.Status.PASSED);
+            messageIDS.forEach(event::messageID);
+            context.send(
+                event,
+                strategyRootEvent
+            );
+        } catch (Exception e) {
+            LOGGER.error("Error while publishing strategy event: {}", message, e);
+        }
     }
 
     private void ruleErrorEvent(RuleType type, Throwable error) {

@@ -83,8 +83,7 @@ class TestStrategies {
                 RuleConfiguration(
                     RuleType.DISCONNECT_WITH_RECONNECT,
                     duration = Duration.of(4, ChronoUnit.SECONDS),
-                    cleanUpDuration = Duration.of(1, ChronoUnit.SECONDS),
-                    blockOutgoingMessagesConfiguration = BlockMessageConfiguration(Duration.of(5, ChronoUnit.SECONDS))
+                    cleanUpDuration = Duration.of(1, ChronoUnit.SECONDS)
                 ),
             )
         ), enableAdditionalHandling = false)

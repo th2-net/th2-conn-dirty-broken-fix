@@ -45,11 +45,8 @@ class StatefulStrategy(
     private val lock = ReentrantReadWriteLock()
 
     // configurations
-    var blockIncomingMessagesConfiguration: BlockMessageConfiguration? = null
-        get() = state.config?.blockOutgoingMessagesConfiguration ?: error("Block outgoing messages config isn't present.")
-        private set
-    var blockOutgoingMessagesConfiguration: BlockMessageConfiguration? = null
-        get() = state.config?.blockOutgoingMessagesConfiguration ?: error("Block outgoing messages config isn't present.")
+    var config: RuleConfiguration? = null
+        get() = state.config ?: error("Rule configuration isn't present.")
         private set
     var missIncomingMessagesConfig: MissMessageConfiguration? = null
         get() = state.config?.missIncomingMessagesConfiguration ?: error("Miss incoming messages config isn't present.")

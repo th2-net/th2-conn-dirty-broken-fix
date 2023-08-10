@@ -25,8 +25,6 @@ data class RuleConfiguration(
     val cleanUpDuration: Duration,
     val weight: Int? = null,
     val gracefulDisconnect: Boolean = false,
-    val blockIncomingMessagesStrategy: BlockMessageConfiguration? = null,
-    val blockOutgoingMessagesConfiguration: BlockMessageConfiguration? = null,
     val missIncomingMessagesConfiguration: MissMessageConfiguration? = null,
     val missOutgoingMessagesConfiguration: MissMessageConfiguration? = null,
     val transformMessageConfiguration: TransformMessageConfiguration? = null,
@@ -37,9 +35,7 @@ data class RuleConfiguration(
 ) {
     init {
         when(ruleType) {
-            RuleType.DISCONNECT_WITH_RECONNECT -> {
-                require(blockOutgoingMessagesConfiguration != null) { "`blockOutgoingMessagesConfiguration` is required for $ruleType"}
-            }
+            RuleType.DISCONNECT_WITH_RECONNECT -> {}
             RuleType.IGNORE_INCOMING_MESSAGES -> {
                 require(missIncomingMessagesConfiguration != null) { "`blockIncomingMessagesConfiguration` is required for $ruleType" }
             }
@@ -58,9 +54,7 @@ data class RuleConfiguration(
             RuleType.RESEND_REQUEST -> {
                 require(resendRequestConfiguration != null) { "`resendRequestConfiguration` is required for $ruleType" }
             }
-            RuleType.SLOW_CONSUMER -> {
-                require(blockIncomingMessagesStrategy != null) { "`blockOutgoingMessagesConfiguration` is required for $ruleType" }
-            }
+            RuleType.SLOW_CONSUMER -> {}
             RuleType.SEQUENCE_RESET -> {
                 require(changeSequenceConfiguration != null) { "`changeSequenceConfiguration` is required for $ruleType" }
             }
