@@ -327,7 +327,7 @@ class TestStrategies {
     fun testOutgoingGap() {
         val defaultRuleDuration = Duration.of(2, ChronoUnit.SECONDS)
         val businessRuleDuration = Duration.of(4, ChronoUnit.SECONDS)
-        val businessRuleCleanupDuration = Duration.of(1, ChronoUnit.SECONDS)
+        val businessRuleCleanupDuration = Duration.of(3, ChronoUnit.SECONDS)
         val messages = mutableListOf<Triple<ByteBuf, Map<String, String>, IChannel.SendMode>>()
         val testContext = createTestContext(BrokenConnConfiguration(
             SchedulerType.CONSECUTIVE,
@@ -355,7 +355,7 @@ class TestStrategies {
         handler.onOutgoing(channel, businessMessage(4).asExpandable(), Collections.emptyMap())
         handler.onOutgoing(channel, businessMessage(5).asExpandable(), Collections.emptyMap())
 
-        verify(channel, timeout(businessRuleDuration.millis() + businessRuleCleanupDuration.millis() + 300)).open()
+        verify(channel, timeout(businessRuleDuration.millis() + 300)).open()
         verify(channel).send(any(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
         messages.clear()
