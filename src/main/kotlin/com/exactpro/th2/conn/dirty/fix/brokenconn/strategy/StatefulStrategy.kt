@@ -45,17 +45,14 @@ class StatefulStrategy(
     private val lock = ReentrantReadWriteLock()
 
     // configurations
-    var blockIncomingMessagesConfiguration: BlockMessageConfiguration? = null
-        get() = state.config?.blockOutgoingMessagesConfiguration ?: error("Block outgoing messages config isn't present.")
-        private set
-    var blockOutgoingMessagesConfiguration: BlockMessageConfiguration? = null
-        get() = state.config?.blockOutgoingMessagesConfiguration ?: error("Block outgoing messages config isn't present.")
+    var config: RuleConfiguration? = null
+        get() = state.config ?: error("Rule configuration isn't present.")
         private set
     var missIncomingMessagesConfig: MissMessageConfiguration? = null
         get() = state.config?.missIncomingMessagesConfiguration ?: error("Miss incoming messages config isn't present.")
         private set
     var missOutgoingMessagesConfiguration: MissMessageConfiguration? = null
-        get() = state.config?.missOutgoingMessagesConfiguration ?: error("Miss incoming messages config isn't present.")
+        get() = state.config?.missOutgoingMessagesConfiguration ?: error("Miss outgoing messages config isn't present.")
         private set
     var transformMessageConfiguration: TransformMessageConfiguration? = null
         get() = state.config?.transformMessageConfiguration ?: error("Transform message config isn't present.")
@@ -140,10 +137,13 @@ class StatefulStrategy(
     fun resetStrategyAndState(config: RuleConfiguration) {
         lock.write {
             state = StrategyState(config)
-            sendStrategy = defaultStrategy.sendStrategy
-            receiveStrategy = defaultStrategy.receiveStrategy
-            incomingMessagesStrategy = defaultStrategy.incomingMessagesStrategy
-            outgoingMessagesStrategy = defaultStrategy.outgoingMessagesStrategy
+            sendStrategy.sendHandler = defaultStrategy.sendStrategy.sendHandler
+            sendStrategy.sendPreprocessor = defaultStrategy.sendStrategy.sendPreprocessor
+            receiveStrategy.receivePreprocessor = defaultStrategy.receiveStrategy.receivePreprocessor
+            incomingMessagesStrategy.logonStrategy = defaultStrategy.incomingMessagesStrategy.logonStrategy
+            incomingMessagesStrategy.incomingMessagesPreprocessor = defaultStrategy.incomingMessagesStrategy.incomingMessagesPreprocessor
+            incomingMessagesStrategy.testRequestProcessor = defaultStrategy.incomingMessagesStrategy.testRequestProcessor
+            outgoingMessagesStrategy.outgoingMessageProcessor = defaultStrategy.outgoingMessagesStrategy.outgoingMessageProcessor
             recoveryHandler = defaultStrategy.recoveryHandler
             cleanupHandler = defaultStrategy.cleanupHandler
             onCloseHandler = defaultStrategy.closeHandler
@@ -153,10 +153,13 @@ class StatefulStrategy(
     fun cleanupStrategy() {
         lock.write {
             state = StrategyState()
-            sendStrategy = defaultStrategy.sendStrategy
-            receiveStrategy = defaultStrategy.receiveStrategy
-            incomingMessagesStrategy = defaultStrategy.incomingMessagesStrategy
-            outgoingMessagesStrategy = defaultStrategy.outgoingMessagesStrategy
+            sendStrategy.sendHandler = defaultStrategy.sendStrategy.sendHandler
+            sendStrategy.sendPreprocessor = defaultStrategy.sendStrategy.sendPreprocessor
+            receiveStrategy.receivePreprocessor = defaultStrategy.receiveStrategy.receivePreprocessor
+            incomingMessagesStrategy.logonStrategy = defaultStrategy.incomingMessagesStrategy.logonStrategy
+            incomingMessagesStrategy.incomingMessagesPreprocessor = defaultStrategy.incomingMessagesStrategy.incomingMessagesPreprocessor
+            incomingMessagesStrategy.testRequestProcessor = defaultStrategy.incomingMessagesStrategy.testRequestProcessor
+            outgoingMessagesStrategy.outgoingMessageProcessor = defaultStrategy.outgoingMessagesStrategy.outgoingMessageProcessor
             recoveryHandler = defaultStrategy.recoveryHandler
             cleanupHandler = defaultStrategy.cleanupHandler
             onCloseHandler = defaultStrategy.closeHandler

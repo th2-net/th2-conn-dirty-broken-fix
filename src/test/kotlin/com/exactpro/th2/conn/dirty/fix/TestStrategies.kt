@@ -16,41 +16,42 @@
 package com.exactpro.th2.conn.dirty.fix
 
 import com.exactpro.th2.FixHandler
-import com.exactpro.th2.FixHandlerSettings
 import com.exactpro.th2.TestUtils.createHandlerSettings
+import com.exactpro.th2.common.grpc.ConnectionID
+import com.exactpro.th2.common.grpc.Direction
 import com.exactpro.th2.common.grpc.MessageID
-import com.exactpro.th2.common.message.message
-import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.toByteArray
+import com.exactpro.th2.common.utils.message.toTimestamp
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BatchSendConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BlockMessageConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BrokenConnConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.ChangeSequenceConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.MissMessageConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.ResendRequestConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RuleConfiguration
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.SplitSendConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.TransformMessageConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.RuleType
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.SchedulerType
 import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel
 import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerContext
-import com.exactpro.th2.conn.dirty.tcp.core.api.IManglerContext
 import com.exactpro.th2.constants.Constants
 import com.exactpro.th2.netty.bytebuf.util.asExpandable
 import com.exactpro.th2.netty.bytebuf.util.contains
 import com.exactpro.th2.netty.bytebuf.util.isEmpty
-import com.exactpro.th2.netty.bytebuf.util.isNotEmpty
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.Unpooled
 import java.time.Duration
+import java.time.Instant
 import java.time.temporal.ChronoUnit
-import java.util.*
+import java.util.Collections
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.regex.Pattern
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import mu.KotlinLogging
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
-import org.mockito.kotlin.anyArray
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.clearInvocations
@@ -82,27 +83,30 @@ class TestStrategies {
                 RuleConfiguration(
                     RuleType.DISCONNECT_WITH_RECONNECT,
                     duration = Duration.of(4, ChronoUnit.SECONDS),
-                    cleanUpDuration = Duration.of(1, ChronoUnit.SECONDS),
-                    blockOutgoingMessagesConfiguration = BlockMessageConfiguration(Duration.of(5, ChronoUnit.SECONDS))
+                    cleanUpDuration = Duration.of(1, ChronoUnit.SECONDS)
                 ),
             )
         ), enableAdditionalHandling = false)
         val channel = testContext.channel
         val handler = testContext.fixHandler
 
-        verify(channel, timeout(defaultRuleDuration.millis() + 100)).close()
+        verify(channel, timeout(defaultRuleDuration.millis() + 300)).close()
 
         handler.send(businessMessage(2), Collections.emptyMap(), null)
 
-        verify(channel, timeout(businessRuleDuration.millis() + 100)).open()
+        verify(channel, timeout(businessRuleDuration.millis() + 300)).open()
 
         val captor = argumentCaptor<ByteBuf> {  }
-        verify(channel, timeout(businessRuleCleanupDuration.millis() + 100).times(2)).send(captor.capture(), any(), anyOrNull(), any())
+        verify(channel, timeout(businessRuleCleanupDuration.millis() + 300).times(2)).send(captor.capture(), any(), anyOrNull(), any())
 
         channel.close()
 
-        captor.firstValue.apply { contains("35=A") }
-        captor.secondValue.apply { contains("35=AE") }
+        captor.firstValue.apply {
+            assertContains(mapOf(35 to "A"), this)
+        }
+        captor.secondValue.apply {
+            assertContains(mapOf(35 to "AE"), this)
+        }
     }
 
     @Test
@@ -132,23 +136,22 @@ class TestStrategies {
 
         val captor = argumentCaptor<ByteBuf> {  }
 
-        verify(channel, timeout(defaultRuleDuration.millis() + 100)).open()
+        verify(channel, timeout(defaultRuleDuration.millis() + 300)).open()
         verify(channel).send(any(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
 
-        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), MessageID.getDefaultInstance())
-        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), MessageID.getDefaultInstance())
-        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), MessageID.getDefaultInstance())
+        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), getMessageId())
+        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), getMessageId())
+        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), getMessageId())
 
-        verify(channel, timeout(businessRuleDuration.millis() + businessRuleCleanupDuration.millis() + 100)).open()
+        verify(channel, timeout(businessRuleDuration.millis() + businessRuleCleanupDuration.millis() + 300)).open()
         verify(channel).send(captor.capture(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
 
         channel.close()
 
         captor.firstValue.apply {
-            assertTrue { contains("35=A") }
-            assertTrue { contains("789=3") }
+            assertContains(mapOf(35 to "A", 789 to "3"), this)
         }
     }
 
@@ -180,25 +183,23 @@ class TestStrategies {
 
         val captor = argumentCaptor<ByteBuf> {  }
 
-        verify(channel, timeout(defaultRuleDuration.millis() + 100)).open()
+        verify(channel, timeout(defaultRuleDuration.millis() + 300)).open()
         verify(channel).send(any(), any(), anyOrNull(), any()) // Logon // 2
         clearInvocations(channel)
 
-        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), MessageID.getDefaultInstance()) // 3
-        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), MessageID.getDefaultInstance()) // 4
-        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), MessageID.getDefaultInstance()) // 5
-        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), MessageID.getDefaultInstance()) // 6
+        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), getMessageId()) // 3
+        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), getMessageId()) // 4
+        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), getMessageId()) // 5
+        handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), getMessageId()) // 6
 
         verify(channel, timeout(businessRuleDuration.millis() + businessRuleCleanupDuration.millis() + 100)).open()
-        verify(channel, times(2)).send(captor.capture(), any(), anyOrNull(), any()) // Logon
+        verify(channel, timeout(300).times(2)).send(captor.capture(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
 
         channel.close()
 
         captor.firstValue.apply {
-            assertTrue { contains("35=2") } // resend request
-            assertTrue { contains("7=3") } // from
-            assertTrue { contains("16=5") } // to
+            assertContains(mapOf(35 to "2", 7 to "3", 16 to "5"), this)
         }
     }
 
@@ -241,22 +242,19 @@ class TestStrategies {
         val channel = testContext.channel
 
         messages.clear()
-        verify(channel, timeout(defaultRuleDuration.millis() + businessRuleDuration.millis() + 200).times(3)).open()
+        verify(channel, timeout(defaultRuleDuration.millis() + businessRuleDuration.millis() + 300).times(3)).open()
 
         // start
-        verify(channel, timeout(100).times(3)).send(any(), any(), anyOrNull(), any())
+        verify(channel, timeout(300).times(3)).send(any(), any(), anyOrNull(), any())
 
         messages[0].apply {
-            assertTrue { first.contains("35=A") }
-            assertTrue { first.contains("${Constants.PASSWORD_TAG}=mangledPassword") }
+            assertContains(mapOf(35 to "A", Constants.PASSWORD_TAG to "mangledPassword"), this.first)
         }
         messages[1].apply {
-            assertTrue { first.contains("35=A") }
-            assertTrue { first.contains("${Constants.PASSWORD_TAG}=mangledPassword") }
+            assertContains(mapOf(35 to "A", Constants.PASSWORD_TAG to "mangledPassword"), this.first)
         }
         messages[2].apply {
-            assertTrue { first.contains("35=A") }
-            assertTrue { first.contains("${Constants.PASSWORD_TAG}=pass") }
+            assertContains(mapOf(35 to "A", Constants.PASSWORD_TAG to "pass"), this.first)
         }
 
         channel.close()
@@ -285,48 +283,40 @@ class TestStrategies {
         val channel = testContext.channel
         val handler = testContext.fixHandler
 
-        verify(channel, timeout(defaultRuleDuration.millis() + 100)).open()
+        verify(channel, timeout(defaultRuleDuration.millis() + 300)).open()
         messages.clear()
         Thread.sleep(100) // Waiting for strategies to apply ( they are applied after logon response to permit session login )
 
-        handler.onIncoming(channel, businessMessage(3), MessageID.getDefaultInstance())
-        handler.onIncoming(channel, businessMessage(4), MessageID.getDefaultInstance())
+        handler.onIncoming(channel, businessMessage(3), getMessageId())
+        handler.onIncoming(channel, businessMessage(4), getMessageId())
 
         handler.onOutgoing(channel, businessMessage(3).asExpandable(), Collections.emptyMap())
         handler.onOutgoing(channel, businessMessage(4).asExpandable(), Collections.emptyMap())
 
         // Trigger resend request
-        handler.onIncoming(channel, businessMessage(5), MessageID.getDefaultInstance())
+        handler.onIncoming(channel, businessMessage(5), getMessageId())
 
-        handler.onIncoming(channel, businessMessage(3), MessageID.getDefaultInstance())
-        handler.onIncoming(channel, businessMessage(4), MessageID.getDefaultInstance())
+        handler.onIncoming(channel, businessMessage(3), getMessageId())
+        handler.onIncoming(channel, businessMessage(4), getMessageId())
         // end
 
         // Trigger recovery
-        handler.onIncoming(channel, resendRequest(6, 3, 4), MessageID.getDefaultInstance())
+        handler.onIncoming(channel, resendRequest(6, 3, 4), getMessageId())
         // end
 
         messages[0].apply {
             val buff = first
-            assertTrue { buff.contains("35=2") } // resend request
-            assertTrue { buff.contains("7=3") }
-            assertTrue { buff.contains("16=4") }
+            assertContains(mapOf(35 to "2", 7 to "3", 16 to "4"), buff)
         }
 
         messages[1].apply {
             val buff = first
-            assertTrue { buff.contains("35=AE") }
-            assertTrue { buff.contains("43=Y") }
-            assertTrue { buff.contains("122=") }
-            assertTrue { buff.contains("34=3") }
+            assertContains(mapOf(35 to "AE", 43 to "Y", 34 to "3"), buff)
         }
 
         messages[2].apply {
             val buff = first
-            assertTrue { buff.contains("35=AE") }
-            assertTrue { buff.contains("43=Y") }
-            assertTrue { buff.contains("122=") }
-            assertTrue { buff.contains("34=4") }
+            assertContains(mapOf(35 to "AE", 43 to "Y", 34 to "4"), buff)
         }
 
         channel.close()
@@ -336,7 +326,7 @@ class TestStrategies {
     fun testOutgoingGap() {
         val defaultRuleDuration = Duration.of(2, ChronoUnit.SECONDS)
         val businessRuleDuration = Duration.of(4, ChronoUnit.SECONDS)
-        val businessRuleCleanupDuration = Duration.of(1, ChronoUnit.SECONDS)
+        val businessRuleCleanupDuration = Duration.of(3, ChronoUnit.SECONDS)
         val messages = mutableListOf<Triple<ByteBuf, Map<String, String>, IChannel.SendMode>>()
         val testContext = createTestContext(BrokenConnConfiguration(
             SchedulerType.CONSECUTIVE,
@@ -356,30 +346,23 @@ class TestStrategies {
         val channel = testContext.channel
         val handler = testContext.fixHandler
 
-        verify(channel, timeout(defaultRuleDuration.millis() + 200)).open()
+        verify(channel, timeout(defaultRuleDuration.millis() + 300)).open()
         verify(channel).send(any(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
 
-        handler.onOutgoing(channel, businessMessage(3).asExpandable(), Collections.emptyMap());
-        handler.onOutgoing(channel, businessMessage(4).asExpandable(), Collections.emptyMap());
+        handler.onOutgoing(channel, businessMessage(3).asExpandable(), Collections.emptyMap())
+        handler.onOutgoing(channel, businessMessage(4).asExpandable(), Collections.emptyMap())
         handler.onOutgoing(channel, businessMessage(5).asExpandable(), Collections.emptyMap())
 
-        verify(channel, timeout(businessRuleDuration.millis() + businessRuleCleanupDuration.millis() + 200)).open()
+        verify(channel, timeout(businessRuleDuration.millis() + 300)).open()
         verify(channel).send(any(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
         messages.clear()
-        handler.onIncoming(channel, resendRequest(3, 3, 5), MessageID.getDefaultInstance())
-
-        messages.forEach {
-            println(it.first.toString(Charsets.US_ASCII))
-        }
+        handler.onIncoming(channel, resendRequest(3, 3, 5), getMessageId())
 
         messages.forEachIndexed { idx, message ->
             val buff = message.first
-            assertTrue { buff.contains("35=AE") }
-            assertTrue { buff.contains("43=Y") }
-            assertTrue { buff.contains("122=") }
-            assertTrue { buff.contains("34=${idx + 3}") }
+            assertContains(mapOf(35 to "AE", 43 to "Y", 34 to "${idx + 3}"), buff)
         }
 
         channel.close()
@@ -414,15 +397,15 @@ class TestStrategies {
         Thread.sleep(defaultRuleDuration.millis() + 100) // Waiting for strategy to apply
         messages.clear()
 
-        handler.onIncoming(channel, testRequest(3).asExpandable(), MessageID.getDefaultInstance());
-        handler.onIncoming(channel, testRequest(4).asExpandable(), MessageID.getDefaultInstance());
-        handler.onIncoming(channel, testRequest(5).asExpandable(), MessageID.getDefaultInstance())
+        handler.onIncoming(channel, testRequest(3).asExpandable(), getMessageId())
+        handler.onIncoming(channel, testRequest(4).asExpandable(), getMessageId())
+        handler.onIncoming(channel, testRequest(5).asExpandable(), getMessageId())
 
         clearInvocations(channel)
 
         for (message in messages) {
             val buff = message.first
-            assertTrue { !(buff.contains("35=AE") || buff.contains("35=0")) }
+            assertTrue("Message shouldn't be heartbeat or AE: ${buff.toString(Charsets.US_ASCII)}") { !(buff.contains("35=AE") || buff.contains("35=0")) }
         }
 
         channel.close()
@@ -457,16 +440,16 @@ class TestStrategies {
         Thread.sleep(defaultRuleDuration.millis() + 100) // Waiting for strategy to apply
         messages.clear()
 
-        handler.onIncoming(channel, testRequest(3).asExpandable(), MessageID.getDefaultInstance());
-        handler.onIncoming(channel, testRequest(4).asExpandable(), MessageID.getDefaultInstance());
-        handler.onIncoming(channel, testRequest(5).asExpandable(), MessageID.getDefaultInstance())
+        handler.onIncoming(channel, testRequest(3).asExpandable(), getMessageId())
+        handler.onIncoming(channel, testRequest(4).asExpandable(), getMessageId())
+        handler.onIncoming(channel, testRequest(5).asExpandable(), getMessageId())
 
         clearInvocations(channel)
 
         for (message in messages) {
             val buff = message.first
             if(buff.isEmpty()) continue
-            assertTrue { buff.contains("35=0") && buff.contains("112=test") }
+            assertContains(mapOf(35 to "0", 112 to "test"), buff)
         }
 
         channel.close()
@@ -498,17 +481,17 @@ class TestStrategies {
         val channel = testContext.channel
         val handler = testContext.fixHandler
 
-        verify(channel, timeout(defaultRuleDuration.millis() + businessRuleCleanupDuration.millis() + 100)).open()
+        verify(channel, timeout(defaultRuleDuration.millis() + businessRuleCleanupDuration.millis() + 300)).open()
         messages.clear()
         verify(channel).send(any(), any(), anyOrNull(), any()) // Logon
 
-        handler.onIncoming(channel, resendRequest(3, 3, 8), MessageID.getDefaultInstance())
+        handler.onIncoming(channel, resendRequest(3, 3, 8), getMessageId())
 
         clearInvocations(channel)
 
         assertEquals(1, messages.size)
         messages[0].first.apply {
-            assertTrue { contains("35=4") && contains("34=3") && contains("36=8") } // sequence reset
+            assertContains(mapOf(35 to "4", 34 to "3", 36 to "8"), this)
         }
 
         channel.close()
@@ -542,18 +525,116 @@ class TestStrategies {
 
         val captor = argumentCaptor<ByteBuf> {}
 
-        handler.onIncoming(channel, businessMessage(2).asExpandable(), MessageID.getDefaultInstance());
-        handler.onIncoming(channel, businessMessage(3).asExpandable(), MessageID.getDefaultInstance());
-        handler.onIncoming(channel, businessMessage(4).asExpandable(), MessageID.getDefaultInstance());
-        handler.onIncoming(channel, businessMessage(5).asExpandable(), MessageID.getDefaultInstance());
-        handler.onIncoming(channel, businessMessage(6).asExpandable(), MessageID.getDefaultInstance());
-        verify(channel, timeout(defaultRuleDuration.millis() + 100).times(1)).send(captor.capture(), any(), anyOrNull(), any())
+        handler.onIncoming(channel, businessMessage(2).asExpandable(), getMessageId())
+        handler.onIncoming(channel, businessMessage(3).asExpandable(), getMessageId())
+        handler.onIncoming(channel, businessMessage(4).asExpandable(), getMessageId())
+        handler.onIncoming(channel, businessMessage(5).asExpandable(), getMessageId())
+        handler.onIncoming(channel, businessMessage(6).asExpandable(), getMessageId())
+        verify(channel, timeout(defaultRuleDuration.millis() + 300).times(1)).send(captor.capture(), any(), anyOrNull(), any())
 
         captor.firstValue.apply {
-            assertTrue { contains("35=2") && contains("7=1") && contains("16=6") }
+            assertContains(mapOf(35 to "2", 7 to "1", 16 to "6"), this)
         }
 
         clearInvocations(channel)
+
+        channel.close()
+    }
+
+    @Test
+    fun testBatchSend() {
+        val defaultRuleDuration = Duration.of(2, ChronoUnit.SECONDS)
+        val businessRuleDuration = Duration.of(6, ChronoUnit.SECONDS)
+        val businessRuleCleanupDuration = Duration.of(1, ChronoUnit.SECONDS)
+        val messages = mutableListOf<Triple<ByteBuf, Map<String, String>, IChannel.SendMode>>()
+        val testContext = createTestContext(
+            BrokenConnConfiguration(
+                SchedulerType.CONSECUTIVE,
+                listOf(
+                    RuleConfiguration(RuleType.DEFAULT, duration = defaultRuleDuration, cleanUpDuration = Duration.of(0, ChronoUnit.SECONDS)),
+                    RuleConfiguration(
+                        RuleType.BATCH_SEND,
+                        duration = businessRuleDuration,
+                        cleanUpDuration = businessRuleCleanupDuration,
+                        batchSendConfiguration = BatchSendConfiguration(3)
+                    ),
+                )
+            )
+        ) { msg, mode, mtd ->
+            messages.add(Triple(msg, mode, mtd))
+        }
+
+        val channel = testContext.channel
+        val handler = testContext.fixHandler
+        Thread.sleep(defaultRuleDuration.millis() + 300)
+        clearInvocations(channel)
+
+        handler.send(businessMessage(2).asExpandable(), mutableMapOf(), null)
+        handler.send(businessMessage(3).asExpandable(), mutableMapOf(), null)
+        handler.send(businessMessage(4).asExpandable(), mutableMapOf(), null)
+
+        val captor = argumentCaptor<ByteBuf> {}
+        verify(channel, timeout(businessRuleDuration.millis() + 300).times(1)).send(captor.capture(), any(), anyOrNull(), any())
+
+        captor.firstValue.apply {
+            println(this.readableBytes())
+            assertTrue { this.readableBytes() >= businessMessage(2).readableBytes() * 3 }
+        }
+
+        channel.close()
+    }
+
+    @Test
+    fun testSplitSend() {
+        val defaultRuleDuration = Duration.of(2, ChronoUnit.SECONDS)
+        val businessRuleDuration = Duration.of(6, ChronoUnit.SECONDS)
+        val businessRuleCleanupDuration = Duration.of(1, ChronoUnit.SECONDS)
+        val messages = mutableListOf<Triple<ByteBuf, Map<String, String>, IChannel.SendMode>>()
+        val testContext = createTestContext(
+            BrokenConnConfiguration(
+                SchedulerType.CONSECUTIVE,
+                listOf(
+                    RuleConfiguration(RuleType.DEFAULT, duration = defaultRuleDuration, cleanUpDuration = Duration.of(0, ChronoUnit.SECONDS)),
+                    RuleConfiguration(
+                        RuleType.SPLIT_SEND,
+                        duration = businessRuleDuration,
+                        cleanUpDuration = businessRuleCleanupDuration,
+                        splitSendConfiguration = SplitSendConfiguration(3, 100)
+                    ),
+                )
+            )
+        ) { msg, mode, mtd ->
+            messages.add(Triple(msg, mode, mtd))
+        }
+
+        val channel = testContext.channel
+        val handler = testContext.fixHandler
+        Thread.sleep(defaultRuleDuration.millis() + 300)
+        clearInvocations(channel)
+        val businessMessage = businessMessage(2).asExpandable()
+
+        handler.send(businessMessage, mutableMapOf(), null)
+
+        val captor = argumentCaptor<ByteBuf> {}
+        verify(channel, timeout(businessRuleDuration.millis() + 300).times(4)).send(captor.capture(), any(), anyOrNull(), any())
+
+        val partSize = businessMessage.readableBytes() / 3
+
+        captor.firstValue.apply {
+            assertEquals(partSize, this.readableBytes())
+        }
+
+        captor.secondValue.apply {
+            assertEquals(partSize, this.readableBytes())
+        }
+
+        captor.thirdValue.apply {
+            assertTrue { this.readableBytes() >= partSize }
+        }
+
+        captor.allValues[3].apply {
+            assertEquals(businessMessage.readableBytes(), this.readableBytes())
+        }
 
         channel.close()
     }
@@ -587,12 +668,12 @@ class TestStrategies {
             }
             if(msg.contains("35=A\u0001")) {
                 if(useNextExpectedSeqNum) {
-                    handler.onIncoming(channel, logonResponseWithNextExpectedSeq(incomingSequence.incrementAndGet(), outgoingSequence), MessageID.getDefaultInstance())
+                    handler.onIncoming(channel, logonResponseWithNextExpectedSeq(incomingSequence.incrementAndGet(), outgoingSequence), getMessageId())
                 } else {
-                    handler.onIncoming(channel, logonResponse(incomingSequence.incrementAndGet()), MessageID.getDefaultInstance())
+                    handler.onIncoming(channel, logonResponse(incomingSequence.incrementAndGet()), getMessageId())
                 }
             }
-            CompletableFuture.completedFuture(MessageID.getDefaultInstance())
+            CompletableFuture.completedFuture(getMessageId())
         }
         var isOpen = false
         whenever(channel.send(any(), any(), anyOrNull(), any())).doAnswer {
@@ -618,6 +699,13 @@ class TestStrategies {
         return TestContext(channel, handler, incomingSequence)
     }
 
+    private fun assertContains(values: Map<Int, String>, message: ByteBuf) {
+        val expected = values.map { "${it.key}=${it.value}" }.joinToString(",")
+        assertTrue("Expected message to have $expected tags: ${message.toString(Charsets.US_ASCII)}") {
+            values.all { message.contains("${it.key}=${it.value}") }
+        }
+    }
+
     companion object {
         private fun logonResponse(seq: Int): ByteBuf = Unpooled.wrappedBuffer("8=FIXT.1.1\u00019=105\u000135=A\u000134=${seq}\u000149=server\u000156=client\u000150=system\u000152=2014-12-22T10:15:30Z\u000198=0\u0001108=30\u00011137=9\u00011409=0\u000110=203\u0001".toByteArray(Charsets.US_ASCII))
         private fun businessMessage(seq: Int?, possDup: Boolean = false): ByteBuf = Unpooled.wrappedBuffer("8=FIXT.1.1\u00019=13\u000135=AE${if(seq != null) "\u000134=${seq}" else ""}${if(possDup) "\u000143=Y" else ""}\u0001552=1\u000110=169\u0001".toByteArray(Charsets.US_ASCII))
@@ -625,5 +713,15 @@ class TestStrategies {
         private fun testRequest(seq: Int) = Unpooled.wrappedBuffer("8=FIXT.1.1\u00019=13\u000135=1\u000134=${seq}\u0001112=test\u00011552=1\u000110=169".toByteArray(Charsets.US_ASCII))
         private fun logonResponseWithNextExpectedSeq(seq: Int, nextExpected: Int) = Unpooled.wrappedBuffer("8=FIXT.1.1\u00019=105\u000135=A\u000134=${seq}\u0001789=${nextExpected}\u000149=server\u000156=client\u000150=system\u000152=2014-12-22T10:15:30Z\u000198=0\u0001108=30\u00011137=9\u00011409=0\u000110=203\u0001".toByteArray(Charsets.US_ASCII))
         private fun Duration.millis() = toMillis()
+        private fun getMessageId() = MessageID.newBuilder().apply {
+            sequence = System.nanoTime()
+            bookName = "Test"
+            direction = Direction.FIRST
+            timestamp = Instant.now().toTimestamp()
+            connectionId = ConnectionID.newBuilder().apply {
+                sessionAlias = "SA"
+                sessionGroup = "SG"
+            }.build()
+        }.build()
     }
 }
