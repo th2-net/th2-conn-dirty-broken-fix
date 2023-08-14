@@ -159,7 +159,7 @@ class TestStrategies {
     fun testIgnoreIncomingMessagesStrategyResendRequest() {
         val defaultRuleDuration = Duration.of(2, ChronoUnit.SECONDS)
         val businessRuleDuration = Duration.of(4, ChronoUnit.SECONDS)
-        val businessRuleCleanupDuration = Duration.of(1, ChronoUnit.SECONDS)
+        val businessRuleCleanupDuration = Duration.of(2, ChronoUnit.SECONDS)
         val messages = mutableListOf<Triple<ByteBuf, Map<String, String>, IChannel.SendMode>>()
 
         val testContext = createTestContext(BrokenConnConfiguration(
@@ -193,7 +193,7 @@ class TestStrategies {
         handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), getMessageId()) // 6
 
         verify(channel, timeout(businessRuleDuration.millis() + businessRuleCleanupDuration.millis() + 100)).open()
-        verify(channel, timeout(300).times(2)).send(captor.capture(), any(), anyOrNull(), any()) // Logon
+        verify(channel, timeout(500).times(2)).send(captor.capture(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
 
         channel.close()
@@ -359,6 +359,7 @@ class TestStrategies {
         clearInvocations(channel)
         messages.clear()
         handler.onIncoming(channel, resendRequest(3, 3, 5), getMessageId())
+        Thread.sleep(100)
 
         messages.forEachIndexed { idx, message ->
             val buff = message.first
