@@ -41,9 +41,9 @@ class PasswordManager(
     private val newPasswordSecretName = "${username}_new_password"
     private val previousPasswordSecretName = "${username}_previous_password_json"
 
-    var password: String? = initialPassword?.let { Base64.getDecoder().decode(it).decodeToString() }
+    var password: String? = initialPassword
         private set
-    var newPassword: String? = initialNewPassword?.let { Base64.getDecoder().decode(it).decodeToString() }
+    var newPassword: String? = initialNewPassword
         private set
     var previouslyUsedPasswords: MutableList<String> = mutableListOf()
         private set
@@ -78,21 +78,15 @@ class PasswordManager(
                     while (entry != null) {
                         val entryName = entry.fileName
                         if (entryName == newPasswordSecretName) {
-                            newPassword = reader.readLine()?.let {
-                                Base64.getDecoder().decode(it).decodeToString()
-                            }
+                            newPassword = reader.readLine()
                         }
 
                         if (entryName == passwordSecretName) {
-                            password = reader.readLine()?.let {
-                                Base64.getDecoder().decode(it).decodeToString()
-                            }
+                            password = reader.readLine()
                         }
 
                         if (entryName == previousPasswordSecretName) {
-                            val json = reader.readLine().let {
-                                Base64.getDecoder().decode(it).decodeToString()
-                            }
+                            val json = reader.readLine()
                             (OBJECT_MAPPER.readValue(json, List::class.java) as List<String>).apply {
                                 previouslyUsedPasswords.clear()
                                 previouslyUsedPasswords.addAll(this)

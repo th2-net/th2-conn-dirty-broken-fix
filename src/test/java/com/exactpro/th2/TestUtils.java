@@ -46,7 +46,7 @@ public class TestUtils {
         fixHandlerSettings.setTargetCompID("server");
         fixHandlerSettings.setEncryptMethod("0");
         fixHandlerSettings.setUsername("username");
-        fixHandlerSettings.setPassword(Base64.getEncoder().encodeToString("pass".getBytes(StandardCharsets.UTF_8)));
+        fixHandlerSettings.setPassword("pass");
         fixHandlerSettings.setTestRequestDelay(10);
         fixHandlerSettings.setReconnectDelay(5);
         fixHandlerSettings.setDisconnectRequestDelay(5);
