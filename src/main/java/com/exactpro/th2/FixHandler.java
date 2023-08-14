@@ -1657,7 +1657,6 @@ public class FixHandler implements AutoCloseable, IHandler {
         if(graceful) {
             sendLogout();
             waitLogoutResponse();
-            channel.close().get();
         } else {
             channel.close().get();
         }
