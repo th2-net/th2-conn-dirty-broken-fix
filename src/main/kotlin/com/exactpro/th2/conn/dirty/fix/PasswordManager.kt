@@ -77,12 +77,15 @@ class PasswordManager(
                     var entry = zipInputStream.nextEntry
                     while (entry != null) {
                         val entryName = entry.fileName
+                        K_LOGGER.info { "Secret entry name: $entryName" }
                         if (entryName == newPasswordSecretName) {
                             newPassword = reader.readLine()?.ifBlank { null }
+                            K_LOGGER.info { "Readed value for newPass: ${newPassword}" }
                         }
 
                         if (entryName == passwordSecretName) {
                             password = reader.readLine()?.ifBlank { null }
+                            K_LOGGER.info { "Readed value for pass: ${newPassword}" }
                         }
 
                         if (entryName == previousPasswordSecretName) {
