@@ -90,11 +90,11 @@ class PasswordManager(
                                 .onSuccess { secrets ->
                                     K_LOGGER.info { "Decoded secrets: ${secrets}" }
                                     secrets[newPasswordSecretName]?.let {
-                                        if (it.isNotBlank()) newPassword = it
+                                        if (it.isNotBlank()) newPassword = Base64.getDecoder().decode(it).decodeToString()
                                     }
 
                                     secrets[passwordSecretName]?.let {
-                                        if (it.isNotBlank()) password = it
+                                        if (it.isNotBlank()) password = Base64.getDecoder().decode(it).decodeToString()
                                     }
 
                                     secrets[previousPasswordSecretName]?.let {
@@ -103,7 +103,9 @@ class PasswordManager(
                                             return@let
                                         }
 
-                                        runCatching { OBJECT_MAPPER.readValue(it, List::class.java) as List<String> }
+                                        val json = Base64.getDecoder().decode(it).decodeToString()
+
+                                        runCatching { OBJECT_MAPPER.readValue(json, List::class.java) as List<String> }
                                             .onFailure { K_LOGGER.error(it) { "Error while getting $previousPasswordSecretName." } }
                                             .onSuccess {
                                                 previouslyUsedPasswords.clear()
