@@ -17,6 +17,8 @@ package com.exactpro.th2;
 
 import com.exactpro.th2.conn.dirty.fix.FixProtocolManglerSettings;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BrokenConnConfiguration;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import org.jetbrains.annotations.NotNull;
 
 public class TestUtils {
@@ -44,7 +46,7 @@ public class TestUtils {
         fixHandlerSettings.setTargetCompID("server");
         fixHandlerSettings.setEncryptMethod("0");
         fixHandlerSettings.setUsername("username");
-        fixHandlerSettings.setPassword("pass");
+        fixHandlerSettings.setPassword(Base64.getEncoder().encodeToString("pass".getBytes(StandardCharsets.UTF_8)));
         fixHandlerSettings.setTestRequestDelay(10);
         fixHandlerSettings.setReconnectDelay(5);
         fixHandlerSettings.setDisconnectRequestDelay(5);
