@@ -41,9 +41,9 @@ class PasswordManager(
     private val newPasswordSecretName = "${username}_new_password"
     private val previousPasswordSecretName = "${username}_previous_password_json"
 
-    var password: String? = initialPassword
+    var password: String? = initialPassword?.let { Base64.getDecoder().decode(it).decodeToString() }
         private set
-    var newPassword: String? = initialNewPassword
+    var newPassword: String? = initialNewPassword?.let { Base64.getDecoder().decode(it).decodeToString() }
         private set
     var previouslyUsedPasswords: MutableList<String> = mutableListOf()
         private set
@@ -78,15 +78,21 @@ class PasswordManager(
                     while (entry != null) {
                         val entryName = entry.fileName
                         if (entryName == newPasswordSecretName) {
-                            newPassword = reader.readLine()
+                            newPassword = reader.readLine()?.let {
+                                Base64.getDecoder().decode(it).decodeToString()
+                            }
                         }
 
-                        if (content == passwordSecretName) {
-                            password = reader.readLine()
+                        if (entryName == passwordSecretName) {
+                            password = reader.readLine()?.let {
+                                Base64.getDecoder().decode(it).decodeToString()
+                            }
                         }
 
-                        if (content == previousPasswordSecretName) {
-                            val json = reader.readLine()
+                        if (entryName == previousPasswordSecretName) {
+                            val json = reader.readLine().let {
+                                Base64.getDecoder().decode(it).decodeToString()
+                            }
                             (OBJECT_MAPPER.readValue(json, List::class.java) as List<String>).apply {
                                 previouslyUsedPasswords.clear()
                                 previouslyUsedPasswords.addAll(this)
