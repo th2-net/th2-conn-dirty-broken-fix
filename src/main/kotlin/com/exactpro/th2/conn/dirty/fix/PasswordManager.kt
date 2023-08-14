@@ -19,7 +19,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import java.io.BufferedReader
 import java.io.ByteArrayInputStream
 import java.io.InputStreamReader
-import java.util.Base64
+import java.util.*
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
@@ -41,6 +41,9 @@ class PasswordManager(
     private val newPasswordSecretName = "${username}_new_password"
     private val previousPasswordSecretName = "${username}_previous_password_json"
 
+    private val schemaName = infraUrl?.split("/")?.lastOrNull() ?: ""
+    private val secretFileName = "${schemaName}_${CUSTOM_SECRETS_SUFFIX}"
+
     var password: String? = initialPassword
         private set
     var newPassword: String? = initialNewPassword
@@ -54,57 +57,63 @@ class PasswordManager(
 
     fun poll(): Unit = lock.write {
         if(infraUrl == null) return@write
-        try {
-            HttpClients.createDefault().use { httpClient ->
-                val httpGet = HttpGet(infraUrl)
+        HttpClients.createDefault().use { httpClient ->
+            val httpGet = HttpGet(infraUrl)
 
-                httpClient.execute(httpGet) { response ->
-                    if (response.code != HttpStatus.SC_OK) {
-                        K_LOGGER.error { "Error while pulling passwords: ${response.code}" }
-                    }
-                    val responseMap: Map<String, String> =
-                        OBJECT_MAPPER.readValue(response.entity.content, Map::class.java) as Map<String, String>
+            httpClient.execute(httpGet) { response ->
+                if (response.code != HttpStatus.SC_OK) {
+                    K_LOGGER.error { "Error while pulling passwords: ${response.code}" }
+                    return@execute
+                }
+                val responseMap: Map<String, String> =
+                    OBJECT_MAPPER.readValue(response.entity.content, Map::class.java) as Map<String, String>
 
-                    val content = responseMap[CONTENT_PROPERTY]
-                        ?: error("Error while polling new passwords. No $CONTENT_PROPERTY in response.")
-                    val zipPassword = responseMap[PASSWORD_PROPERTY]?.toCharArray()
-                        ?: error("Error while polling new passwords. No $PASSWORD_PROPERTY in response.")
+                val content = responseMap[CONTENT_PROPERTY]
+                    ?: error("Error while polling new passwords. No $CONTENT_PROPERTY in response.")
+                val zipPassword = responseMap[PASSWORD_PROPERTY]?.toCharArray()
+                    ?: error("Error while polling new passwords. No $PASSWORD_PROPERTY in response.")
 
-                    val zipContent: ByteArray = Base64.getDecoder().decode(content.toByteArray())
+                val zipContent: ByteArray = Base64.getDecoder().decode(content.toByteArray())
 
-                    val zipInputStream = ZipInputStream(ByteArrayInputStream(zipContent), zipPassword)
-                    val reader = BufferedReader(InputStreamReader(zipInputStream))
-                    var entry = zipInputStream.nextEntry
-                    while (entry != null) {
-                        val entryName = entry.fileName
-                        K_LOGGER.info { "Secret entry name: $entryName" }
-                        if (entryName == newPasswordSecretName) {
-                            newPassword = reader.readLine()?.ifBlank { null }
-                            K_LOGGER.info { "Readed value for newPass: ${newPassword}" }
-                        }
+                val zipInputStream = ZipInputStream(ByteArrayInputStream(zipContent), zipPassword)
+                val reader = BufferedReader(InputStreamReader(zipInputStream))
+                var entry = zipInputStream.nextEntry
+                while (entry != null) {
+                    val entryName = entry.fileName
+                    K_LOGGER.info { "Archive entry name: $entryName" }
+                    if (entryName.contains(secretFileName)) {
+                        val content = reader.readLine()
+                        if (content.isNotBlank()) {
+                            runCatching { OBJECT_MAPPER.readValue(content, Map::class.java) as Map<String, String> }
+                                .onFailure { K_LOGGER.error(it) { "Error while getting secrets" } }
+                                .onSuccess { secrets ->
+                                    secrets[newPasswordSecretName]?.let {
+                                        if (it.isNotBlank()) newPassword = it
+                                    }
 
-                        if (entryName == passwordSecretName) {
-                            password = reader.readLine()?.ifBlank { null }
-                            K_LOGGER.info { "Readed value for pass: ${newPassword}" }
-                        }
+                                    secrets[passwordSecretName]?.let {
+                                        if (it.isNotBlank()) password = it
+                                    }
 
-                        if (entryName == previousPasswordSecretName) {
-                            val json = reader.readLine()?.ifBlank { null }
-                            if(json != null) {
-                                (OBJECT_MAPPER.readValue(json, List::class.java) as List<String>).apply {
-                                    previouslyUsedPasswords.clear()
-                                    previouslyUsedPasswords.addAll(this)
-                                }
-                            } else {
-                                previouslyUsedPasswords.clear()
+                                    secrets[previousPasswordSecretName]?.let {
+                                        if (it.isBlank()) {
+                                            previouslyUsedPasswords.clear()
+                                            return@let
+                                        }
+
+                                        runCatching { OBJECT_MAPPER.readValue(it, List::class.java) as List<String> }
+                                            .onFailure { K_LOGGER.error(it) { "Error while getting $previousPasswordSecretName." } }
+                                            .onSuccess {
+                                                previouslyUsedPasswords.clear()
+                                                previouslyUsedPasswords.addAll(it)
+                                            }
+                                    }
                             }
                         }
-                        entry = zipInputStream.nextEntry
                     }
+                    entry = zipInputStream.nextEntry
                 }
             }
-        } catch (e: Exception) {
-            K_LOGGER.error(e) { "Error while polling passwords." }
         }
     }
 
@@ -113,5 +122,6 @@ class PasswordManager(
         private val OBJECT_MAPPER = ObjectMapper()
         private const val CONTENT_PROPERTY = "content"
         private const val PASSWORD_PROPERTY = "password"
+        private const val CUSTOM_SECRETS_SUFFIX = "custom-secrets"
     }
 }
