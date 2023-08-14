@@ -42,7 +42,7 @@ class PasswordManager(
     private val previousPasswordSecretName = "${username}_previous_password_json"
 
     private val schemaName = infraUrl?.split("/")?.lastOrNull() ?: ""
-    private val secretFileName = "${schemaName}_${CUSTOM_SECRETS_SUFFIX}"
+    private val secretFileName = "${schemaName}-${CUSTOM_SECRETS_SUFFIX}"
 
     var password: String? = initialPassword
         private set
