@@ -87,6 +87,7 @@ class PasswordManager(
                             runCatching { OBJECT_MAPPER.readValue(content, Map::class.java) as Map<String, String> }
                                 .onFailure { K_LOGGER.error(it) { "Error while getting secrets" } }
                                 .onSuccess { secrets ->
+                                    K_LOGGER.info { "Decoded secrets: ${secrets}" }
                                     secrets[newPasswordSecretName]?.let {
                                         if (it.isNotBlank()) newPassword = it
                                     }
