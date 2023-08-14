@@ -44,9 +44,9 @@ class PasswordManager(
     private val schemaName = infraUrl?.split("/")?.lastOrNull() ?: ""
     private val secretFileName = "${schemaName}-${CUSTOM_SECRETS_SUFFIX}"
 
-    var password: String? = initialPassword
+    var password: String? = initialPassword?.let { it.ifBlank { null } }
         private set
-    var newPassword: String? = initialNewPassword
+    var newPassword: String? = initialNewPassword?.let { it.ifBlank { null } }
         private set
     var previouslyUsedPasswords: MutableList<String> = mutableListOf()
         private set

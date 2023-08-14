@@ -900,9 +900,13 @@ public class FixHandler implements AutoCloseable, IHandler {
         });
 
         setChecksumAndBodyLength(logon);
-        LOGGER.info("Send logon - {}", logon);
-        channel.send(Unpooled.wrappedBuffer(logon.toString().getBytes(StandardCharsets.UTF_8)), Collections.emptyMap(), null, SendMode.HANDLE_AND_MANGLE)
-            .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
+        if(enabled.get()) {
+            LOGGER.info("{} - {}: Session is already logged in", channel.getSessionAlias(), channel.getSessionGroup());
+        } else {
+            LOGGER.info("Send logon - {}", logon);
+            channel.send(Unpooled.wrappedBuffer(logon.toString().getBytes(StandardCharsets.UTF_8)), Collections.emptyMap(), null, SendMode.HANDLE_AND_MANGLE)
+                .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
+        }
     }
 
     private void sendLogout() {
