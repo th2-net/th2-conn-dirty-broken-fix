@@ -23,9 +23,9 @@ import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.utils.event.transport.EventUtilsKt;
 import com.exactpro.th2.conn.dirty.fix.FixField;
 import com.exactpro.th2.conn.dirty.fix.MessageTransformer;
+import com.exactpro.th2.conn.dirty.fix.PasswordManager;
 import com.exactpro.th2.conn.dirty.fix.SequenceLoader;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BatchSendConfiguration;
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BlockMessageConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.ChangeSequenceConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.ResendRequestConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RuleConfiguration;
@@ -49,7 +49,6 @@ import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerContext;
 import com.exactpro.th2.conn.dirty.tcp.core.util.CommonUtil;
 import com.exactpro.th2.dataprovider.lw.grpc.DataProviderService;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.net.InetSocketAddress;
@@ -63,7 +62,6 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -157,6 +155,8 @@ import static com.exactpro.th2.constants.Constants.USERNAME;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.asExpandable;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.indexOf;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.isEmpty;
+import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.padStart;
+import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.set;
 import static com.exactpro.th2.util.MessageUtil.findByte;
 import static com.exactpro.th2.util.MessageUtil.getBodyLength;
 import static com.exactpro.th2.util.MessageUtil.getChecksum;
@@ -191,7 +191,6 @@ public class FixHandler implements AutoCloseable, IHandler {
     private final IHandlerContext context;
     private final InetSocketAddress address;
     private final DataProviderService dataProvider;
-    private final List<String> previouslyUsedPasswords;
 
     private final StatefulStrategy strategy = defaultStrategyHolder();
     private final StrategyScheduler scheduler;
@@ -203,6 +202,8 @@ public class FixHandler implements AutoCloseable, IHandler {
     private volatile IChannel channel;
     protected FixHandlerSettings settings;
     private final MessageTransformer messageTransformer = MessageTransformer.INSTANCE;
+
+    private final PasswordManager passwordManager;
 
     public FixHandler(IHandlerContext context) {
         this.context = context;
@@ -260,17 +261,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         if (settings.getTestRequestDelay() <= 0) throw new IllegalArgumentException("TestRequestDelay cannot be negative or zero");
         if (settings.getDisconnectRequestDelay() <= 0) throw new IllegalArgumentException("DisconnectRequestDelay cannot be negative or zero");
 
-        String previousPasswords = settings.getPreviousPasswords();
-        if(previousPasswords == null || previousPasswords.isEmpty()) {
-            previouslyUsedPasswords = new ArrayList<>();
-        } else {
-            previouslyUsedPasswords = Arrays.asList(previousPasswords.split(","));
-        }
-
-        String newPass = settings.getNewPassword();
-        if(previouslyUsedPasswords.contains(newPass)) {
-            throw new IllegalStateException("`newPassword` contains password that was already used in the past.");
-        }
+        passwordManager = new PasswordManager(settings.getInfraBackupUrl(), settings.getPassword(), settings.getNewPassword(), settings.getUsername());
 
         if (settings.getBrokenConnConfiguration() == null) {
             scheduler = new StrategyScheduler(SchedulerType.CONSECUTIVE, Collections.emptyList());
@@ -886,20 +877,26 @@ public class FixHandler implements AutoCloseable, IHandler {
         if (reset) logon.append(RESET_SEQ_NUM).append("Y");
         if (settings.getDefaultApplVerID() != null) logon.append(DEFAULT_APPL_VER_ID).append(settings.getDefaultApplVerID());
         if (settings.getUsername() != null) logon.append(USERNAME).append(settings.getUsername());
-        if (settings.getPassword() != null) {
-            if (settings.getPasswordEncryptKey() != null) {
-                logon.append(ENCRYPTED_PASSWORD).append(encrypt(settings.getPassword()));
-            } else {
-                logon.append(PASSWORD).append(settings.getPassword());
+        passwordManager.use((x) -> {
+
+            if (x.getPassword() != null) {
+                if (settings.getPasswordEncryptKey() != null) {
+                    logon.append(ENCRYPTED_PASSWORD).append(encrypt(x.getPassword()));
+                } else {
+                    logon.append(PASSWORD).append(x.getPassword());
+                }
             }
-        }
-        if (settings.getNewPassword() != null) {
-            if (settings.getPasswordEncryptKey() != null) {
-                logon.append(NEW_ENCRYPTED_PASSWORD).append(encrypt(settings.getNewPassword()));
-            } else {
-                logon.append(NEW_PASSWORD).append(settings.getNewPassword());
+
+            if (x.getNewPassword() != null) {
+                if (settings.getPasswordEncryptKey() != null) {
+                    logon.append(NEW_ENCRYPTED_PASSWORD).append(encrypt(x.getNewPassword()));
+                } else {
+                    logon.append(NEW_PASSWORD).append(x.getNewPassword());
+                }
             }
-        }
+
+            return Unit.INSTANCE;
+        });
 
         setChecksumAndBodyLength(logon);
         LOGGER.info("Send logon - {}", logon);
@@ -942,6 +939,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     @Override
     public void onClose(@NotNull IChannel channel) {
+        if(passwordManager != null) passwordManager.poll();
         strategy.getOnCloseHandler().close();
         enabled.set(false);
         cancelFuture(heartbeatTimer);
@@ -1055,7 +1053,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             }
         }
 
-        if(config.getUseOldPasswords() && !previouslyUsedPasswords.isEmpty()) {
+        if(config.getUseOldPasswords() && !passwordManager.getPreviouslyUsedPasswords().isEmpty()) {
             if(settings.getPasswordEncryptKey() != null) {
                 FixField encryptedPassword = findField(message, ENCRYPTED_PASSWORD_TAG);
                 if(encryptedPassword != null) {
@@ -1713,6 +1711,10 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     public String getRandomOldPassword() {
+        var previouslyUsedPasswords = passwordManager.getPreviouslyUsedPasswords();
+        if(previouslyUsedPasswords.isEmpty()) {
+            throw new IllegalStateException("There was attempt to get old password while there is no old passwords");
+        }
         return previouslyUsedPasswords.get(random.nextInt(previouslyUsedPasswords.size()));
     }
 

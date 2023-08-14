@@ -41,7 +41,7 @@ public class FixHandlerSettings implements IHandlerSettings {
     private String username;
     private String password;
     private String newPassword;
-    private String previousPasswords;
+    private String infraBackupUrl;
     private String passwordEncryptKey;
     private KeyFileType passwordEncryptKeyFileType = KeyFileType.PEM_PUBLIC_KEY;
     /**
@@ -174,7 +174,7 @@ public class FixHandlerSettings implements IHandlerSettings {
         return newPassword;
     }
 
-    public String getPreviousPasswords() { return previousPasswords; }
+    public String getInfraBackupUrl() {return infraBackupUrl;}
 
     public String getPasswordEncryptKey() {return passwordEncryptKey;}
 
@@ -214,7 +214,7 @@ public class FixHandlerSettings implements IHandlerSettings {
         this.newPassword = newPassword;
     }
 
-    public void setPreviousPasswords(String previousPasswords) { this.previousPasswords = previousPasswords; }
+    public void setInfraBackupUrl(String infraBackupUrl) {this.infraBackupUrl = infraBackupUrl;}
 
     public void setPasswordEncryptKey(String passwordEncryptKey) {this.passwordEncryptKey = passwordEncryptKey;}
 
