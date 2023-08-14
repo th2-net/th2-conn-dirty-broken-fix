@@ -81,6 +81,7 @@ class PasswordManager(
                 while (entry != null) {
                     val entryName = entry.fileName
                     K_LOGGER.info { "Archive entry name: $entryName" }
+                    K_LOGGER.info { "Secret file name: $secretFileName" }
                     if (entryName.contains(secretFileName)) {
                         val content = reader.readLine()
                         if (content.isNotBlank()) {
