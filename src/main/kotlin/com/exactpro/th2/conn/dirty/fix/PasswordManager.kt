@@ -78,18 +78,22 @@ class PasswordManager(
                     while (entry != null) {
                         val entryName = entry.fileName
                         if (entryName == newPasswordSecretName) {
-                            newPassword = reader.readLine()
+                            newPassword = reader.readLine()?.ifBlank { null }
                         }
 
                         if (entryName == passwordSecretName) {
-                            password = reader.readLine()
+                            password = reader.readLine()?.ifBlank { null }
                         }
 
                         if (entryName == previousPasswordSecretName) {
-                            val json = reader.readLine()
-                            (OBJECT_MAPPER.readValue(json, List::class.java) as List<String>).apply {
+                            val json = reader.readLine()?.ifBlank { null }
+                            if(json != null) {
+                                (OBJECT_MAPPER.readValue(json, List::class.java) as List<String>).apply {
+                                    previouslyUsedPasswords.clear()
+                                    previouslyUsedPasswords.addAll(this)
+                                }
+                            } else {
                                 previouslyUsedPasswords.clear()
-                                previouslyUsedPasswords.addAll(this)
                             }
                         }
                         entry = zipInputStream.nextEntry
