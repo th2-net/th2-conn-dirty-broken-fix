@@ -261,7 +261,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         if (settings.getTestRequestDelay() <= 0) throw new IllegalArgumentException("TestRequestDelay cannot be negative or zero");
         if (settings.getDisconnectRequestDelay() <= 0) throw new IllegalArgumentException("DisconnectRequestDelay cannot be negative or zero");
 
-        passwordManager = new PasswordManager(settings.getInfraBackupUrl(), settings.getPassword(), settings.getNewPassword(), settings.getUsername());
+        passwordManager = new PasswordManager(settings.getInfraBackupUrl(), settings.getPassword(), settings.getNewPassword(), settings.getSenderCompID());
 
         if (settings.getBrokenConnConfiguration() == null) {
             scheduler = new StrategyScheduler(SchedulerType.CONSECUTIVE, Collections.emptyList());
