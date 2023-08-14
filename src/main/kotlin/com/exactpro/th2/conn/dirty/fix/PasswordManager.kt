@@ -90,27 +90,26 @@ class PasswordManager(
                                 .onSuccess { secrets ->
                                     K_LOGGER.info { "Decoded secrets: ${secrets}" }
                                     secrets[newPasswordSecretName]?.let {
-                                        if (it.isNotBlank()) newPassword = Base64.getDecoder().decode(it).decodeToString()
+                                        newPassword = Base64.getDecoder().decode(it).decodeToString().ifBlank { null }
                                     }
 
                                     secrets[passwordSecretName]?.let {
-                                        if (it.isNotBlank()) password = Base64.getDecoder().decode(it).decodeToString()
+                                        password = Base64.getDecoder().decode(it).decodeToString().ifBlank { null }
                                     }
 
                                     secrets[previousPasswordSecretName]?.let {
-                                        if (it.isBlank()) {
+                                        val json = Base64.getDecoder().decode(it).decodeToString().ifBlank { null }
+
+                                        if(json == null) {
                                             previouslyUsedPasswords.clear()
-                                            return@let
+                                        } else {
+                                            runCatching { OBJECT_MAPPER.readValue(json, List::class.java) as List<String> }
+                                                .onFailure { K_LOGGER.error(it) { "Error while getting $previousPasswordSecretName." } }
+                                                .onSuccess {
+                                                    previouslyUsedPasswords.clear()
+                                                    previouslyUsedPasswords.addAll(it)
+                                                }
                                         }
-
-                                        val json = Base64.getDecoder().decode(it).decodeToString()
-
-                                        runCatching { OBJECT_MAPPER.readValue(json, List::class.java) as List<String> }
-                                            .onFailure { K_LOGGER.error(it) { "Error while getting $previousPasswordSecretName." } }
-                                            .onSuccess {
-                                                previouslyUsedPasswords.clear()
-                                                previouslyUsedPasswords.addAll(it)
-                                            }
                                     }
                             }
                         }
