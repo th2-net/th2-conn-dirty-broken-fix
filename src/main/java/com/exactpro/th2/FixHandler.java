@@ -176,6 +176,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     private static final String STUBBING_VALUE = "XXX";
     private static final String SPLIT_SEND_TIMESTAMPS_PROPERTY = "BufferSlicesSendingTimes";
     private static final String STRATEGY_EVENT_TYPE = "StrategyState";
+    private static final String UNGRACEFUL_DISCONNECT_PROPERTY = "ungracefulDisconnect";
     private static final DateTimeFormatter formatter = DateTimeFormatter.ISO_INSTANT;
     private static final ObjectMapper mapper = new ObjectMapper();
 
@@ -306,12 +307,32 @@ public class FixHandler implements AutoCloseable, IHandler {
             throw new IllegalStateException("Session is not active. It is not possible to send messages.");
         }
 
+        FixField msgType = findField(body, MSG_TYPE_TAG);
+        boolean isLogout = msgType != null && Objects.equals(msgType.getValue(), MSG_TYPE_LOGOUT);
+        if(isLogout && !channel.isOpen()) {
+            String message = String.format("%s - %s: Logout ignored as channel is already closed.", channel.getSessionGroup(), channel.getSessionAlias());
+            LOGGER.warn(message);
+            context.send(CommonUtil.toEvent(message));
+            return CompletableFuture.completedFuture(null);
+        }
+
         if (!channel.isOpen()) {
             try {
                 channel.open().get();
             } catch (Exception e) {
                 ExceptionUtils.rethrow(e);
             }
+        }
+
+        boolean isUngracefulDisconnect = Boolean.getBoolean(properties.get(UNGRACEFUL_DISCONNECT_PROPERTY));
+        if(isLogout) {
+            context.send(CommonUtil.toEvent(String.format("Closing session %s. Is graceful disconnect: %b", channel.getSessionAlias(), !isUngracefulDisconnect)));
+            try {
+                disconnect(!isUngracefulDisconnect);
+            } catch (Exception e) {
+                context.send(CommonUtil.toErrorEvent(String.format("Error while ending session %s by user logout. Is graceful disconnect: %b", channel.getSessionAlias(), !isUngracefulDisconnect), e));
+            }
+            return CompletableFuture.completedFuture(null);
         }
 
         while (channel.isOpen() && !enabled.get()) {
