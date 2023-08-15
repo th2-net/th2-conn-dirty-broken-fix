@@ -695,16 +695,23 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private boolean checkLogon(ByteBuf message) {
         FixField sessionStatusField = findField(message, SESSION_STATUS_TAG); //check another options
-        if (sessionStatusField == null || requireNonNull(sessionStatusField.getValue()).equals("0")) {
-            FixField msgSeqNumValue = findField(message, MSG_SEQ_NUM_TAG);
-            if (msgSeqNumValue == null) {
-                return false;
-            }
-            serverMsgSeqNum.set(Integer.parseInt(requireNonNull(msgSeqNumValue.getValue())));
-            context.send(CommonUtil.toEvent("successful login"), null);
-            return true;
+
+        String sessionStatusValue = "0";
+        if(sessionStatusField != null) {
+            sessionStatusValue = sessionStatusField.getValue();
         }
-        return false;
+
+        if(!Objects.equals(sessionStatusValue, "0") && !Objects.equals(sessionStatusValue, "1")) {
+            return false;
+        }
+
+        FixField msgSeqNumValue = findField(message, MSG_SEQ_NUM_TAG);
+        if (msgSeqNumValue == null) {
+            return false;
+        }
+        serverMsgSeqNum.set(Integer.parseInt(requireNonNull(msgSeqNumValue.getValue())));
+        context.send(CommonUtil.toEvent("successful login"), null);
+        return true;
     }
 
     @Override
