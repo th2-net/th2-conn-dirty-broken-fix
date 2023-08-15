@@ -811,7 +811,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     @Override
     public void onOpen(@NotNull IChannel channel) {
         this.channel = channel;
-        if(enabled.get()) {
+        if(!enabled.get()) {
             sendLogon();
         }
     }
