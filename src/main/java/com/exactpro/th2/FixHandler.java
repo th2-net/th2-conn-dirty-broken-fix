@@ -321,6 +321,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             context.send(CommonUtil.toEvent(String.format("Closing session %s. Is graceful disconnect: %b", channel.getSessionAlias(), !isUngracefulDisconnect)));
             try {
                 disconnect(!isUngracefulDisconnect);
+                enabled.set(false);
                 channel.open().get();
             } catch (Exception e) {
                 context.send(CommonUtil.toErrorEvent(String.format("Error while ending session %s by user logout. Is graceful disconnect: %b", channel.getSessionAlias(), !isUngracefulDisconnect), e));
@@ -811,13 +812,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     @Override
     public void onOpen(@NotNull IChannel channel) {
         this.channel = channel;
-        if(!enabled.get()) {
-            sendLogon();
-        } else {
-            String message = String.format("Logon attempt while already logged in: %s - %s", channel.getSessionGroup(), channel.getSessionAlias());
-            LOGGER.warn(message);
-            context.send(CommonUtil.toEvent(message));
-        }
+        sendLogon();
     }
 
     public void sendHeartbeat() {
@@ -868,6 +863,14 @@ public class FixHandler implements AutoCloseable, IHandler {
             LOGGER.info("Logon is not sent to server because session is not active.");
             return;
         }
+
+        if(enabled.get()) {
+            String message = String.format("Logon attempt while already logged in: %s - %s", channel.getSessionGroup(), channel.getSessionAlias());
+            LOGGER.warn(message);
+            context.send(CommonUtil.toEvent(message));
+            return;
+        }
+
         StringBuilder logon = new StringBuilder();
         Boolean reset;
         if (!connStarted.get()) {
@@ -946,9 +949,9 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     @Override
     public void onClose(@NotNull IChannel channel) {
-        if(passwordManager != null) passwordManager.poll();
         strategy.getOnCloseHandler().close();
         enabled.set(false);
+        if(passwordManager != null) passwordManager.poll();
         cancelFuture(heartbeatTimer);
         cancelFuture(testRequestTimer);
     }
@@ -1659,12 +1662,12 @@ public class FixHandler implements AutoCloseable, IHandler {
         if(graceful) {
             sendLogout();
             waitLogoutResponse();
-            if(channel.isOpen()) {
-                channel.close().get();
-            }
+            channel.close().get();
         } else {
             channel.close().get();
         }
+        resetHeartbeatTask();
+        resetTestRequestTask();
     }
 
     private void openChannelAndWaitForLogon() throws ExecutionException, InterruptedException {
