@@ -813,6 +813,10 @@ public class FixHandler implements AutoCloseable, IHandler {
         this.channel = channel;
         if(!enabled.get()) {
             sendLogon();
+        } else {
+            String message = String.format("Logon attempt while already logged in: %s - %s", channel.getSessionGroup(), channel.getSessionAlias());
+            LOGGER.warn(message);
+            context.send(CommonUtil.toEvent(message));
         }
     }
 
