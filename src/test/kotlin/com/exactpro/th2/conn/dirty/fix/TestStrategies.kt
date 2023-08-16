@@ -296,8 +296,8 @@ class TestStrategies {
         // Trigger resend request
         handler.onIncoming(channel, businessMessage(5), getMessageId())
 
-        handler.onIncoming(channel, businessMessage(3), getMessageId())
-        handler.onIncoming(channel, businessMessage(4), getMessageId())
+        handler.onIncoming(channel, businessMessage(3, true), getMessageId())
+        handler.onIncoming(channel, businessMessage(4, true), getMessageId())
         // end
 
         // Trigger recovery
