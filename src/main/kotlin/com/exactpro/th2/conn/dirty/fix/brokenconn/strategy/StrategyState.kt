@@ -25,7 +25,6 @@ import java.time.Instant
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import mu.KotlinLogging
@@ -34,39 +33,75 @@ class StrategyState(val config: RuleConfiguration? = null) {
     val startTime: Instant = Instant.now()
     val type = config?.ruleType ?: RuleType.DEFAULT
     val batchMessageCache: CompositeByteBuf = Unpooled.compositeBuffer()
-    val messageIDs = Collections.synchronizedList(ArrayList<MessageID>())
-
+    val messageIDs: MutableList<MessageID> = Collections.synchronizedList(ArrayList<MessageID>())
 
     private val writeLock = ReentrantLock()
-    private val missedMessagesCache: MutableMap<Int, ByteBuf> = ConcurrentHashMap<Int, ByteBuf>()
-
+    private val missedMessagesCache: MutableMap<Long, ByteBuf> = ConcurrentHashMap<Long, ByteBuf>()
     private val batchMessageCacheSize = AtomicInteger(0)
-    fun getBatchMessageCacheSize() = batchMessageCacheSize.get()
 
     private val missedIncomingMessagesCount = AtomicInteger(0)
-    fun getMissedIncomingMessagesCount() = missedIncomingMessagesCount.get()
+    fun updateMissedIncomingMessagesCountIfCondition(condition: (Int) -> Boolean): Boolean = writeLock.withLock {
+        var updated = false
+        missedIncomingMessagesCount.updateAndGet {
+            if(condition(it + 1)) {
+                updated = true
+                it + 1
+            } else {
+                it
+            }
+        }
+        updated
+    }
+
+    private val transformedIncomingMessagesCount = AtomicInteger(0)
+    fun getTransformedIncomingMessagesCount() = writeLock.withLock { transformedIncomingMessagesCount.get() }
+    fun transformIfCondition(condition: (Int) -> Boolean, transform: () -> Unit): Boolean = writeLock.withLock {
+        var updated = false
+        transformedIncomingMessagesCount.updateAndGet {
+            if(condition(it + 1)) {
+                updated = true
+                transform()
+                it + 1
+            } else {
+                it
+            }
+        }
+        updated
+    }
 
     private val missedOutgoingMessagesCount = AtomicInteger(0)
-    fun getMissedOutgoingMessagesCount() = missedOutgoingMessagesCount.get()
-
-    val transformedIncomingMessagesCount = AtomicInteger(0)
-
-    fun incrementMissedIncomingMessages() { missedIncomingMessagesCount.incrementAndGet() }
-    fun incrementIncomingTransformedMessages() { transformedIncomingMessagesCount.incrementAndGet() }
-
-    fun addMissedMessageToCache(sequence: Int, message: ByteBuf) {
+    fun addMissedMessageToCacheIfCondition(sequence: Long, message: ByteBuf, condition: (Int) -> Boolean): Boolean {
         writeLock.withLock {
-            missedMessagesCache[sequence] = message
-            missedOutgoingMessagesCount.incrementAndGet()
+            var updated = false
+            missedOutgoingMessagesCount.updateAndGet {
+                if(condition(it + 1)) {
+                    missedMessagesCache[sequence] = message
+                    updated = true
+                    it + 1
+                } else {
+                    it
+                }
+            }
+            return updated
         }
     }
 
-    fun getMissedMessage(sequence: Int): ByteBuf? = missedMessagesCache[sequence]
+    fun getMissedMessage(sequence: Long): ByteBuf? = missedMessagesCache[sequence]
 
     fun addMessageToBatchCacheAndExecute(message: ByteBuf, condition: (Int) -> Boolean, function: (ByteBuf) -> Unit) {
         writeLock.withLock {
             batchMessageCache.addComponent(true, message.copy())
             if(condition(batchMessageCacheSize.incrementAndGet())) {
+                function(batchMessageCache.copy())
+                batchMessageCacheSize.set(0)
+                batchMessageCache.clear()
+            }
+        }
+    }
+
+    fun executeOnBatchCacheIfCondition(condition: (Int) -> Boolean, function: (ByteBuf) -> Unit) {
+        writeLock.withLock {
+            if(condition(batchMessageCacheSize.get())) {
                 function(batchMessageCache.copy())
                 batchMessageCacheSize.set(0)
                 batchMessageCache.clear()
