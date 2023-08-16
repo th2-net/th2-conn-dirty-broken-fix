@@ -113,7 +113,6 @@ import static com.exactpro.th2.constants.Constants.ENCRYPT_METHOD;
 import static com.exactpro.th2.constants.Constants.END_SEQ_NO;
 import static com.exactpro.th2.constants.Constants.END_SEQ_NO_TAG;
 import static com.exactpro.th2.constants.Constants.GAP_FILL_FLAG;
-import static com.exactpro.th2.constants.Constants.GAP_FILL_FLAG_TAG;
 import static com.exactpro.th2.constants.Constants.HEART_BT_INT;
 import static com.exactpro.th2.constants.Constants.IS_POSS_DUP;
 import static com.exactpro.th2.constants.Constants.MSG_SEQ_NUM;
@@ -445,10 +444,13 @@ public class FixHandler implements AutoCloseable, IHandler {
             return metadata;
         }
 
-        serverMsgSeqNum.incrementAndGet();
+        if(!isDup) {
+            serverMsgSeqNum.incrementAndGet();
+        }
 
         if (serverMsgSeqNum.get() < receivedMsgSeqNum && !isDup && enabled.get()) {
             sendResendRequest(serverMsgSeqNum.get(), receivedMsgSeqNum - 1);
+            serverMsgSeqNum.set(receivedMsgSeqNum);
         }
 
         switch (msgTypeValue) {
@@ -983,18 +985,15 @@ public class FixHandler implements AutoCloseable, IHandler {
         onOutgoingUpdateTag(message, properties);
         StrategyState strategyState = strategy.getState();
 
-        strategyState.addMessageToBatchCache(message);
-
         CompletableFuture<MessageID> messageID;
-        if(strategyState.getBatchMessageCacheSize() == config.getBatchSize()) {
+        strategyState.addMessageToBatchCacheAndExecute(message, x -> x == config.getBatchSize(), buffer -> {
             LOGGER.info("Sent batch of size: {}", config.getBatchSize());
-            messageID = channel.send(asExpandable(strategyState.getBatchMessageCache().copy()), properties, eventID, SendMode.DIRECT);
-            messageID.thenAcceptAsync(strategyState::addMessageID, executorService);
-            strategyState.resetBatchMessageCache();
-        } else {
-            messageID = CompletableFuture.completedFuture(null);
-        }
-        return messageID;
+            channel.send(asExpandable(buffer), properties, eventID, SendMode.DIRECT)
+                .thenAcceptAsync(strategyState::addMessageID, executorService);
+            return Unit.INSTANCE;
+        });
+
+        return CompletableFuture.completedFuture(null);
     }
 
     private CompletableFuture<MessageID> splitSend(IChannel channel, ByteBuf message, Map<String, String> metadata, EventID eventID) {
@@ -1090,7 +1089,8 @@ public class FixHandler implements AutoCloseable, IHandler {
         return null;
     }
 
-    private Map<String, String> blockSend(
+    private Map<String, String>
+    blockSend(
         ByteBuf message,
         Map<String, String> metadata
     ) {
@@ -1405,6 +1405,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.resetStrategyAndState(configuration);
         strategy.setCleanupHandler(this::cleanupClientOutageStrategy);
         strategy.setOnCloseHandler(this::outageOnCloseHandler);
+        strategy.updateSendStrategy(x -> {x.setSendPreprocessor(this::blockSend); return Unit.INSTANCE; });
         strategy.updateIncomingMessageStrategy(x -> {x.setTestRequestProcessor(this::missTestRequest); return Unit.INSTANCE;});
         strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::missHeartbeatsAndTestRequestReplies); return Unit.INSTANCE;});
         ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
@@ -1419,6 +1420,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.resetStrategyAndState(configuration);
         strategy.setOnCloseHandler(this::outageOnCloseHandler);
         strategy.setCleanupHandler(this::cleanupPartialClientOutageStrategy);
+        strategy.updateSendStrategy(x -> {x.setSendPreprocessor(this::blockSend); return Unit.INSTANCE; });
         strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::missHeartbeats); return Unit.INSTANCE;});
         ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
     }
@@ -1434,7 +1436,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         ruleStartEvent(configuration.getRuleType(), start);
         ResendRequestConfiguration resendRequestConfig = configuration.getResendRequestConfiguration();
         int msgCount = resendRequestConfig.getMessageCount();
-        int currentSeq = serverMsgSeqNum.getAndUpdate((x) -> x - msgCount);
+        int currentSeq = serverMsgSeqNum.get();
         sendResendRequest(currentSeq - msgCount, currentSeq);
         try {
             Thread.sleep(strategy.getState().getConfig().getCleanUpDuration().toMillis());

@@ -63,17 +63,14 @@ class StrategyState(val config: RuleConfiguration? = null) {
 
     fun getMissedMessage(sequence: Int): ByteBuf? = missedMessagesCache[sequence]
 
-    fun addMessageToBatchCache(message: ByteBuf) {
+    fun addMessageToBatchCacheAndExecute(message: ByteBuf, condition: (Int) -> Boolean, function: (ByteBuf) -> Unit) {
         writeLock.withLock {
-            batchMessageCacheSize.incrementAndGet()
             batchMessageCache.addComponent(true, message.copy())
-        }
-    }
-
-    fun resetBatchMessageCache() {
-        writeLock.withLock {
-            batchMessageCacheSize.set(0)
-            batchMessageCache.clear()
+            if(condition(batchMessageCacheSize.incrementAndGet())) {
+                function(batchMessageCache.copy())
+                batchMessageCacheSize.set(0)
+                batchMessageCache.clear()
+            }
         }
     }
 
