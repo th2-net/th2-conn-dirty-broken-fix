@@ -1048,44 +1048,44 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         var strategyState = strategy.getState();
 
-        int count = strategyState.getTransformedIncomingMessagesCount().get();
-        if(count == config.getNumberOfTimesToTransform()) {
-            return null;
-        }
-        messageTransformer.transformWithoutResults(message, config.getActions());
+        strategyState.transformIfCondition(
+            x -> x <= config.getNumberOfTimesToTransform(),
+            () -> {
+                messageTransformer.transformWithoutResults(message, config.getActions());
+                if(config.getNewPassword() != null) {
+                    if(settings.getPasswordEncryptKey() != null) {
+                        FixField encryptedPassword = findField(message, ENCRYPTED_PASSWORD_TAG);
+                        if(encryptedPassword != null) {
+                            encryptedPassword.setValue(encrypt(config.getNewPassword()));
+                        }
+                    } else {
+                        FixField password = findField(message, PASSWORD_TAG);
+                        if(password != null) {
+                            password.setValue(config.getNewPassword());
+                        }
+                    }
+                }
 
-        if(config.getNewPassword() != null) {
-            if(settings.getPasswordEncryptKey() != null) {
-                FixField encryptedPassword = findField(message, ENCRYPTED_PASSWORD_TAG);
-                if(encryptedPassword != null) {
-                    encryptedPassword.setValue(encrypt(config.getNewPassword()));
+                if(config.getUseOldPasswords() && !passwordManager.getPreviouslyUsedPasswords().isEmpty()) {
+                    if(settings.getPasswordEncryptKey() != null) {
+                        FixField encryptedPassword = findField(message, ENCRYPTED_PASSWORD_TAG);
+                        if(encryptedPassword != null) {
+                            encryptedPassword.setValue(encrypt(getRandomOldPassword()));
+                        }
+                    } else {
+                        FixField password = findField(message, PASSWORD_TAG);
+                        if(password != null) {
+                            password.setValue(getRandomOldPassword());
+                        }
+                    }
                 }
-            } else {
-                FixField password = findField(message, PASSWORD_TAG);
-                if(password != null) {
-                    password.setValue(config.getNewPassword());
-                }
+
+                updateLength(message);
+                updateChecksum(message);
+                return Unit.INSTANCE;
             }
-        }
+        );
 
-        if(config.getUseOldPasswords() && !passwordManager.getPreviouslyUsedPasswords().isEmpty()) {
-            if(settings.getPasswordEncryptKey() != null) {
-                FixField encryptedPassword = findField(message, ENCRYPTED_PASSWORD_TAG);
-                if(encryptedPassword != null) {
-                    encryptedPassword.setValue(encrypt(getRandomOldPassword()));
-                }
-            } else {
-                FixField password = findField(message, PASSWORD_TAG);
-                if(password != null) {
-                    password.setValue(getRandomOldPassword());
-                }
-            }
-        }
-
-        updateLength(message);
-        updateChecksum(message);
-
-        strategyState.incrementIncomingTransformedMessages();
         return null;
     }
 
@@ -1111,11 +1111,10 @@ public class FixHandler implements AutoCloseable, IHandler {
     private Map<String, String> missIncomingMessages(ByteBuf message, Map<String, String> metadata) {
         int countToMiss = strategy.getMissIncomingMessagesConfig().getCount();
         var strategyState = strategy.getState();
-        if(strategyState.getMissedIncomingMessagesCount() == countToMiss) {
+        if(!strategyState.updateMissedIncomingMessagesCountIfCondition(x -> x <= countToMiss)) {
             return null;
         }
         resetTestRequestTask();
-        strategyState.incrementMissedIncomingMessages();
         metadata.put(REJECT_REASON, "Missed incoming message due to `miss incoming messages` strategy");
         return metadata;
     }
@@ -1128,7 +1127,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     private Map<String, String> logoutOnLogon(ByteBuf message, Map<String, String> metadata) {
         StrategyState state = strategy.getState();
         TransformMessageConfiguration config = state.getConfig().getTransformMessageConfiguration();
-        if(state.getTransformedIncomingMessagesCount().get() < config.getNumberOfTimesToTransform()) {
+        if(state.getTransformedIncomingMessagesCount() < config.getNumberOfTimesToTransform()) {
             handleLogon(message, metadata);
             try {
                 disconnect(strategy.getGracefulDisconnect());
@@ -1160,11 +1159,10 @@ public class FixHandler implements AutoCloseable, IHandler {
         int countToMiss = strategy.getMissOutgoingMessagesConfiguration().getCount();
         var strategyState = strategy.getState();
         onOutgoingUpdateTag(message, metadata);
-        if(strategyState.getMissedOutgoingMessagesCount() == countToMiss) {
+        if(!strategyState.addMissedMessageToCacheIfCondition(msgSeqNum.get(), message.copy(), x -> x <= countToMiss)) {
             return null;
         }
 
-        strategyState.addMissedMessageToCache(msgSeqNum.get(), message.copy());
         message.clear();
 
         return null;
@@ -1195,7 +1193,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             message.clear();
             return null;
         } else {
-            strategy.getState().addMissedMessageToCache(msgSeqNum.get(), message.copy());
+            strategy.getState().addMissedMessageToCacheIfCondition(msgSeqNum.get(), message.copy(), x -> true);
             message.clear();
         }
 
@@ -1497,11 +1495,15 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private void cleanupBatchSendStrategy() {
         var state = strategy.getState();
-        if(state.getBatchMessageCacheSize() > 0) {
-            channel.send(state.getBatchMessageCache(), Collections.emptyMap(), null, SendMode.DIRECT)
-                .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
-        }
-        strategy.updateSendStrategy(x -> {x.setSendHandler(this::defaultSend); return Unit.INSTANCE;});
+        strategy.updateSendStrategy(x -> {
+            state.executeOnBatchCacheIfCondition(size -> size > 0, message -> {
+                channel.send(message, Collections.emptyMap(), null, SendMode.DIRECT)
+                    .thenAcceptAsync(messageID -> strategy.getState().addMessageID(messageID), executorService);
+                return Unit.INSTANCE;
+            });
+            x.setSendHandler(this::defaultSend);
+            return Unit.INSTANCE;
+        });
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
         strategy.cleanupStrategy();
     }
