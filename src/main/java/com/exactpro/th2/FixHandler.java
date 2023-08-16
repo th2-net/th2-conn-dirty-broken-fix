@@ -975,7 +975,6 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private CompletableFuture<MessageID> defaultSend(IChannel channel, ByteBuf message, Map<String, String> properties, EventID eventID) {
         CompletableFuture<MessageID> messageId = channel.send(message, properties, eventID, SendMode.HANDLE_AND_MANGLE);
-        messageId.thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
         return messageId;
     }
 
