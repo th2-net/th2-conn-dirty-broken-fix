@@ -363,6 +363,8 @@ class TestStrategies {
         verify(channel).send(any(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
 
+        Thread.sleep(100) // Waiting for strategy to apply
+
         handler.onOutgoing(channel, businessMessage(3).asExpandable(), Collections.emptyMap())
         handler.onOutgoing(channel, businessMessage(4).asExpandable(), Collections.emptyMap())
         handler.onOutgoing(channel, businessMessage(5).asExpandable(), Collections.emptyMap())
