@@ -986,14 +986,13 @@ public class FixHandler implements AutoCloseable, IHandler {
         onOutgoingUpdateTag(message, properties);
         StrategyState strategyState = strategy.getState();
 
-        CompletableFuture<MessageID> messageID;
         strategyState.updateCacheAndRunOnCondition(message, x -> x == config.getBatchSize(), buffer -> {
             try {
                 LOGGER.info("Sending batch of size: {}", config.getBatchSize());
                 channel.send(asExpandable(buffer), properties, eventID, SendMode.DIRECT)
                     .thenAcceptAsync(strategyState::addMessageID, executorService);
             } catch (Exception e) {
-                LOGGER.error("Error while sending batch.");
+                LOGGER.error("Error while sending batch.", e);
             }
             return Unit.INSTANCE;
         });
@@ -1502,8 +1501,12 @@ public class FixHandler implements AutoCloseable, IHandler {
         var state = strategy.getState();
         strategy.updateSendStrategy(x -> {
             state.executeOnBatchCacheIfCondition(size -> size > 0, message -> {
-                channel.send(message, Collections.emptyMap(), null, SendMode.DIRECT)
-                    .thenAcceptAsync(messageID -> strategy.getState().addMessageID(messageID), executorService);
+                try {
+                    channel.send(message, Collections.emptyMap(), null, SendMode.DIRECT)
+                        .thenAcceptAsync(messageID -> strategy.getState().addMessageID(messageID), executorService);
+                } catch (Exception e) {
+                    LOGGER.error("Error while sending batch.", e);
+                }
                 return Unit.INSTANCE;
             });
             x.setSendHandler(this::defaultSend);
