@@ -183,8 +183,9 @@ class TestStrategies {
 
         val captor = argumentCaptor<ByteBuf> {  }
 
+        clearInvocations(channel)
         verify(channel, timeout(defaultRuleDuration.millis() + 300)).open()
-        verify(channel).send(any(), any(), anyOrNull(), any()) // Logon // 2
+        verify(channel, timeout(300)).send(any(), any(), anyOrNull(), any()) // Logon // 2
         clearInvocations(channel)
 
         handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), getMessageId()) // 3
@@ -245,7 +246,7 @@ class TestStrategies {
         verify(channel, timeout(defaultRuleDuration.millis() + businessRuleDuration.millis() + 300).times(3)).open()
 
         // start
-        verify(channel, timeout(300).times(3)).send(any(), any(), anyOrNull(), any())
+        verify(channel, timeout(800).times(3)).send(any(), any(), anyOrNull(), any())
 
         messages[0].apply {
             assertContains(mapOf(35 to "A", Constants.PASSWORD_TAG to "mangledPassword"), this.first)
@@ -282,10 +283,10 @@ class TestStrategies {
 
         val channel = testContext.channel
         val handler = testContext.fixHandler
-
+        clearInvocations(channel)
         verify(channel, timeout(defaultRuleDuration.millis() + 300)).open()
+        verify(channel, timeout(600).times(1)).send(any(), any(), anyOrNull(), any())
         messages.clear()
-        Thread.sleep(100) // Waiting for strategies to apply ( they are applied after logon response to permit session login )
 
         handler.onIncoming(channel, businessMessage(3), getMessageId())
         handler.onIncoming(channel, businessMessage(4), getMessageId())
