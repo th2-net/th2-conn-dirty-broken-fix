@@ -572,13 +572,23 @@ class TestStrategies {
         handler.send(businessMessage(2).asExpandable(), mutableMapOf(), null)
         handler.send(businessMessage(3).asExpandable(), mutableMapOf(), null)
         handler.send(businessMessage(4).asExpandable(), mutableMapOf(), null)
+        handler.send(businessMessage(5).asExpandable(), mutableMapOf(), null)
 
         val captor = argumentCaptor<ByteBuf> {}
-        verify(channel, timeout(businessRuleDuration.millis() + 300).times(1)).send(captor.capture(), any(), anyOrNull(), any())
+        verify(channel, timeout(businessRuleDuration.millis() + 600).times(2)).send(captor.capture(), any(), anyOrNull(), any())
+
+        val sizeOfOneMessage = businessMessage(2).asExpandable().also {
+            handler.onOutgoingUpdateTag(it, mutableMapOf())
+        }.readableBytes()
 
         captor.firstValue.apply {
-            println(this.readableBytes())
-            assertTrue { this.readableBytes() >= businessMessage(2).readableBytes() * 3 }
+            println(readableBytes())
+            println(sizeOfOneMessage * 3)
+            assertTrue { this.readableBytes() >=  sizeOfOneMessage * 3 }
+        }
+
+        captor.secondValue.apply {
+            assertEquals(this.readableBytes(), sizeOfOneMessage)
         }
 
         channel.close()

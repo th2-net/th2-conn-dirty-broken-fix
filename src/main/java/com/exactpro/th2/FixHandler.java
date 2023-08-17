@@ -597,7 +597,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         FixField seqNumValue = findField(message, NEW_SEQ_NO_TAG);
 
         if(seqNumValue != null) {
-            serverMsgSeqNum.set(Integer.parseInt(requireNonNull(seqNumValue.getValue())));
+            serverMsgSeqNum.set(Integer.parseInt(requireNonNull(seqNumValue.getValue())) - 1);
         } else {
             LOGGER.trace("Failed to reset servers MsgSeqNum. No such tag in message: {}", message.toString(US_ASCII));
         }
@@ -969,7 +969,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         StrategyState strategyState = strategy.getState();
 
         CompletableFuture<MessageID> messageID;
-        strategyState.addMessageToBatchCacheAndExecute(message, x -> x == config.getBatchSize(), buffer -> {
+        strategyState.updateCacheAndRunOnCondition(message, x -> x == config.getBatchSize(), buffer -> {
             LOGGER.info("Sent batch of size: {}", config.getBatchSize());
             channel.send(asExpandable(buffer), properties, eventID, SendMode.DIRECT)
                 .thenAcceptAsync(strategyState::addMessageID, executorService);
@@ -1386,6 +1386,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.resetStrategyAndState(configuration);
         strategy.setCleanupHandler(this::cleanupClientOutageStrategy);
         strategy.setOnCloseHandler(this::outageOnCloseHandler);
+        strategy.setRecoveryHandler(this::recoveryFromState);
         strategy.updateIncomingMessageStrategy(x -> {x.setTestRequestProcessor(this::missTestRequest); return Unit.INSTANCE;});
         strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::missHeartbeatsAndTestRequestReplies); return Unit.INSTANCE;});
         ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
@@ -1400,6 +1401,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.resetStrategyAndState(configuration);
         strategy.setOnCloseHandler(this::outageOnCloseHandler);
         strategy.setCleanupHandler(this::cleanupPartialClientOutageStrategy);
+        strategy.setRecoveryHandler(this::recoveryFromState);
         strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::missHeartbeats); return Unit.INSTANCE;});
         ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
     }

@@ -17,6 +17,7 @@ package com.exactpro.th2.conn.dirty.fix.brokenconn.strategy
 
 import com.exactpro.th2.common.grpc.MessageID
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RuleConfiguration
+import com.exactpro.th2.netty.bytebuf.util.asExpandable
 import com.google.protobuf.TextFormat.shortDebugString
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.CompositeByteBuf
@@ -88,13 +89,17 @@ class StrategyState(val config: RuleConfiguration? = null) {
 
     fun getMissedMessage(sequence: Long): ByteBuf? = missedMessagesCache[sequence]
 
-    fun addMessageToBatchCacheAndExecute(message: ByteBuf, condition: (Int) -> Boolean, function: (ByteBuf) -> Unit) {
+    fun updateCacheAndRunOnCondition(message: ByteBuf, condition: (Int) -> Boolean, function: (ByteBuf) -> Unit) {
         writeLock.withLock {
-            batchMessageCache.addComponent(true, message.copy())
-            if(condition(batchMessageCacheSize.incrementAndGet())) {
-                function(batchMessageCache.copy())
-                batchMessageCacheSize.set(0)
-                batchMessageCache.clear()
+            batchMessageCacheSize.updateAndGet {
+                batchMessageCache.addComponent(true, message.copy().asExpandable())
+                if(condition(it + 1)) {
+                    function(batchMessageCache.copy())
+                    batchMessageCache.clear()
+                    0
+                } else {
+                    it + 1
+                }
             }
         }
     }
