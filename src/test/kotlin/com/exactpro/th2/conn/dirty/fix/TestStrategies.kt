@@ -141,7 +141,7 @@ class TestStrategies {
         verify(channel, timeout(300)).send(any(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
 
-        Thread.sleep(100) // wait for strategies to apply
+        Thread.sleep(200) // wait for strategies to apply
 
         handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), getMessageId())
         handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), getMessageId())
@@ -192,7 +192,7 @@ class TestStrategies {
         verify(channel, timeout(300)).send(any(), any(), anyOrNull(), any()) // Logon // 2
         clearInvocations(channel)
 
-        Thread.sleep(100) // wait for strategies to apply
+        Thread.sleep(200) // wait for strategies to apply
 
         handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), getMessageId()) // 3
         handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), getMessageId()) // 4
@@ -295,9 +295,9 @@ class TestStrategies {
         clearInvocations(channel)
         verify(channel, timeout(defaultRuleDuration.millis() + 300)).open()
         verify(channel, timeout(600).times(1)).send(any(), any(), anyOrNull(), any())
-        messages.clear()
 
-        Thread.sleep(100) // wait for strategies to apply
+        Thread.sleep(200) // wait for strategies to apply
+        messages.clear()
 
         handler.onIncoming(channel, businessMessage(3), getMessageId())
         handler.onIncoming(channel, businessMessage(4), getMessageId())
@@ -362,6 +362,8 @@ class TestStrategies {
         verify(channel, timeout(defaultRuleDuration.millis() + 300)).open()
         verify(channel).send(any(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
+
+        Thread.sleep(200) // Waiting for strategy to apply
 
         handler.onOutgoing(channel, businessMessage(3).asExpandable(), Collections.emptyMap())
         handler.onOutgoing(channel, businessMessage(4).asExpandable(), Collections.emptyMap())
