@@ -137,7 +137,7 @@ class TestStrategies {
         val captor = argumentCaptor<ByteBuf> {  }
 
         verify(channel, timeout(defaultRuleDuration.millis() + 300)).open()
-        verify(channel).send(any(), any(), anyOrNull(), any()) // Logon
+        verify(channel, timeout(300)).send(any(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
 
         handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), getMessageId())
@@ -145,7 +145,7 @@ class TestStrategies {
         handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), getMessageId())
 
         verify(channel, timeout(businessRuleDuration.millis() + businessRuleCleanupDuration.millis() + 300)).open()
-        verify(channel).send(captor.capture(), any(), anyOrNull(), any()) // Logon
+        verify(channel, timeout(300)).send(captor.capture(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
 
         channel.close()
@@ -355,11 +355,11 @@ class TestStrategies {
         handler.onOutgoing(channel, businessMessage(5).asExpandable(), Collections.emptyMap())
 
         verify(channel, timeout(businessRuleDuration.millis() + 300)).open()
-        verify(channel).send(any(), any(), anyOrNull(), any()) // Logon
+        verify(channel, timeout(300)).send(any(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
         messages.clear()
         handler.onIncoming(channel, resendRequest(3, 3, 5), getMessageId())
-        Thread.sleep(100)
+        verify(channel, timeout(500).times(3)).send(any(), any(), anyOrNull(), any()) // recovery
 
         messages.forEachIndexed { idx, message ->
             val buff = message.first

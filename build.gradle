@@ -114,8 +114,6 @@ test {
         events "passed", "skipped", "failed"
         // You can adjust the logging level as needed
         exceptionFormat "full"
-        showStandardStreams = true
-        maxParallelForks = 1
     }
 }
 
