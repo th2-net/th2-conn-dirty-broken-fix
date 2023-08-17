@@ -86,6 +86,7 @@ class StrategyState(val config: RuleConfiguration? = null) {
         batchMessageCache.addComponent(true, message.copy().asExpandable())
         if(condition(batchMessageCacheSize + 1)) {
             function(batchMessageCache.copy())
+            batchMessageCache.removeComponents(0, batchMessageCache.numComponents())
             batchMessageCache.clear()
             batchMessageCacheSize = 0
         } else {
@@ -96,6 +97,7 @@ class StrategyState(val config: RuleConfiguration? = null) {
     fun executeOnBatchCacheIfCondition(condition: (Int) -> Boolean, function: (ByteBuf) -> Unit) = lock.write {
         if(condition(batchMessageCacheSize)) {
             function(batchMessageCache.copy())
+            batchMessageCache.removeComponents(0, batchMessageCache.numComponents())
             batchMessageCacheSize = 0
             batchMessageCache.clear()
         }
