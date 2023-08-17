@@ -293,6 +293,8 @@ class TestStrategies {
         verify(channel, timeout(600).times(1)).send(any(), any(), anyOrNull(), any())
         messages.clear()
 
+        Thread.sleep(100) // wait for strategies to apply
+
         handler.onIncoming(channel, businessMessage(3), getMessageId())
         handler.onIncoming(channel, businessMessage(4), getMessageId())
 
@@ -360,17 +362,28 @@ class TestStrategies {
         handler.onOutgoing(channel, businessMessage(3).asExpandable(), Collections.emptyMap())
         handler.onOutgoing(channel, businessMessage(4).asExpandable(), Collections.emptyMap())
         handler.onOutgoing(channel, businessMessage(5).asExpandable(), Collections.emptyMap())
+        clearInvocations(channel)
+        val captor = argumentCaptor<ByteBuf> {  }
+
+        handler.onIncoming(channel, resendRequest(3, 3, 5), getMessageId())
+        verify(channel, timeout(500).times(3)).send(captor.capture(), any(), anyOrNull(), any()) // recovery
+        clearInvocations(channel)
 
         verify(channel, timeout(businessRuleDuration.millis() + 300)).open()
         verify(channel, timeout(300)).send(any(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
         messages.clear()
-        handler.onIncoming(channel, resendRequest(3, 3, 5), getMessageId())
-        verify(channel, timeout(500).times(3)).send(any(), any(), anyOrNull(), any()) // recovery
 
-        messages.forEachIndexed { idx, message ->
-            val buff = message.first
-            assertContains(mapOf(35 to "AE", 43 to "Y", 34 to "${idx + 3}"), buff)
+        captor.firstValue.apply {
+            assertContains(mapOf(35 to "AE", 43 to "Y", 34 to "3"), this)
+        }
+
+        captor.secondValue.apply {
+            assertContains(mapOf(35 to "AE", 43 to "Y", 34 to "4"), this)
+        }
+
+        captor.thirdValue.apply {
+            assertContains(mapOf(35 to "AE", 43 to "Y", 34 to "5"), this)
         }
 
         handler.close()

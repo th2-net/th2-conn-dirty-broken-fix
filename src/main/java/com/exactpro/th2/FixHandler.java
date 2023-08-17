@@ -979,7 +979,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         try {
             if(!executorService.awaitTermination(settings.getDisconnectRequestDelay(), TimeUnit.MILLISECONDS)) {
-                LOGGER.warn("Failed to shutdown executor in 5 seconds.");
+                LOGGER.warn("Failed to shutdown executor.");
                 executorService.shutdownNow();
             }
         } catch (Exception e) {
