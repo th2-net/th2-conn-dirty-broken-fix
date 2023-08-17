@@ -155,8 +155,6 @@ import static com.exactpro.th2.constants.Constants.USERNAME;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.asExpandable;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.indexOf;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.isEmpty;
-import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.padStart;
-import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.set;
 import static com.exactpro.th2.util.MessageUtil.findByte;
 import static com.exactpro.th2.util.MessageUtil.getBodyLength;
 import static com.exactpro.th2.util.MessageUtil.getChecksum;
@@ -337,6 +335,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                 LOGGER.error("Error while sleeping.");
             }
         }
+        LOGGER.info("Sending message %s into send handler.", body.toString(StandardCharsets.UTF_8));
         return strategy.getSendStrategy(SendStrategy::getSendHandler).send(channel, body, properties, eventID);
     }
 

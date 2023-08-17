@@ -85,17 +85,12 @@ class StrategyState(val config: RuleConfiguration? = null) {
     fun updateCacheAndRunOnCondition(message: ByteBuf, condition: (Int) -> Boolean, function: (ByteBuf) -> Unit) = lock.write {
         batchMessageCache.addComponent(true, message.copy().asExpandable())
         if(condition(batchMessageCacheSize + 1)) {
-            K_LOGGER.info { "Condition triggered on ${batchMessageCacheSize + 1}. Sending batch and then clearing it." }
             function(batchMessageCache.copy())
             batchMessageCache.clear()
-            K_LOGGER.info { "Batch message cache size after clearing: ${batchMessageCache.readableBytes()}" }
             batchMessageCacheSize = 0
         } else {
-            K_LOGGER.info { "Added message into batch. Current batch is: ${batchMessageCache.toString(Charsets.UTF_8)}" }
             batchMessageCacheSize += 1
         }
-    }.also {
-        K_LOGGER.info { "Updated batch size: $batchMessageCacheSize" }
     }
 
     fun executeOnBatchCacheIfCondition(condition: (Int) -> Boolean, function: (ByteBuf) -> Unit) = lock.write {
