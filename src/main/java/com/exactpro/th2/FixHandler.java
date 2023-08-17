@@ -1018,6 +1018,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         List<Instant> sendingTimes = new ArrayList<>();
         for(ByteBuf slice : slices) {
             channel.send(asExpandable(slice), metadata, eventID, SendMode.DIRECT_SOCKET);
+            resetHeartbeatTask();
             sendingTimes.add(Instant.now());
             try {
                 Thread.sleep(sleepTime);
