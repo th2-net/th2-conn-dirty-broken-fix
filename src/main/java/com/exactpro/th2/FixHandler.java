@@ -981,15 +981,20 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private CompletableFuture<MessageID> bulkSend(IChannel channel, ByteBuf message, Map<String, String> properties, EventID eventID) {
+        resetHeartbeatTask();
         BatchSendConfiguration config = strategy.getBatchSendConfiguration();
         onOutgoingUpdateTag(message, properties);
         StrategyState strategyState = strategy.getState();
 
         CompletableFuture<MessageID> messageID;
         strategyState.updateCacheAndRunOnCondition(message, x -> x == config.getBatchSize(), buffer -> {
-            LOGGER.info("Sent batch of size: {}", config.getBatchSize());
-            channel.send(asExpandable(buffer), properties, eventID, SendMode.DIRECT)
-                .thenAcceptAsync(strategyState::addMessageID, executorService);
+            try {
+                LOGGER.info("Sending batch of size: {}", config.getBatchSize());
+                channel.send(asExpandable(buffer), properties, eventID, SendMode.DIRECT)
+                    .thenAcceptAsync(strategyState::addMessageID, executorService);
+            } catch (Exception e) {
+                LOGGER.error("Error while sending batch.");
+            }
             return Unit.INSTANCE;
         });
 
