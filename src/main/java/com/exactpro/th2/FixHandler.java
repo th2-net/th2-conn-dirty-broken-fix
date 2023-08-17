@@ -597,7 +597,14 @@ public class FixHandler implements AutoCloseable, IHandler {
         FixField seqNumValue = findField(message, NEW_SEQ_NO_TAG);
 
         if(seqNumValue != null) {
-            serverMsgSeqNum.set(Integer.parseInt(requireNonNull(seqNumValue.getValue())) - 1);
+            int newSeqNo = Integer.parseInt(requireNonNull(seqNumValue.getValue()));
+            serverMsgSeqNum.updateAndGet(sequence -> {
+                if(sequence < newSeqNo - 1) {
+                    return newSeqNo - 1;
+                } else {
+                    return sequence;
+                }
+            });
         } else {
             LOGGER.trace("Failed to reset servers MsgSeqNum. No such tag in message: {}", message.toString(US_ASCII));
         }
@@ -951,6 +958,16 @@ public class FixHandler implements AutoCloseable, IHandler {
     public void close() {
         sendLogout();
         waitLogoutResponse();
+        executorService.shutdown();
+
+        try {
+            if(!executorService.awaitTermination(settings.getDisconnectRequestDelay(), TimeUnit.MILLISECONDS)) {
+                LOGGER.warn("Failed to shutdown executor.");
+                executorService.shutdownNow();
+            }
+        } catch (Exception e) {
+            LOGGER.error("Error while closing handler executor service.", e);
+        }
     }
 
     // <editor-fold desc="strategies definitions goes here.">
@@ -964,15 +981,20 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private CompletableFuture<MessageID> bulkSend(IChannel channel, ByteBuf message, Map<String, String> properties, EventID eventID) {
+        resetHeartbeatTask();
         BatchSendConfiguration config = strategy.getBatchSendConfiguration();
         onOutgoingUpdateTag(message, properties);
         StrategyState strategyState = strategy.getState();
 
         CompletableFuture<MessageID> messageID;
-        strategyState.updateCacheAndRunOnCondition(message, x -> x == config.getBatchSize(), buffer -> {
-            LOGGER.info("Sent batch of size: {}", config.getBatchSize());
-            channel.send(asExpandable(buffer), properties, eventID, SendMode.DIRECT)
-                .thenAcceptAsync(strategyState::addMessageID, executorService);
+        strategyState.updateCacheAndRunOnCondition(message, x -> x >= config.getBatchSize(), buffer -> {
+            try {
+                LOGGER.info("Sending batch of size: {}", config.getBatchSize());
+                channel.send(asExpandable(buffer), properties, eventID, SendMode.DIRECT)
+                    .thenAcceptAsync(strategyState::addMessageID, executorService);
+            } catch (Exception e) {
+                LOGGER.error("Error while sending batch.", e);
+            }
             return Unit.INSTANCE;
         });
 
@@ -997,6 +1019,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         List<Instant> sendingTimes = new ArrayList<>();
         for(ByteBuf slice : slices) {
             channel.send(asExpandable(slice), metadata, eventID, SendMode.DIRECT_SOCKET);
+            resetHeartbeatTask();
             sendingTimes.add(Instant.now());
             try {
                 Thread.sleep(sleepTime);
@@ -1480,8 +1503,12 @@ public class FixHandler implements AutoCloseable, IHandler {
         var state = strategy.getState();
         strategy.updateSendStrategy(x -> {
             state.executeOnBatchCacheIfCondition(size -> size > 0, message -> {
-                channel.send(message, Collections.emptyMap(), null, SendMode.DIRECT)
-                    .thenAcceptAsync(messageID -> strategy.getState().addMessageID(messageID), executorService);
+                try {
+                    channel.send(message, Collections.emptyMap(), null, SendMode.DIRECT)
+                        .thenAcceptAsync(messageID -> strategy.getState().addMessageID(messageID), executorService);
+                } catch (Exception e) {
+                    LOGGER.error("Error while sending batch.", e);
+                }
                 return Unit.INSTANCE;
             });
             x.setSendHandler(this::defaultSend);

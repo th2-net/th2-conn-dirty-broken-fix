@@ -26,101 +26,88 @@ import java.time.Instant
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.locks.ReentrantLock
+import java.util.concurrent.locks.ReentrantReadWriteLock
+import kotlin.concurrent.read
 import kotlin.concurrent.withLock
+import kotlin.concurrent.write
 import mu.KotlinLogging
 
 class StrategyState(val config: RuleConfiguration? = null) {
     val startTime: Instant = Instant.now()
     val type = config?.ruleType ?: RuleType.DEFAULT
-    val batchMessageCache: CompositeByteBuf = Unpooled.compositeBuffer()
+    private val batchMessageCache: CompositeByteBuf = Unpooled.compositeBuffer()
     val messageIDs: MutableList<MessageID> = Collections.synchronizedList(ArrayList<MessageID>())
 
-    private val writeLock = ReentrantLock()
+    private val lock = ReentrantReadWriteLock()
     private val missedMessagesCache: MutableMap<Long, ByteBuf> = ConcurrentHashMap<Long, ByteBuf>()
-    private val batchMessageCacheSize = AtomicInteger(0)
+    private var batchMessageCacheSize = 0
 
-    private val missedIncomingMessagesCount = AtomicInteger(0)
-    fun updateMissedIncomingMessagesCountIfCondition(condition: (Int) -> Boolean): Boolean = writeLock.withLock {
-        var updated = false
-        missedIncomingMessagesCount.updateAndGet {
-            if(condition(it + 1)) {
-                updated = true
-                it + 1
-            } else {
-                it
-            }
+    private var missedIncomingMessagesCount = 0
+    fun updateMissedIncomingMessagesCountIfCondition(condition: (Int) -> Boolean): Boolean = lock.write {
+        if (condition(missedIncomingMessagesCount + 1)) {
+            missedIncomingMessagesCount += 1
+            true
+        } else {
+            false
         }
-        updated
     }
 
-    private val transformedIncomingMessagesCount = AtomicInteger(0)
-    fun getTransformedIncomingMessagesCount() = writeLock.withLock { transformedIncomingMessagesCount.get() }
-    fun transformIfCondition(condition: (Int) -> Boolean, transform: () -> Unit): Boolean = writeLock.withLock {
-        var updated = false
-        transformedIncomingMessagesCount.updateAndGet {
-            if(condition(it + 1)) {
-                updated = true
+    private var transformedIncomingMessagesCount = 0
+    fun getTransformedIncomingMessagesCount() = lock.read { transformedIncomingMessagesCount }
+    fun transformIfCondition(condition: (Int) -> Boolean, transform: () -> Unit): Boolean = lock.write {
+        if (condition(transformedIncomingMessagesCount + 1)) {
+            try {
                 transform()
-                it + 1
+            } catch (e: Exception) {
+                K_LOGGER.error(e) { "Error while transforming message" }
+            }
+            transformedIncomingMessagesCount += 1
+            true
+        } else {
+            false
+        }
+    }
+
+    private var missedOutgoingMessagesCount = 0
+    fun addMissedMessageToCacheIfCondition(sequence: Long, message: ByteBuf, condition: (Int) -> Boolean): Boolean =
+        lock.write {
+            if (condition(missedOutgoingMessagesCount + 1)) {
+                missedOutgoingMessagesCount += 1
+                missedMessagesCache[sequence] = message
+                true
             } else {
-                it
+                false
             }
         }
-        updated
-    }
 
-    private val missedOutgoingMessagesCount = AtomicInteger(0)
-    fun addMissedMessageToCacheIfCondition(sequence: Long, message: ByteBuf, condition: (Int) -> Boolean): Boolean {
-        writeLock.withLock {
-            var updated = false
-            missedOutgoingMessagesCount.updateAndGet {
-                if(condition(it + 1)) {
-                    missedMessagesCache[sequence] = message
-                    updated = true
-                    it + 1
-                } else {
-                    it
-                }
-            }
-            return updated
+    fun getMissedMessage(sequence: Long): ByteBuf? = lock.read { missedMessagesCache[sequence] }
+
+    fun updateCacheAndRunOnCondition(message: ByteBuf, condition: (Int) -> Boolean, function: (ByteBuf) -> Unit) = lock.write {
+        batchMessageCache.addComponent(true, message.copy().asExpandable())
+        if(condition(batchMessageCacheSize + 1)) {
+            function(batchMessageCache.copy())
+            batchMessageCache.removeComponents(0, batchMessageCache.numComponents())
+            batchMessageCache.clear()
+            batchMessageCacheSize = 0
+        } else {
+            batchMessageCacheSize += 1
         }
     }
 
-    fun getMissedMessage(sequence: Long): ByteBuf? = missedMessagesCache[sequence]
-
-    fun updateCacheAndRunOnCondition(message: ByteBuf, condition: (Int) -> Boolean, function: (ByteBuf) -> Unit) {
-        writeLock.withLock {
-            batchMessageCacheSize.updateAndGet {
-                batchMessageCache.addComponent(true, message.copy().asExpandable())
-                if(condition(it + 1)) {
-                    function(batchMessageCache.copy())
-                    batchMessageCache.clear()
-                    0
-                } else {
-                    it + 1
-                }
-            }
+    fun executeOnBatchCacheIfCondition(condition: (Int) -> Boolean, function: (ByteBuf) -> Unit) = lock.write {
+        if(condition(batchMessageCacheSize)) {
+            function(batchMessageCache.copy())
+            batchMessageCache.removeComponents(0, batchMessageCache.numComponents())
+            batchMessageCacheSize = 0
+            batchMessageCache.clear()
         }
     }
 
-    fun executeOnBatchCacheIfCondition(condition: (Int) -> Boolean, function: (ByteBuf) -> Unit) {
-        writeLock.withLock {
-            if(condition(batchMessageCacheSize.get())) {
-                function(batchMessageCache.copy())
-                batchMessageCacheSize.set(0)
-                batchMessageCache.clear()
-            }
+    fun addMessageID(messageID: MessageID?) = lock.write {
+        if (messageIDs.size + 1 >= TOO_BIG_MESSAGE_IDS_LIST) {
+            K_LOGGER.warn { "Strategy ${type} messageIDs list is too big. Skiping messageID: ${shortDebugString(messageID)}" }
         }
-    }
-
-    fun addMessageID(messageID: MessageID?) {
-        writeLock.withLock {
-            if(messageIDs.size + 1 >= TOO_BIG_MESSAGE_IDS_LIST) {
-                K_LOGGER.warn { "Strategy ${type} messageIDs list is too big. Skiping messageID: ${shortDebugString(messageID)}" }
-            }
-            messageID?.let { messageIDs.add(it) }
-        }
+        messageID?.let { messageIDs.add(it) }
     }
 
     companion object {
