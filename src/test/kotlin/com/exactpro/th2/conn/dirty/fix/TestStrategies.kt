@@ -63,7 +63,6 @@ import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
-@Disabled
 class TestStrategies {
 
     private class TestContext(
