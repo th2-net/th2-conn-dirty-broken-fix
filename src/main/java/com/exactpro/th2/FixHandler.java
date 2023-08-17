@@ -593,7 +593,14 @@ public class FixHandler implements AutoCloseable, IHandler {
         FixField seqNumValue = findField(message, NEW_SEQ_NO_TAG);
 
         if(seqNumValue != null) {
-            serverMsgSeqNum.set(Integer.parseInt(requireNonNull(seqNumValue.getValue())) - 1);
+            int newSeqNo = Integer.parseInt(requireNonNull(seqNumValue.getValue()));
+            serverMsgSeqNum.updateAndGet(sequence -> {
+                if(sequence < newSeqNo - 1) {
+                    return newSeqNo - 1;
+                } else {
+                    return sequence;
+                }
+            });
         } else {
             LOGGER.trace("Failed to reset servers MsgSeqNum. No such tag in message: {}", message.toString(US_ASCII));
         }
