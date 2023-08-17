@@ -222,8 +222,8 @@ class TestStrategies {
                 RuleConfiguration(RuleType.DEFAULT, duration = Duration.of(2, ChronoUnit.SECONDS), cleanUpDuration = Duration.of(0, ChronoUnit.SECONDS)),
                 RuleConfiguration(
                     RuleType.TRANSFORM_LOGON,
-                    duration = Duration.of(4, ChronoUnit.SECONDS),
-                    cleanUpDuration = Duration.of(1, ChronoUnit.SECONDS),
+                    duration = Duration.of(8, ChronoUnit.SECONDS),
+                    cleanUpDuration = Duration.of(2, ChronoUnit.SECONDS),
                     transformMessageConfiguration = TransformMessageConfiguration(
                         listOf(
                             Action(
