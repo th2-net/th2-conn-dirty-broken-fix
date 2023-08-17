@@ -141,6 +141,8 @@ class TestStrategies {
         verify(channel, timeout(300)).send(any(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
 
+        Thread.sleep(100) // wait for strategies to apply
+
         handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), getMessageId())
         handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), getMessageId())
         handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), getMessageId())
@@ -189,6 +191,8 @@ class TestStrategies {
         verify(channel, timeout(defaultRuleDuration.millis() + 300)).open()
         verify(channel, timeout(300)).send(any(), any(), anyOrNull(), any()) // Logon // 2
         clearInvocations(channel)
+
+        Thread.sleep(100) // wait for strategies to apply
 
         handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), getMessageId()) // 3
         handler.onIncoming(channel, businessMessage(incomingSequence.incrementAndGet()), getMessageId()) // 4
