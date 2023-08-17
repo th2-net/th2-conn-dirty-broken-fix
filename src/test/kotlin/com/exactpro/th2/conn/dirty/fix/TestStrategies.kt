@@ -50,6 +50,7 @@ import java.util.regex.Pattern
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import mu.KotlinLogging
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
@@ -61,7 +62,6 @@ import org.mockito.kotlin.timeout
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
-
 
 class TestStrategies {
 
@@ -98,8 +98,6 @@ class TestStrategies {
 
         val captor = argumentCaptor<ByteBuf> {  }
         verify(channel, timeout(businessRuleCleanupDuration.millis() + 300).times(2)).send(captor.capture(), any(), anyOrNull(), any())
-
-        channel.close()
 
         captor.firstValue.apply {
             assertContains(mapOf(35 to "A"), this)
@@ -294,7 +292,6 @@ class TestStrategies {
 
         val channel = testContext.channel
         val handler = testContext.fixHandler
-
         clearInvocations(channel)
         verify(channel, timeout(defaultRuleDuration.millis() + 300)).open()
         verify(channel, timeout(600).times(1)).send(any(), any(), anyOrNull(), any())
@@ -369,7 +366,6 @@ class TestStrategies {
         handler.onOutgoing(channel, businessMessage(3).asExpandable(), Collections.emptyMap())
         handler.onOutgoing(channel, businessMessage(4).asExpandable(), Collections.emptyMap())
         handler.onOutgoing(channel, businessMessage(5).asExpandable(), Collections.emptyMap())
-
         clearInvocations(channel)
         val captor = argumentCaptor<ByteBuf> {  }
 
@@ -714,7 +710,7 @@ class TestStrategies {
             }
             if(msg.contains("35=A\u0001")) {
                 if(useNextExpectedSeqNum) {
-                    handler.onIncoming(channel, logonResponseWithNextExpectedSeq(incomingSequence.incrementAndGet(), outgoingSequence), getMessageId())
+                    handler.onIncoming(channel, logonResponseWithNextExpectedSeq(incomingSequence.incrementAndGet(), outgoingSequence + 1), getMessageId())
                 } else {
                     handler.onIncoming(channel, logonResponse(incomingSequence.incrementAndGet()), getMessageId())
                 }

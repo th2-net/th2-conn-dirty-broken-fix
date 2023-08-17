@@ -17,6 +17,8 @@ package com.exactpro.th2;
 
 import com.exactpro.th2.conn.dirty.fix.FixProtocolManglerSettings;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BrokenConnConfiguration;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import org.jetbrains.annotations.NotNull;
 
 public class TestUtils {

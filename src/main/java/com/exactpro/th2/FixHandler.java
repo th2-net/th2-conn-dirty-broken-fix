@@ -23,6 +23,7 @@ import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.utils.event.transport.EventUtilsKt;
 import com.exactpro.th2.conn.dirty.fix.FixField;
 import com.exactpro.th2.conn.dirty.fix.MessageTransformer;
+import com.exactpro.th2.conn.dirty.fix.PasswordManager;
 import com.exactpro.th2.conn.dirty.fix.SequenceLoader;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BatchSendConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.ChangeSequenceConfiguration;
@@ -61,6 +62,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -188,7 +190,6 @@ public class FixHandler implements AutoCloseable, IHandler {
     private final IHandlerContext context;
     private final InetSocketAddress address;
     private final DataProviderService dataProvider;
-    private final List<String> previouslyUsedPasswords;
 
     private final StatefulStrategy strategy = defaultStrategyHolder();
     private final StrategyScheduler scheduler;
@@ -200,6 +201,8 @@ public class FixHandler implements AutoCloseable, IHandler {
     private volatile IChannel channel;
     protected FixHandlerSettings settings;
     private final MessageTransformer messageTransformer = MessageTransformer.INSTANCE;
+
+    private final PasswordManager passwordManager;
 
     public FixHandler(IHandlerContext context) {
         this.context = context;
@@ -257,17 +260,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         if (settings.getTestRequestDelay() <= 0) throw new IllegalArgumentException("TestRequestDelay cannot be negative or zero");
         if (settings.getDisconnectRequestDelay() <= 0) throw new IllegalArgumentException("DisconnectRequestDelay cannot be negative or zero");
 
-        String previousPasswords = settings.getPreviousPasswords();
-        if(previousPasswords == null || previousPasswords.isEmpty()) {
-            previouslyUsedPasswords = new ArrayList<>();
-        } else {
-            previouslyUsedPasswords = List.of(previousPasswords.split(","));
-        }
-
-        String newPass = settings.getNewPassword();
-        if(previouslyUsedPasswords.contains(newPass)) {
-            throw new IllegalStateException("`newPassword` contains password that was already used in the past.");
-        }
+        passwordManager = new PasswordManager(settings.getInfraBackupUrl(), settings.getPassword(), settings.getNewPassword(), settings.getSenderCompID());
 
         if (settings.getBrokenConnConfiguration() == null) {
             scheduler = new StrategyScheduler(SchedulerType.CONSECUTIVE, Collections.emptyList());
@@ -326,6 +319,8 @@ public class FixHandler implements AutoCloseable, IHandler {
             context.send(CommonUtil.toEvent(String.format("Closing session %s. Is graceful disconnect: %b", channel.getSessionAlias(), !isUngracefulDisconnect)));
             try {
                 disconnect(!isUngracefulDisconnect);
+                enabled.set(false);
+                channel.open().get();
             } catch (Exception e) {
                 context.send(CommonUtil.toErrorEvent(String.format("Error while ending session %s by user logout. Is graceful disconnect: %b", channel.getSessionAlias(), !isUngracefulDisconnect), e));
             }
@@ -708,16 +703,23 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private boolean checkLogon(ByteBuf message) {
         FixField sessionStatusField = findField(message, SESSION_STATUS_TAG); //check another options
-        if (sessionStatusField == null || requireNonNull(sessionStatusField.getValue()).equals("0")) {
-            FixField msgSeqNumValue = findField(message, MSG_SEQ_NUM_TAG);
-            if (msgSeqNumValue == null) {
-                return false;
-            }
-            serverMsgSeqNum.set(Integer.parseInt(requireNonNull(msgSeqNumValue.getValue())));
-            context.send(CommonUtil.toEvent("successful login"), null);
-            return true;
+
+        String sessionStatusValue = "0";
+        if(sessionStatusField != null) {
+            sessionStatusValue = sessionStatusField.getValue();
         }
-        return false;
+
+        if(!Objects.equals(sessionStatusValue, "0") && !Objects.equals(sessionStatusValue, "1")) {
+            return false;
+        }
+
+        FixField msgSeqNumValue = findField(message, MSG_SEQ_NUM_TAG);
+        if (msgSeqNumValue == null) {
+            return false;
+        }
+        serverMsgSeqNum.set(Integer.parseInt(requireNonNull(msgSeqNumValue.getValue())));
+        context.send(CommonUtil.toEvent("successful login"), null);
+        return true;
     }
 
     @Override
@@ -876,6 +878,14 @@ public class FixHandler implements AutoCloseable, IHandler {
             LOGGER.info("Logon is not sent to server because session is not active.");
             return;
         }
+
+        if(enabled.get()) {
+            String message = String.format("Logon attempt while already logged in: %s - %s", channel.getSessionGroup(), channel.getSessionAlias());
+            LOGGER.warn(message);
+            context.send(CommonUtil.toEvent(message));
+            return;
+        }
+
         StringBuilder logon = new StringBuilder();
         Boolean reset;
         if (!connStarted.get()) {
@@ -892,20 +902,26 @@ public class FixHandler implements AutoCloseable, IHandler {
         if (reset) logon.append(RESET_SEQ_NUM).append("Y");
         if (settings.getDefaultApplVerID() != null) logon.append(DEFAULT_APPL_VER_ID).append(settings.getDefaultApplVerID());
         if (settings.getUsername() != null) logon.append(USERNAME).append(settings.getUsername());
-        if (settings.getPassword() != null) {
-            if (settings.getPasswordEncryptKey() != null) {
-                logon.append(ENCRYPTED_PASSWORD).append(encrypt(settings.getPassword()));
-            } else {
-                logon.append(PASSWORD).append(settings.getPassword());
+        passwordManager.use((x) -> {
+
+            if (x.getPassword() != null) {
+                if (settings.getPasswordEncryptKey() != null) {
+                    logon.append(ENCRYPTED_PASSWORD).append(encrypt(x.getPassword()));
+                } else {
+                    logon.append(PASSWORD).append(x.getPassword());
+                }
             }
-        }
-        if (settings.getNewPassword() != null) {
-            if (settings.getPasswordEncryptKey() != null) {
-                logon.append(NEW_ENCRYPTED_PASSWORD).append(encrypt(settings.getNewPassword()));
-            } else {
-                logon.append(NEW_PASSWORD).append(settings.getNewPassword());
+
+            if (x.getNewPassword() != null) {
+                if (settings.getPasswordEncryptKey() != null) {
+                    logon.append(NEW_ENCRYPTED_PASSWORD).append(encrypt(x.getNewPassword()));
+                } else {
+                    logon.append(NEW_PASSWORD).append(x.getNewPassword());
+                }
             }
-        }
+
+            return Unit.INSTANCE;
+        });
 
         setChecksumAndBodyLength(logon);
         LOGGER.info("Send logon - {}", logon);
@@ -950,6 +966,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     public void onClose(@NotNull IChannel channel) {
         strategy.getOnCloseHandler().close();
         enabled.set(false);
+        if(passwordManager != null) passwordManager.poll();
         cancelFuture(heartbeatTimer);
         cancelFuture(testRequestTimer);
     }
@@ -976,7 +993,6 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private CompletableFuture<MessageID> defaultSend(IChannel channel, ByteBuf message, Map<String, String> properties, EventID eventID) {
         CompletableFuture<MessageID> messageId = channel.send(message, properties, eventID, SendMode.HANDLE_AND_MANGLE);
-        messageId.thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
         return messageId;
     }
 
@@ -986,7 +1002,6 @@ public class FixHandler implements AutoCloseable, IHandler {
         onOutgoingUpdateTag(message, properties);
         StrategyState strategyState = strategy.getState();
 
-        CompletableFuture<MessageID> messageID;
         strategyState.updateCacheAndRunOnCondition(message, x -> x >= config.getBatchSize(), buffer -> {
             try {
                 LOGGER.info("Sending batch of size: {}", config.getBatchSize());
@@ -1072,7 +1087,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                     }
                 }
 
-                if(config.getUseOldPasswords() && !previouslyUsedPasswords.isEmpty()) {
+                if(config.getUseOldPasswords() && !passwordManager.getPreviouslyUsedPasswords().isEmpty()) {
                     if(settings.getPasswordEncryptKey() != null) {
                         FixField encryptedPassword = findField(message, ENCRYPTED_PASSWORD_TAG);
                         if(encryptedPassword != null) {
@@ -1686,6 +1701,8 @@ public class FixHandler implements AutoCloseable, IHandler {
         } else {
             channel.close().get();
         }
+        resetHeartbeatTask();
+        resetTestRequestTask();
     }
 
     private void openChannelAndWaitForLogon() throws ExecutionException, InterruptedException {
@@ -1741,6 +1758,10 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     public String getRandomOldPassword() {
+        var previouslyUsedPasswords = passwordManager.getPreviouslyUsedPasswords();
+        if(previouslyUsedPasswords.isEmpty()) {
+            throw new IllegalStateException("There was attempt to get old password while there is no old passwords");
+        }
         return previouslyUsedPasswords.get(random.nextInt(previouslyUsedPasswords.size()));
     }
 
