@@ -679,7 +679,7 @@ class TestStrategies {
             }
             if(msg.contains("35=A\u0001")) {
                 if(useNextExpectedSeqNum) {
-                    handler.onIncoming(channel, logonResponseWithNextExpectedSeq(incomingSequence.incrementAndGet(), outgoingSequence), getMessageId())
+                    handler.onIncoming(channel, logonResponseWithNextExpectedSeq(incomingSequence.incrementAndGet(), outgoingSequence + 1), getMessageId())
                 } else {
                     handler.onIncoming(channel, logonResponse(incomingSequence.incrementAndGet()), getMessageId())
                 }
