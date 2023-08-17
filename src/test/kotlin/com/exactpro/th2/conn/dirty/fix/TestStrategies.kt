@@ -122,8 +122,8 @@ class TestStrategies {
                 RuleConfiguration(RuleType.DEFAULT, duration = Duration.of(2, ChronoUnit.SECONDS), cleanUpDuration = Duration.of(0, ChronoUnit.SECONDS)),
                 RuleConfiguration(
                     RuleType.IGNORE_INCOMING_MESSAGES,
-                    duration = Duration.of(4, ChronoUnit.SECONDS),
-                    cleanUpDuration = Duration.of(1, ChronoUnit.SECONDS),
+                    duration = businessRuleDuration,
+                    cleanUpDuration = businessRuleCleanupDuration,
                     missIncomingMessagesConfiguration = MissMessageConfiguration(3)
                 ),
             ),
@@ -172,8 +172,8 @@ class TestStrategies {
                 RuleConfiguration(RuleType.DEFAULT, duration = Duration.of(2, ChronoUnit.SECONDS), cleanUpDuration = Duration.of(0, ChronoUnit.SECONDS)),
                 RuleConfiguration(
                     RuleType.IGNORE_INCOMING_MESSAGES,
-                    duration = Duration.of(4, ChronoUnit.SECONDS),
-                    cleanUpDuration = Duration.of(1, ChronoUnit.SECONDS),
+                    duration = businessRuleDuration,
+                    cleanUpDuration = businessRuleCleanupDuration,
                     missIncomingMessagesConfiguration = MissMessageConfiguration(3)
                 ),
             ),
