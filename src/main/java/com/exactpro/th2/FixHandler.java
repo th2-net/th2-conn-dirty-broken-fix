@@ -62,6 +62,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -335,7 +336,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                 LOGGER.error("Error while sleeping.");
             }
         }
-        LOGGER.info("Sending message %s into send handler.", body.toString(StandardCharsets.UTF_8));
+        LOGGER.info("Sending message {} into send handler.", body.toString(StandardCharsets.UTF_8));
         return strategy.getSendStrategy(SendStrategy::getSendHandler).send(channel, body, properties, eventID);
     }
 
@@ -980,6 +981,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private CompletableFuture<MessageID> bulkSend(IChannel channel, ByteBuf message, Map<String, String> properties, EventID eventID) {
+        LOGGER.info("Called bulkSend with message {}. Stacktrace: {}", message.toString(StandardCharsets.UTF_8), Arrays.toString(Thread.currentThread().getStackTrace()));
         resetHeartbeatTask();
         BatchSendConfiguration config = strategy.getBatchSendConfiguration();
         onOutgoingUpdateTag(message, properties);
