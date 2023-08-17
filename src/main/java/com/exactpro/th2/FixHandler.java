@@ -975,6 +975,16 @@ public class FixHandler implements AutoCloseable, IHandler {
     public void close() {
         sendLogout();
         waitLogoutResponse();
+        executorService.shutdown();
+
+        try {
+            if(!executorService.awaitTermination(settings.getDisconnectRequestDelay(), TimeUnit.MILLISECONDS)) {
+                LOGGER.warn("Failed to shutdown executor in 5 seconds.");
+                executorService.shutdownNow();
+            }
+        } catch (Exception e) {
+            LOGGER.error("Error while closing handler executor service.", e);
+        }
     }
 
     // <editor-fold desc="strategies definitions goes here.">
