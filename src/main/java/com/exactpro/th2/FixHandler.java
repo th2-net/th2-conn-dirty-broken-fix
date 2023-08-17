@@ -1386,7 +1386,6 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.resetStrategyAndState(configuration);
         strategy.setCleanupHandler(this::cleanupClientOutageStrategy);
         strategy.setOnCloseHandler(this::outageOnCloseHandler);
-        strategy.updateSendStrategy(x -> {x.setSendPreprocessor(this::blockSend); return Unit.INSTANCE; });
         strategy.updateIncomingMessageStrategy(x -> {x.setTestRequestProcessor(this::missTestRequest); return Unit.INSTANCE;});
         strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::missHeartbeatsAndTestRequestReplies); return Unit.INSTANCE;});
         ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
@@ -1401,7 +1400,6 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.resetStrategyAndState(configuration);
         strategy.setOnCloseHandler(this::outageOnCloseHandler);
         strategy.setCleanupHandler(this::cleanupPartialClientOutageStrategy);
-        strategy.updateSendStrategy(x -> {x.setSendPreprocessor(this::blockSend); return Unit.INSTANCE; });
         strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::missHeartbeats); return Unit.INSTANCE;});
         ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
     }
