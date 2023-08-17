@@ -94,13 +94,18 @@ class StrategyState(val config: RuleConfiguration? = null) {
             batchMessageCacheSize.updateAndGet {
                 batchMessageCache.addComponent(true, message.copy().asExpandable())
                 if(condition(it + 1)) {
+                    K_LOGGER.info { "Condition triggered on ${it + 1}. Sending batch and then clearing it." }
                     function(batchMessageCache.copy())
                     batchMessageCache.clear()
+                    K_LOGGER.info { "Batch message cache size after clearing: ${batchMessageCache.readableBytes()}" }
                     0
                 } else {
+                    K_LOGGER.info { "Added message into batch. Current batch is: ${batchMessageCache.toString(Charsets.UTF_8)}" }
                     it + 1
                 }
             }
+        }.also {
+            K_LOGGER.info { "Updated batch size: ${it}" }
         }
     }
 

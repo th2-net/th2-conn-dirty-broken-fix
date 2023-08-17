@@ -986,7 +986,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         onOutgoingUpdateTag(message, properties);
         StrategyState strategyState = strategy.getState();
 
-        strategyState.updateCacheAndRunOnCondition(message, x -> x == config.getBatchSize(), buffer -> {
+        strategyState.updateCacheAndRunOnCondition(message, x -> x >= config.getBatchSize(), buffer -> {
             try {
                 LOGGER.info("Sending batch of size: {}", config.getBatchSize());
                 channel.send(asExpandable(buffer), properties, eventID, SendMode.DIRECT)
