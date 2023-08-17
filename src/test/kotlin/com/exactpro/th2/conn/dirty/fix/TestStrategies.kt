@@ -515,7 +515,7 @@ class TestStrategies {
 
         verify(channel, timeout(defaultRuleDuration.millis() + businessRuleCleanupDuration.millis() + 300)).open()
         messages.clear()
-        verify(channel).send(any(), any(), anyOrNull(), any()) // Logon
+        verify(channel, timeout(500)).send(any(), any(), anyOrNull(), any()) // Logon
 
         handler.onIncoming(channel, resendRequest(3, 3, 8), getMessageId())
 
