@@ -682,7 +682,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         sequenceReset.append(NEW_SEQ_NO).append(endSeqNo);
         setChecksumAndBodyLength(sequenceReset);
 
-        channel.send(Unpooled.wrappedBuffer(sequenceReset.toString().getBytes(StandardCharsets.UTF_8)), Collections.emptyMap(), null, SendMode.HANDLE_AND_MANGLE)
+        channel.send(Unpooled.wrappedBuffer(sequenceReset.toString().getBytes(StandardCharsets.UTF_8)), Collections.emptyMap(), null, SendMode.DIRECT)
             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
         resetHeartbeatTask();
     }
