@@ -1760,9 +1760,9 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         while (!enabled.get()) {
             if(!sessionActive.get()) break;
-            LOGGER.info("Waiting until session will be logged in: {}", channel.getSessionAlias());
+            if(LOGGER.isDebugEnabled()) LOGGER.debug("Waiting until session will be logged in: {}", channel.getSessionAlias());
             try {
-                Thread.sleep(1000);
+                Thread.sleep(100);
             } catch (Exception e) {
                 LOGGER.error("Error while waiting session login.", e);
             }
