@@ -1438,6 +1438,17 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void cleanupClientOutageStrategy() {
+        strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
+        strategy.setOnCloseHandler(this::defaultOnCloseHandler);
+        try {
+            disconnect(strategy.getConfig().getGracefulDisconnect());
+            openChannelAndWaitForLogon();
+            Thread.sleep(strategy.getConfig().getCleanUpDuration().toMillis());
+        } catch (Exception e) {
+            String message = String.format("Error while setup %s strategy.", strategy.getType());
+            LOGGER.error(message, e);
+            context.send(toErrorEvent(message, e), strategyRootEvent);
+        }
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
         strategy.cleanupStrategy();
     }
@@ -1452,6 +1463,17 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void cleanupPartialClientOutageStrategy() {
+        strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
+        strategy.setOnCloseHandler(this::defaultOnCloseHandler);
+        try {
+            disconnect(strategy.getConfig().getGracefulDisconnect());
+            openChannelAndWaitForLogon();
+            Thread.sleep(strategy.getConfig().getCleanUpDuration().toMillis());
+        } catch (Exception e) {
+            String message = String.format("Error while setup %s strategy.", strategy.getType());
+            LOGGER.error(message, e);
+            context.send(toErrorEvent(message, e), strategyRootEvent);
+        }
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
         strategy.cleanupStrategy();
     }
