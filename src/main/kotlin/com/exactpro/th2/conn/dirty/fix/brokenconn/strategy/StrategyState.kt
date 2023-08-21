@@ -25,10 +25,8 @@ import io.netty.buffer.Unpooled
 import java.time.Instant
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
-import kotlin.concurrent.withLock
 import kotlin.concurrent.write
 import mu.KotlinLogging
 
