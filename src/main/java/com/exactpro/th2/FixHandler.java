@@ -62,7 +62,6 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -224,8 +223,11 @@ public class FixHandler implements AutoCloseable, IHandler {
             if(scheduleTime.isBefore(now)) {
                 scheduleTime = now.plusDays(1).with(resetTime);
             }
+
+            LOGGER.info("Next session end task will be executed in: {}", scheduleTime.toString());
+
             long time = now.until(scheduleTime, ChronoUnit.SECONDS);
-            executorService.scheduleAtFixedRate(this::reset, time, DAY_SECONDS, TimeUnit.SECONDS);
+            executorService.scheduleAtFixedRate(this::startSession, time, DAY_SECONDS, TimeUnit.SECONDS);
         }
 
         if(settings.getSessionEndTime() != null) {
@@ -239,13 +241,10 @@ public class FixHandler implements AutoCloseable, IHandler {
                 sessionActive.set(false);
             }
 
+            LOGGER.info("Next session end task will be executed in: {}", scheduleTime.toString());
+
             long time = now.until(scheduleTime, ChronoUnit.SECONDS);
-            executorService.scheduleAtFixedRate(() -> {
-                sendLogout();
-                waitLogoutResponse();
-                channel.close();
-                sessionActive.set(false);
-            }, time, DAY_SECONDS, TimeUnit.SECONDS);
+            executorService.scheduleAtFixedRate(this::endSession, time, DAY_SECONDS, TimeUnit.SECONDS);
         }
 
         String host = settings.getHost();
@@ -612,11 +611,29 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
     }
 
-    private void reset() {
-        msgSeqNum.set(0);
-        serverMsgSeqNum.set(0);
-        sessionActive.set(true);
-        channel.open();
+    private void startSession() {
+        try {
+            LOGGER.info("Starting session by schedule: {}", channel.getSessionAlias());
+            msgSeqNum.set(0);
+            serverMsgSeqNum.set(0);
+            sessionActive.set(true);
+            channel.open();
+        } catch (Exception e) {
+            LOGGER.error("Failed to start session by schedule: {}. Next attempt in 5 minutes.", channel.getSessionAlias());
+            executorService.schedule(this::startSession, 5, TimeUnit.MINUTES);
+        }
+    }
+
+    private void endSession() {
+        try {
+            LOGGER.info("Ending session by schedule: {}", channel.getSessionAlias());
+            sendLogout();
+            waitLogoutResponse();
+            sessionActive.set(false);
+            channel.close();
+        } catch (Exception e) {
+            LOGGER.error("Failed to end session by schedule: {}. Next attempt in 5 minutes.", channel.getSessionAlias());
+        }
     }
 
     public void sendResendRequest(int beginSeqNo, int endSeqNo) { //do private
@@ -1740,10 +1757,12 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void waitUntilLoggedIn() {
+
         while (!enabled.get()) {
+            if(!sessionActive.get()) break;
             LOGGER.info("Waiting until session will be logged in: {}", channel.getSessionAlias());
             try {
-                Thread.sleep(100);
+                Thread.sleep(1000);
             } catch (Exception e) {
                 LOGGER.error("Error while waiting session login.", e);
             }
