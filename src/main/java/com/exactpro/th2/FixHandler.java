@@ -1743,10 +1743,9 @@ public class FixHandler implements AutoCloseable, IHandler {
         if(graceful) {
             sendLogout();
             waitLogoutResponse();
-            channel.close().get();
-        } else {
-            channel.close().get();
         }
+        channel.close().get();
+        enabled.set(false);
         resetHeartbeatTask();
         resetTestRequestTask();
     }
@@ -1757,10 +1756,10 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void waitUntilLoggedIn() {
-
-        while (!enabled.get()) {
+        long start = System.currentTimeMillis();
+        while (!enabled.get() || System.currentTimeMillis() - start < 2000) {
             if(!sessionActive.get()) break;
-            if(LOGGER.isDebugEnabled()) LOGGER.debug("Waiting until session will be logged in: {}", channel.getSessionAlias());
+            if(LOGGER.isInfoEnabled()) LOGGER.info("Waiting until session will be logged in: {}", channel.getSessionAlias());
             try {
                 Thread.sleep(100);
             } catch (Exception e) {
