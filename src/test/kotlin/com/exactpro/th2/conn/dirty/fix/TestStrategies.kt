@@ -278,7 +278,7 @@ class TestStrategies {
         val testContext = createTestContext(BrokenConnConfiguration(
             SchedulerType.CONSECUTIVE,
             listOf(
-                RuleConfiguration(RuleType.DEFAULT, duration = Duration.of(2, ChronoUnit.SECONDS), cleanUpDuration = Duration.of(0, ChronoUnit.SECONDS)),
+                RuleConfiguration(RuleType.DEFAULT, duration = defaultRuleDuration, cleanUpDuration = Duration.of(0, ChronoUnit.SECONDS)),
                 RuleConfiguration(
                     RuleType.BI_DIRECTIONAL_RESEND_REQUEST,
                     duration = Duration.of(6, ChronoUnit.SECONDS),

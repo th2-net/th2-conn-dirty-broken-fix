@@ -1156,6 +1156,19 @@ public class FixHandler implements AutoCloseable, IHandler {
     private Map<String, String> missIncomingMessages(ByteBuf message, Map<String, String> metadata) {
         int countToMiss = strategy.getMissIncomingMessagesConfig().getCount();
         var strategyState = strategy.getState();
+
+        FixField msgType = findField(message, MSG_TYPE_TAG);
+        if (msgType == null) {
+            metadata.put(REJECT_REASON, "No msgType Field");
+            if (LOGGER.isErrorEnabled()) LOGGER.error("Invalid message. No MsgType in message: {}", message.toString(US_ASCII));
+            return metadata;
+        }
+
+        if(Objects.equals(msgType.getValue(), MSG_TYPE_RESEND_REQUEST)) {
+            handleResendRequest(message);
+            return metadata;
+        }
+
         if(!strategyState.updateMissedIncomingMessagesCountIfCondition(x -> x <= countToMiss)) {
             return null;
         }
@@ -1204,6 +1217,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         int countToMiss = strategy.getMissOutgoingMessagesConfiguration().getCount();
         var strategyState = strategy.getState();
         onOutgoingUpdateTag(message, metadata);
+
         if(!strategyState.addMissedMessageToCacheIfCondition(msgSeqNum.get(), message.copy(), x -> x <= countToMiss)) {
             return null;
         }
@@ -1457,6 +1471,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     private void cleanupClientOutageStrategy() {
         strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
         strategy.setOnCloseHandler(this::defaultOnCloseHandler);
+        waitUntilLoggedIn();
         /*try {
             disconnect(strategy.getConfig().getGracefulDisconnect());
             openChannelAndWaitForLogon();
@@ -1482,6 +1497,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     private void cleanupPartialClientOutageStrategy() {
         strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
         strategy.setOnCloseHandler(this::defaultOnCloseHandler);
+        waitUntilLoggedIn();
         /*try {
             disconnect(strategy.getConfig().getGracefulDisconnect());
             openChannelAndWaitForLogon();
@@ -1606,7 +1622,6 @@ public class FixHandler implements AutoCloseable, IHandler {
             LOGGER.error(message, e);
             ruleErrorEvent(strategy.getState().getType(), e);
         }
-
         if(!sessionActive.get()) {
             strategy.resetStrategyAndState(RuleConfiguration.Companion.defaultConfiguration());
             executorService.schedule(this::applyNextStrategy, Duration.of(10, ChronoUnit.MINUTES).toMinutes(), TimeUnit.MINUTES);
@@ -1757,7 +1772,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private void waitUntilLoggedIn() {
         long start = System.currentTimeMillis();
-        while (!enabled.get() || System.currentTimeMillis() - start < 2000) {
+        while (!enabled.get() && System.currentTimeMillis() - start < 2000) {
             if(!sessionActive.get()) break;
             if(LOGGER.isInfoEnabled()) LOGGER.info("Waiting until session will be logged in: {}", channel.getSessionAlias());
             try {
