@@ -988,8 +988,8 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     @Override
     public void onClose(@NotNull IChannel channel) {
-        strategy.getOnCloseHandler().close();
         enabled.set(false);
+        strategy.getOnCloseHandler().close();
         if(passwordManager != null) passwordManager.poll();
         cancelFuture(heartbeatTimer);
         cancelFuture(testRequestTimer);
