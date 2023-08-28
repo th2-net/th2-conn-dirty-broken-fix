@@ -593,7 +593,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         FixField gapFillMode = findField(message, GAP_FILL_FLAG_TAG);
 
         if(seqNumValue == null) {
-            LOGGER.trace("Failed to reset servers MsgSeqNum. No such tag in message: {}", message.toString(US_ASCII));
+            LOGGER.warn("Failed to reset servers MsgSeqNum. No such tag in message: {}", message.toString(US_ASCII));
             return;
         }
 
@@ -1158,13 +1158,8 @@ public class FixHandler implements AutoCloseable, IHandler {
         var strategyState = strategy.getState();
 
         FixField msgType = findField(message, MSG_TYPE_TAG);
-        if (msgType == null) {
-            metadata.put(REJECT_REASON, "No msgType Field");
-            if (LOGGER.isErrorEnabled()) LOGGER.error("Invalid message. No MsgType in message: {}", message.toString(US_ASCII));
-            return metadata;
-        }
 
-        if(Objects.equals(msgType.getValue(), MSG_TYPE_RESEND_REQUEST)) {
+        if(msgType != null && Objects.equals(msgType.getValue(), MSG_TYPE_RESEND_REQUEST)) {
             handleResendRequest(message);
             return metadata;
         }
@@ -1469,18 +1464,16 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void cleanupClientOutageStrategy() {
-        strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
-        strategy.setOnCloseHandler(this::defaultOnCloseHandler);
+        strategy.updateOutgoingMessageStrategy(x -> { x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
+        strategy.updateIncomingMessageStrategy(x -> { x.setTestRequestProcessor(this::handleTestRequest); return Unit.INSTANCE;});
+        if(!enabled.get() && !channel.isOpen()) {
+            try {
+                channel.open().get();
+            } catch (Exception e) {
+                ruleErrorEvent(strategy.getType(), e);
+            }
+        }
         waitUntilLoggedIn();
-        /*try {
-            disconnect(strategy.getConfig().getGracefulDisconnect());
-            openChannelAndWaitForLogon();
-            Thread.sleep(strategy.getConfig().getCleanUpDuration().toMillis());
-        } catch (Exception e) {
-            String message = String.format("Error while setup %s strategy.", strategy.getType());
-            LOGGER.error(message, e);
-            context.send(toErrorEvent(message, e), strategyRootEvent);
-        }*/
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
         strategy.cleanupStrategy();
     }
@@ -1495,18 +1488,15 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void cleanupPartialClientOutageStrategy() {
-        strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
-        strategy.setOnCloseHandler(this::defaultOnCloseHandler);
+        strategy.updateOutgoingMessageStrategy(x -> { x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
+        if(!enabled.get() && !channel.isOpen()) {
+            try {
+                channel.open().get();
+            } catch (Exception e) {
+                ruleErrorEvent(strategy.getType(), e);
+            }
+        }
         waitUntilLoggedIn();
-        /*try {
-            disconnect(strategy.getConfig().getGracefulDisconnect());
-            openChannelAndWaitForLogon();
-            Thread.sleep(strategy.getConfig().getCleanUpDuration().toMillis());
-        } catch (Exception e) {
-            String message = String.format("Error while setup %s strategy.", strategy.getType());
-            LOGGER.error(message, e);
-            context.send(toErrorEvent(message, e), strategyRootEvent);
-        }*/
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
         strategy.cleanupStrategy();
     }
@@ -1761,8 +1751,11 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
         channel.close().get();
         enabled.set(false);
+<<<<<<< HEAD
         resetHeartbeatTask();
         resetTestRequestTask();
+=======
+>>>>>>> TH2-5001
     }
 
     private void openChannelAndWaitForLogon() throws ExecutionException, InterruptedException {
