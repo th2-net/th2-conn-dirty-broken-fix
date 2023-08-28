@@ -534,7 +534,7 @@ class TestStrategies {
 
         for(message in messages) {
             if(!message.first.contains("35=4")) continue
-            assertContains(mapOf(35 to "4", 34 to "3", 36 to "8"), this)
+            assertContains(mapOf(35 to "4", 34 to "3", 36 to "8"), message.first)
         }
 
         handler.close()
