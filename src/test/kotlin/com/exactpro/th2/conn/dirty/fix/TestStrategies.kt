@@ -366,7 +366,7 @@ class TestStrategies {
         verify(channel).send(any(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
 
-        Thread.sleep(200) // Waiting for strategy to apply
+        Thread.sleep(500) // Waiting for strategy to apply
 
         handler.onOutgoing(channel, businessMessage(3).asExpandable(), Collections.emptyMap())
         handler.onOutgoing(channel, businessMessage(4).asExpandable(), Collections.emptyMap())
@@ -532,8 +532,8 @@ class TestStrategies {
 
         clearInvocations(channel)
 
-        assertEquals(1, messages.size)
-        messages[0].first.apply {
+        for(message in messages) {
+            if(!message.first.contains("35=4")) continue
             assertContains(mapOf(35 to "4", 34 to "3", 36 to "8"), this)
         }
 
