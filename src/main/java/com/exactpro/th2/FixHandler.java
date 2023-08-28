@@ -599,7 +599,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         FixField gapFillMode = findField(message, GAP_FILL_FLAG_TAG);
 
         if(seqNumValue == null) {
-            LOGGER.trace("Failed to reset servers MsgSeqNum. No such tag in message: {}", message.toString(US_ASCII));
+            LOGGER.warn("Failed to reset servers MsgSeqNum. No such tag in message: {}", message.toString(US_ASCII));
             return;
         }
 
@@ -955,8 +955,8 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     @Override
     public void onClose(@NotNull IChannel channel) {
-        strategy.getOnCloseHandler().close();
         enabled.set(false);
+        strategy.getOnCloseHandler().close();
         cancelFuture(heartbeatTimer);
         cancelFuture(testRequestTimer);
     }
@@ -1124,6 +1124,14 @@ public class FixHandler implements AutoCloseable, IHandler {
     private Map<String, String> missIncomingMessages(ByteBuf message, Map<String, String> metadata) {
         int countToMiss = strategy.getMissIncomingMessagesConfig().getCount();
         var strategyState = strategy.getState();
+
+        FixField msgType = findField(message, MSG_TYPE_TAG);
+
+        if(msgType != null && Objects.equals(msgType.getValue(), MSG_TYPE_RESEND_REQUEST)) {
+            handleResendRequest(message);
+            return metadata;
+        }
+
         if(!strategyState.updateMissedIncomingMessagesCountIfCondition(x -> x <= countToMiss)) {
             return null;
         }
@@ -1423,6 +1431,16 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void cleanupClientOutageStrategy() {
+        strategy.updateOutgoingMessageStrategy(x -> { x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
+        strategy.updateIncomingMessageStrategy(x -> { x.setTestRequestProcessor(this::handleTestRequest); return Unit.INSTANCE;});
+        if(!enabled.get() && !channel.isOpen()) {
+            try {
+                channel.open().get();
+            } catch (Exception e) {
+                ruleErrorEvent(strategy.getType(), e);
+            }
+        }
+        waitUntilLoggedIn();
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
         strategy.cleanupStrategy();
     }
@@ -1437,6 +1455,15 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void cleanupPartialClientOutageStrategy() {
+        strategy.updateOutgoingMessageStrategy(x -> { x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
+        if(!enabled.get() && !channel.isOpen()) {
+            try {
+                channel.open().get();
+            } catch (Exception e) {
+                ruleErrorEvent(strategy.getType(), e);
+            }
+        }
+        waitUntilLoggedIn();
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
         strategy.cleanupStrategy();
     }
@@ -1689,10 +1716,9 @@ public class FixHandler implements AutoCloseable, IHandler {
         if(graceful) {
             sendLogout();
             waitLogoutResponse();
-            channel.close().get();
-        } else {
-            channel.close().get();
         }
+        channel.close().get();
+        enabled.set(false);
     }
 
     private void openChannelAndWaitForLogon() throws ExecutionException, InterruptedException {

@@ -425,13 +425,17 @@ class TestStrategies {
 
         val channel = testContext.channel
         val handler = testContext.fixHandler
+        val seq = testContext.incomingSequence
 
         Thread.sleep(defaultRuleDuration.millis() + 100) // Waiting for strategy to apply
         messages.clear()
 
-        handler.onIncoming(channel, testRequest(3).asExpandable(), getMessageId())
-        handler.onIncoming(channel, testRequest(4).asExpandable(), getMessageId())
-        handler.onIncoming(channel, testRequest(5).asExpandable(), getMessageId())
+        handler.onIncoming(channel, testRequest(seq.incrementAndGet()).asExpandable(), getMessageId())
+        handler.onIncoming(channel, testRequest(seq.incrementAndGet()).asExpandable(), getMessageId())
+        handler.onIncoming(channel, testRequest(seq.incrementAndGet()).asExpandable(), getMessageId())
+
+        handler.onClose(channel)
+        handler.onOpen(channel)
 
         clearInvocations(channel)
 
@@ -469,19 +473,24 @@ class TestStrategies {
 
         val channel = testContext.channel
         val handler = testContext.fixHandler
+        val seq = testContext.incomingSequence
 
         Thread.sleep(defaultRuleDuration.millis() + 100) // Waiting for strategy to apply
         messages.clear()
 
-        handler.onIncoming(channel, testRequest(3).asExpandable(), getMessageId())
-        handler.onIncoming(channel, testRequest(4).asExpandable(), getMessageId())
-        handler.onIncoming(channel, testRequest(5).asExpandable(), getMessageId())
+        handler.onIncoming(channel, testRequest(seq.incrementAndGet()).asExpandable(), getMessageId())
+        handler.onIncoming(channel, testRequest(seq.incrementAndGet()).asExpandable(), getMessageId())
+        handler.onIncoming(channel, testRequest(seq.incrementAndGet()).asExpandable(), getMessageId())
+
+        handler.onClose(channel)
+        handler.onOpen(channel)
 
         clearInvocations(channel)
 
         for (message in messages) {
             val buff = message.first
             if(buff.isEmpty()) continue
+            if(!buff.contains("35=0")) continue
             assertContains(mapOf(35 to "0", 112 to "test"), buff)
         }
 
