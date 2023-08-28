@@ -16,6 +16,7 @@
 
 package com.exactpro.th2;
 
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BrokenConnConfiguration;
 import com.exactpro.th2.conn.dirty.fix.KeyFileType;
 import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel.Security;
 import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerSettings;
@@ -40,7 +41,8 @@ public class FixHandlerSettings implements IHandlerSettings {
     private String username;
     private String password;
     private String newPassword;
-    private String passwordEncryptKeyFilePath;
+    private String previousPasswords;
+    private String passwordEncryptKey;
     private KeyFileType passwordEncryptKeyFileType = KeyFileType.PEM_PUBLIC_KEY;
     /**
      * Value from Java Security Standard Algorithm Names
@@ -66,6 +68,8 @@ public class FixHandlerSettings implements IHandlerSettings {
     private int testRequestDelay = 60;
     private int reconnectDelay = 5;
     private int disconnectRequestDelay = 5;
+
+    private BrokenConnConfiguration brokenConnConfiguration;
 
     @JsonDeserialize(using = DateTimeFormatterDeserializer.class)
     private DateTimeFormatter sendingDateTimeFormat = DateTimeFormatter.ofPattern("yyyyMMdd-HH:mm:ss.SSSSSSSSS");
@@ -170,9 +174,9 @@ public class FixHandlerSettings implements IHandlerSettings {
         return newPassword;
     }
 
-    public String getPasswordEncryptKeyFilePath() {
-        return passwordEncryptKeyFilePath;
-    }
+    public String getPreviousPasswords() { return previousPasswords; }
+
+    public String getPasswordEncryptKey() {return passwordEncryptKey;}
 
     public KeyFileType getPasswordEncryptKeyFileType() {
         return passwordEncryptKeyFileType;
@@ -210,9 +214,9 @@ public class FixHandlerSettings implements IHandlerSettings {
         this.newPassword = newPassword;
     }
 
-    public void setPasswordEncryptKeyFilePath(String passwordEncryptKeyFilePath) {
-        this.passwordEncryptKeyFilePath = passwordEncryptKeyFilePath;
-    }
+    public void setPreviousPasswords(String previousPasswords) { this.previousPasswords = previousPasswords; }
+
+    public void setPasswordEncryptKey(String passwordEncryptKey) {this.passwordEncryptKey = passwordEncryptKey;}
 
     public void setPasswordEncryptKeyFileType(KeyFileType passwordEncryptKeyFileType) {
         this.passwordEncryptKeyFileType = passwordEncryptKeyFileType;
@@ -294,4 +298,11 @@ public class FixHandlerSettings implements IHandlerSettings {
         this.disconnectRequestDelay = disconnectRequestDelay;
     }
 
+    public BrokenConnConfiguration getBrokenConnConfiguration() {
+        return brokenConnConfiguration;
+    }
+
+    public void setBrokenConnConfiguration(BrokenConnConfiguration brokenConnConfiguration) {
+        this.brokenConnConfiguration = brokenConnConfiguration;
+    }
 }

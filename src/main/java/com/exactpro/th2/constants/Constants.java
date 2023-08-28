@@ -17,7 +17,6 @@
 package com.exactpro.th2.constants;
 
 
-import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.Set;
 
@@ -33,6 +32,7 @@ public class Constants {
     public static final Integer TARGET_COMP_ID_TAG = 56;
     public static final Integer MSG_SEQ_NUM_TAG = 34;
     public static final Integer SENDING_TIME_TAG = 52;
+    public static final Integer ORIG_SENDING_TIME_TAG = 122;
     public static final Integer CHECKSUM_TAG = 10;
     public static final Integer DEFAULT_APPL_VER_ID_TAG = 1137;
     public static final Integer SENDER_SUB_ID_TAG = 50;
@@ -62,6 +62,7 @@ public class Constants {
     public static final String TARGET_COMP_ID = SOH + TARGET_COMP_ID_TAG + "=";
     public static final String MSG_SEQ_NUM = SOH + MSG_SEQ_NUM_TAG + "=";
     public static final String SENDING_TIME = SOH + SENDING_TIME_TAG + "=";
+    public static final String ORIG_SENDING_TIME = SOH + ORIG_SENDING_TIME_TAG + "=";
     public static final String CHECKSUM = SOH + CHECKSUM_TAG + "=";
     public static final String ENCRYPT_METHOD = SOH + ENCRYPT_METHOD_TAG + "=";
     public static final String HEART_BT_INT = SOH + HEART_BT_INT_TAG + "=";
@@ -79,7 +80,7 @@ public class Constants {
     public static final String SENDER_SUB_ID = SOH + SENDER_SUB_ID_TAG + "=";
     public static final String RESET_SEQ_NUM = SOH + RESET_SEQ_NUM_TAG + "=";
     public static final String NEXT_EXPECTED_SEQ_NUM = SOH + NEXT_EXPECTED_SEQ_NUMBER_TAG + "=";
-    public static final String POSS_DUP = SOH + NEXT_EXPECTED_SEQ_NUMBER_TAG + "=";
+    public static final String POSS_DUP = SOH + POSS_DUP_TAG + "=";
 
     //message types
     public static final String MSG_TYPE_LOGON = "A";
