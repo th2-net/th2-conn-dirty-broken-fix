@@ -1751,11 +1751,8 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
         channel.close().get();
         enabled.set(false);
-<<<<<<< HEAD
         resetHeartbeatTask();
         resetTestRequestTask();
-=======
->>>>>>> TH2-5001
     }
 
     private void openChannelAndWaitForLogon() throws ExecutionException, InterruptedException {
