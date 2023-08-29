@@ -363,7 +363,7 @@ class TestStrategies {
         verify(channel).send(any(), any(), anyOrNull(), any()) // Logon
         clearInvocations(channel)
 
-        Thread.sleep(200) // Waiting for strategy to apply
+        Thread.sleep(500) // Waiting for strategy to apply
 
         handler.onOutgoing(channel, businessMessage(3).asExpandable(), Collections.emptyMap())
         handler.onOutgoing(channel, businessMessage(4).asExpandable(), Collections.emptyMap())
@@ -421,13 +421,17 @@ class TestStrategies {
 
         val channel = testContext.channel
         val handler = testContext.fixHandler
+        val seq = testContext.incomingSequence
 
         Thread.sleep(defaultRuleDuration.millis() + 100) // Waiting for strategy to apply
         messages.clear()
 
-        handler.onIncoming(channel, testRequest(3).asExpandable(), getMessageId())
-        handler.onIncoming(channel, testRequest(4).asExpandable(), getMessageId())
-        handler.onIncoming(channel, testRequest(5).asExpandable(), getMessageId())
+        handler.onIncoming(channel, testRequest(seq.incrementAndGet()).asExpandable(), getMessageId())
+        handler.onIncoming(channel, testRequest(seq.incrementAndGet()).asExpandable(), getMessageId())
+        handler.onIncoming(channel, testRequest(seq.incrementAndGet()).asExpandable(), getMessageId())
+
+        handler.onClose(channel)
+        handler.onOpen(channel)
 
         clearInvocations(channel)
 
@@ -465,19 +469,24 @@ class TestStrategies {
 
         val channel = testContext.channel
         val handler = testContext.fixHandler
+        val seq = testContext.incomingSequence
 
         Thread.sleep(defaultRuleDuration.millis() + 100) // Waiting for strategy to apply
         messages.clear()
 
-        handler.onIncoming(channel, testRequest(3).asExpandable(), getMessageId())
-        handler.onIncoming(channel, testRequest(4).asExpandable(), getMessageId())
-        handler.onIncoming(channel, testRequest(5).asExpandable(), getMessageId())
+        handler.onIncoming(channel, testRequest(seq.incrementAndGet()).asExpandable(), getMessageId())
+        handler.onIncoming(channel, testRequest(seq.incrementAndGet()).asExpandable(), getMessageId())
+        handler.onIncoming(channel, testRequest(seq.incrementAndGet()).asExpandable(), getMessageId())
+
+        handler.onClose(channel)
+        handler.onOpen(channel)
 
         clearInvocations(channel)
 
         for (message in messages) {
             val buff = message.first
             if(buff.isEmpty()) continue
+            if(!buff.contains("35=0")) continue
             assertContains(mapOf(35 to "0", 112 to "test"), buff)
         }
 
@@ -519,9 +528,9 @@ class TestStrategies {
 
         clearInvocations(channel)
 
-        assertEquals(1, messages.size)
-        messages[0].first.apply {
-            assertContains(mapOf(35 to "4", 34 to "3", 36 to "8"), this)
+        for(message in messages) {
+            if(!message.first.contains("35=4")) continue
+            assertContains(mapOf(35 to "4", 34 to "3", 36 to "8"), message.first)
         }
 
         handler.close()

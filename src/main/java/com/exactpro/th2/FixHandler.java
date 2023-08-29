@@ -114,6 +114,7 @@ import static com.exactpro.th2.constants.Constants.ENCRYPT_METHOD;
 import static com.exactpro.th2.constants.Constants.END_SEQ_NO;
 import static com.exactpro.th2.constants.Constants.END_SEQ_NO_TAG;
 import static com.exactpro.th2.constants.Constants.GAP_FILL_FLAG;
+import static com.exactpro.th2.constants.Constants.GAP_FILL_FLAG_TAG;
 import static com.exactpro.th2.constants.Constants.HEART_BT_INT;
 import static com.exactpro.th2.constants.Constants.IS_POSS_DUP;
 import static com.exactpro.th2.constants.Constants.MSG_SEQ_NUM;
@@ -590,8 +591,16 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private void resetSequence(ByteBuf message) {
         FixField seqNumValue = findField(message, NEW_SEQ_NO_TAG);
+        FixField gapFillMode = findField(message, GAP_FILL_FLAG_TAG);
 
-        if(seqNumValue != null) {
+        if(seqNumValue == null) {
+            LOGGER.warn("Failed to reset servers MsgSeqNum. No such tag in message: {}", message.toString(US_ASCII));
+            return;
+        }
+
+        if(gapFillMode == null || gapFillMode.getValue() == null || gapFillMode.getValue().equals("N")) {
+            serverMsgSeqNum.set(Integer.parseInt(requireNonNull(seqNumValue.getValue())));
+        } else {
             int newSeqNo = Integer.parseInt(requireNonNull(seqNumValue.getValue()));
             serverMsgSeqNum.updateAndGet(sequence -> {
                 if(sequence < newSeqNo - 1) {
@@ -600,8 +609,6 @@ public class FixHandler implements AutoCloseable, IHandler {
                     return sequence;
                 }
             });
-        } else {
-            LOGGER.trace("Failed to reset servers MsgSeqNum. No such tag in message: {}", message.toString(US_ASCII));
         }
     }
 
@@ -670,7 +677,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         sequenceReset.append(NEW_SEQ_NO).append(endSeqNo);
         setChecksumAndBodyLength(sequenceReset);
 
-        channel.send(Unpooled.wrappedBuffer(sequenceReset.toString().getBytes(StandardCharsets.UTF_8)), Collections.emptyMap(), null, SendMode.HANDLE_AND_MANGLE)
+        channel.send(Unpooled.wrappedBuffer(sequenceReset.toString().getBytes(StandardCharsets.UTF_8)), Collections.emptyMap(), null, SendMode.DIRECT)
             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
         resetHeartbeatTask();
     }
@@ -964,9 +971,9 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     @Override
     public void onClose(@NotNull IChannel channel) {
-        strategy.getOnCloseHandler().close();
         enabled.set(false);
         if(passwordManager != null) passwordManager.poll();
+        strategy.getOnCloseHandler().close();
         cancelFuture(heartbeatTimer);
         cancelFuture(testRequestTimer);
     }
@@ -1132,6 +1139,14 @@ public class FixHandler implements AutoCloseable, IHandler {
     private Map<String, String> missIncomingMessages(ByteBuf message, Map<String, String> metadata) {
         int countToMiss = strategy.getMissIncomingMessagesConfig().getCount();
         var strategyState = strategy.getState();
+
+        FixField msgType = findField(message, MSG_TYPE_TAG);
+
+        if(msgType != null && Objects.equals(msgType.getValue(), MSG_TYPE_RESEND_REQUEST)) {
+            handleResendRequest(message);
+            return metadata;
+        }
+
         if(!strategyState.updateMissedIncomingMessagesCountIfCondition(x -> x <= countToMiss)) {
             return null;
         }
@@ -1431,6 +1446,16 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void cleanupClientOutageStrategy() {
+        strategy.updateOutgoingMessageStrategy(x -> { x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
+        strategy.updateIncomingMessageStrategy(x -> { x.setTestRequestProcessor(this::handleTestRequest); return Unit.INSTANCE;});
+        if(!enabled.get() && !channel.isOpen()) {
+            try {
+                channel.open().get();
+            } catch (Exception e) {
+                ruleErrorEvent(strategy.getType(), e);
+            }
+        }
+        waitUntilLoggedIn();
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
         strategy.cleanupStrategy();
     }
@@ -1445,6 +1470,15 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void cleanupPartialClientOutageStrategy() {
+        strategy.updateOutgoingMessageStrategy(x -> { x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
+        if(!enabled.get() && !channel.isOpen()) {
+            try {
+                channel.open().get();
+            } catch (Exception e) {
+                ruleErrorEvent(strategy.getType(), e);
+            }
+        }
+        waitUntilLoggedIn();
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
         strategy.cleanupStrategy();
     }
@@ -1697,10 +1731,9 @@ public class FixHandler implements AutoCloseable, IHandler {
         if(graceful) {
             sendLogout();
             waitLogoutResponse();
-            channel.close().get();
-        } else {
-            channel.close().get();
         }
+        channel.close().get();
+        enabled.set(false);
         resetHeartbeatTask();
         resetTestRequestTask();
     }
