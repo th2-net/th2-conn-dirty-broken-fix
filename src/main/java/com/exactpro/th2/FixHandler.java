@@ -1491,6 +1491,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void cleanupSlowConsumerStrategy() {
+        strategy.updateReceiveMessageStrategy(x -> {x.setReceivePreprocessor(this::defaultMessageProcessor); return Unit.INSTANCE;});
         try {
             Thread.sleep(strategy.getState().getConfig().getCleanUpDuration().toMillis());
         } catch (Exception e) {
