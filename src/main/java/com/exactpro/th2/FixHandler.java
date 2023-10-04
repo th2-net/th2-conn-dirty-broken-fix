@@ -403,6 +403,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         Map<String, String> metadata = new HashMap<>();
 
         if(strategy.getIncomingMessageStrategy(IncomingMessagesStrategy::getIncomingMessagesPreprocessor).process(message, metadata) != null) {
+            strategy.getState().addMessageID(messageId);
             return metadata;
         }
 
@@ -1437,11 +1438,6 @@ public class FixHandler implements AutoCloseable, IHandler {
     private void cleanupClientOutageStrategy() {
         strategy.updateOutgoingMessageStrategy(x -> { x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
         strategy.updateIncomingMessageStrategy(x -> { x.setTestRequestProcessor(this::handleTestRequest); return Unit.INSTANCE;});
-        try {
-            Thread.sleep(strategy.getConfig().getCleanUpDuration().toMillis());
-        } catch (InterruptedException e) {
-            ruleErrorEvent(strategy.getType(), e);
-        }
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
         strategy.cleanupStrategy();
     }
@@ -1457,11 +1453,6 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private void cleanupPartialClientOutageStrategy() {
         strategy.updateOutgoingMessageStrategy(x -> { x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
-        try {
-            Thread.sleep(strategy.getConfig().getCleanUpDuration().toMillis());
-        } catch (InterruptedException e) {
-            ruleErrorEvent(strategy.getType(), e);
-        }
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
         strategy.cleanupStrategy();
     }
