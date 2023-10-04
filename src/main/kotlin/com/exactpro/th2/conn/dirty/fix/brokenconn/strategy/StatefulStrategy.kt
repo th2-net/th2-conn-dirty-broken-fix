@@ -21,6 +21,7 @@ import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.MissMessageConfi
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RuleConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.SplitSendConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.TransformMessageConfiguration
+import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.StrategyState.Companion.resetAndCopyMissedMessages
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.CleanupHandler
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.MessageProcessor
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.OnCloseHandler
@@ -136,7 +137,7 @@ class StatefulStrategy(
 
     fun resetStrategyAndState(config: RuleConfiguration) {
         lock.write {
-            state = StrategyState(config)
+            state = state.resetAndCopyMissedMessages(config)
             sendStrategy.sendHandler = defaultStrategy.sendStrategy.sendHandler
             sendStrategy.sendPreprocessor = defaultStrategy.sendStrategy.sendPreprocessor
             receiveStrategy.receivePreprocessor = defaultStrategy.receiveStrategy.receivePreprocessor
@@ -152,7 +153,7 @@ class StatefulStrategy(
 
     fun cleanupStrategy() {
         lock.write {
-            state = StrategyState()
+            state = state.resetAndCopyMissedMessages()
             sendStrategy.sendHandler = defaultStrategy.sendStrategy.sendHandler
             sendStrategy.sendPreprocessor = defaultStrategy.sendStrategy.sendPreprocessor
             receiveStrategy.receivePreprocessor = defaultStrategy.receiveStrategy.receivePreprocessor

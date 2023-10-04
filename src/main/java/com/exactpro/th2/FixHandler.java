@@ -1259,7 +1259,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             outgoingMessagesStrategy,
             receiveStrategy,
             this::defaultCleanupHandler,
-            this::recovery,
+            this::recoveryFromState,
             this::defaultOnCloseHandler,
             new DefaultStrategyHolder(
                 sendStrategyCopy,
@@ -1267,7 +1267,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                 outgoingMessagesStrategyCopy,
                 receiveStrategyCopy,
                 this::defaultCleanupHandler,
-                this::recovery,
+                this::recoveryFromState,
                 this::defaultOnCloseHandler
             )
         );
@@ -1437,14 +1437,6 @@ public class FixHandler implements AutoCloseable, IHandler {
     private void cleanupClientOutageStrategy() {
         strategy.updateOutgoingMessageStrategy(x -> { x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
         strategy.updateIncomingMessageStrategy(x -> { x.setTestRequestProcessor(this::handleTestRequest); return Unit.INSTANCE;});
-        if(!enabled.get() && !channel.isOpen()) {
-            try {
-                channel.open().get();
-            } catch (Exception e) {
-                ruleErrorEvent(strategy.getType(), e);
-            }
-        }
-        waitUntilLoggedIn();
         try {
             Thread.sleep(strategy.getConfig().getCleanUpDuration().toMillis());
         } catch (InterruptedException e) {
@@ -1465,14 +1457,6 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private void cleanupPartialClientOutageStrategy() {
         strategy.updateOutgoingMessageStrategy(x -> { x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
-        if(!enabled.get() && !channel.isOpen()) {
-            try {
-                channel.open().get();
-            } catch (Exception e) {
-                ruleErrorEvent(strategy.getType(), e);
-            }
-        }
-        waitUntilLoggedIn();
         try {
             Thread.sleep(strategy.getConfig().getCleanUpDuration().toMillis());
         } catch (InterruptedException e) {
