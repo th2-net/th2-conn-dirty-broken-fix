@@ -17,6 +17,7 @@
 package com.exactpro.th2;
 
 import com.exactpro.th2.common.event.Event;
+import com.exactpro.th2.common.event.bean.Message;
 import com.exactpro.th2.common.grpc.EventID;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.grpc.RawMessage;
@@ -95,6 +96,7 @@ import static com.exactpro.th2.conn.dirty.fix.FixByteBufUtilKt.updateChecksum;
 import static com.exactpro.th2.conn.dirty.fix.FixByteBufUtilKt.updateLength;
 import static com.exactpro.th2.conn.dirty.fix.KeyFileType.Companion.OperationMode.ENCRYPT_MODE;
 import static com.exactpro.th2.conn.dirty.tcp.core.util.CommonUtil.getEventId;
+import static com.exactpro.th2.conn.dirty.tcp.core.util.CommonUtil.getLogId;
 import static com.exactpro.th2.conn.dirty.tcp.core.util.CommonUtil.toByteBuf;
 import static com.exactpro.th2.conn.dirty.tcp.core.util.CommonUtil.toErrorEvent;
 import static com.exactpro.th2.constants.Constants.ADMIN_MESSAGES;
@@ -1290,6 +1292,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.updateSendStrategy(x -> {x.setSendPreprocessor(this::defaultMessageProcessor); return Unit.INSTANCE;});
         try {
             openChannelAndWaitForLogon();
+            Thread.sleep(strategy.getConfig().getCleanUpDuration().toMillis());
         } catch (Exception e) {
             String message = String.format("Error while cleaning up %s", strategy.getType());
             LOGGER.error(message, e);
@@ -1320,6 +1323,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             Thread.sleep(strategy.getState().getConfig().getCleanUpDuration().toMillis()); // waiting for new incoming messages to trigger resend request.
             disconnect(strategy.getGracefulDisconnect());
             openChannelAndWaitForLogon();
+            Thread.sleep(strategy.getState().getConfig().getCleanUpDuration().toMillis());
         } catch (Exception e) {
             String message = String.format("Error while cleaning up %s strategy", strategy.getType());
             LOGGER.error(message, e);
@@ -1441,6 +1445,11 @@ public class FixHandler implements AutoCloseable, IHandler {
             }
         }
         waitUntilLoggedIn();
+        try {
+            Thread.sleep(strategy.getConfig().getCleanUpDuration().toMillis());
+        } catch (InterruptedException e) {
+            ruleErrorEvent(strategy.getType(), e);
+        }
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
         strategy.cleanupStrategy();
     }
@@ -1464,6 +1473,11 @@ public class FixHandler implements AutoCloseable, IHandler {
             }
         }
         waitUntilLoggedIn();
+        try {
+            Thread.sleep(strategy.getConfig().getCleanUpDuration().toMillis());
+        } catch (InterruptedException e) {
+            ruleErrorEvent(strategy.getType(), e);
+        }
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
         strategy.cleanupStrategy();
     }
@@ -1493,6 +1507,12 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void cleanupSlowConsumerStrategy() {
+        try {
+            Thread.sleep(strategy.getState().getConfig().getCleanUpDuration().toMillis());
+        } catch (Exception e) {
+            String message = String.format("Error while cleaning up %s strategy", strategy.getType());
+            LOGGER.error(message, e);
+        }
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
         strategy.cleanupStrategy();
     }
@@ -1820,12 +1840,16 @@ public class FixHandler implements AutoCloseable, IHandler {
         String message = String.format("%s strategy finished: %s - %s", type.name(), start.toString(), end.toString());
         LOGGER.info(message);
         try {
+            Message jsonBody = createMessageBean(mapper.writeValueAsString(Map.of(
+                "StartTime", start.toString(), "EndTime", end.toString(),
+                "Type", type.toString(), "AffectedMessages", messageIDS.stream().map(CommonUtil::getLogId)
+            )));
             Event event = Event
                 .start()
                 .endTimestamp()
                 .type(STRATEGY_EVENT_TYPE)
                 .name(message)
-                .bodyData(createMessageBean(mapper.writeValueAsString(Map.of("StartTime", start.toString(), "EndTime", end.toString()))))
+                .bodyData(jsonBody)
                 .status(Event.Status.PASSED);
             messageIDS.forEach(event::messageID);
             context.send(

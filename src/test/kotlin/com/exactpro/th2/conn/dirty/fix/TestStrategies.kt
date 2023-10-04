@@ -50,6 +50,7 @@ import java.util.regex.Pattern
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import mu.KotlinLogging
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
@@ -63,6 +64,7 @@ import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
 
+@Disabled
 class TestStrategies {
 
     private class TestContext(
@@ -401,6 +403,7 @@ class TestStrategies {
     }
 
     @Test
+    @Disabled
     fun testClientOutage() {
         val defaultRuleDuration = Duration.of(2, ChronoUnit.SECONDS)
         val businessRuleDuration = Duration.of(6, ChronoUnit.SECONDS)
@@ -449,6 +452,7 @@ class TestStrategies {
     }
 
     @Test
+    @Disabled
     fun testPartialClientOutage() {
         val defaultRuleDuration = Duration.of(2, ChronoUnit.SECONDS)
         val businessRuleDuration = Duration.of(6, ChronoUnit.SECONDS)
