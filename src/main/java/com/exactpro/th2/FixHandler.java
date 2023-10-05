@@ -1464,8 +1464,8 @@ public class FixHandler implements AutoCloseable, IHandler {
         ResendRequestConfiguration resendRequestConfig = configuration.getResendRequestConfiguration();
         int msgCount = resendRequestConfig.getMessageCount();
         int currentSeq = serverMsgSeqNum.get();
-        sendResendRequest(currentSeq - msgCount, currentSeq);
         try {
+            sendResendRequest(currentSeq - msgCount, currentSeq);
             Thread.sleep(strategy.getState().getConfig().getCleanUpDuration().toMillis());
         } catch (Exception e) {
             String message = String.format("Error while cleaning up %s strategy", strategy.getType());
@@ -1818,7 +1818,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         try {
             Message jsonBody = createMessageBean(mapper.writeValueAsString(Map.of(
                 "StartTime", start.toString(), "EndTime", end.toString(),
-                "Type", type.toString(), "AffectedMessages", messageIDS.stream().map(CommonUtil::getLogId)
+                "Type", type.toString(), "AffectedMessages", messageIDS.stream().map(CommonUtil::getLogId).collect(Collectors.toList())
             )));
             Event event = Event
                 .start()

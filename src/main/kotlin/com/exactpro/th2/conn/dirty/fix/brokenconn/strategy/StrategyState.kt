@@ -36,7 +36,7 @@ class StrategyState(val config: RuleConfiguration? = null,
     val startTime: Instant = Instant.now()
     val type = config?.ruleType ?: RuleType.DEFAULT
     private val batchMessageCache: CompositeByteBuf = Unpooled.compositeBuffer()
-    val messageIDs: MutableList<MessageID> = Collections.synchronizedList(ArrayList<MessageID>())
+    private val messageIDs: MutableList<MessageID> = ArrayList<MessageID>()
 
     private val lock = ReentrantReadWriteLock()
     private var batchMessageCacheSize = 0
@@ -107,6 +107,10 @@ class StrategyState(val config: RuleConfiguration? = null,
             K_LOGGER.warn { "Strategy ${type} messageIDs list is too big. Skiping messageID: ${shortDebugString(messageID)}" }
         }
         messageID?.let { messageIDs.add(it) }
+    }
+
+    fun getMessageIDs() = lock.read {
+        ArrayList(messageIDs)
     }
 
     companion object {
