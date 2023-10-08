@@ -732,6 +732,8 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     @Override
     public void onOutgoing(@NotNull IChannel channel, @NotNull ByteBuf message, @NotNull Map<String, String> metadata) {
+        if (LOGGER.isInfoEnabled()) LOGGER.info("Outgoing message before update: ${}", message.toString(US_ASCII));
+
         strategy.getOutgoingMessageStrategy(OutgoingMessagesStrategy::getOutgoingMessageProcessor).process(message, metadata);
 
         if (LOGGER.isInfoEnabled()) LOGGER.info("Outgoing message: {}", message.toString(US_ASCII));
@@ -823,9 +825,12 @@ public class FixHandler implements AutoCloseable, IHandler {
         FixField sendingTime = findField(message, SENDING_TIME_TAG, US_ASCII, bodyLength);
 
         if (sendingTime == null) {
+            LOGGER.info("Sending time tag value 1: {}", new String(targetCompID.getBytes()));
             targetCompID.insertNext(SENDING_TIME_TAG, getTime());
         } else {
+            LOGGER.info("Sending time tag value 2: {}", new String(sendingTime.getBytes()));
             sendingTime.setValue(getTime());
+            LOGGER.info("Sending time tag value 3: {}", new String(sendingTime.getBytes()));
         }
 
         updateLength(message);
