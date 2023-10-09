@@ -822,6 +822,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             }
         }
 
+        LOGGER.info("Body length field: {}", new String(bodyLength.getBytes()));
         FixField sendingTime = findField(message, SENDING_TIME_TAG, US_ASCII, bodyLength);
         LOGGER.info("Message before adding sending time: {}", message.toString(StandardCharsets.UTF_8));
         if (sendingTime == null) {
