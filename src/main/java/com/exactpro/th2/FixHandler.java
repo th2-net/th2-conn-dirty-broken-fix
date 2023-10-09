@@ -25,6 +25,7 @@ import com.exactpro.th2.common.utils.event.transport.EventUtilsKt;
 import com.exactpro.th2.conn.dirty.fix.FixField;
 import com.exactpro.th2.conn.dirty.fix.MessageTransformer;
 import com.exactpro.th2.conn.dirty.fix.SequenceLoader;
+import com.exactpro.th2.conn.dirty.fix.UtilKt;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BatchSendConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.ChangeSequenceConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.ResendRequestConfiguration;
@@ -752,8 +753,6 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         if (beginString == null) {
             beginString = firstField(message).insertPrevious(BEGIN_STRING_TAG, settings.getBeginString());
-        } else if (!settings.getBeginString().equals(beginString.getValue())) {
-            beginString.setValue(settings.getBeginString());
         }
 
         FixField bodyLength = findField(message, BODY_LENGTH_TAG, US_ASCII, beginString);
@@ -775,57 +774,68 @@ public class FixHandler implements AutoCloseable, IHandler {
         FixField checksum = findLastField(message, CHECKSUM_TAG);
 
         if (checksum == null) { // Length is updated at the of the current method
-            lastField(message).insertNext(CHECKSUM_TAG, STUBBING_VALUE); //stubbing until finish checking message
+            checksum = lastField(message).insertNext(CHECKSUM_TAG, STUBBING_VALUE); //stubbing until finish checking message
         }
 
         FixField msgSeqNum = findField(message, MSG_SEQ_NUM_TAG, US_ASCII, bodyLength);
 
-        String msgSeqNumValue = Integer.toString(this.msgSeqNum.incrementAndGet());
         if (msgSeqNum == null) {
+            int msgSeqNumValue = this.msgSeqNum.incrementAndGet();
+
             if (msgType != null) {
-                msgSeqNum = msgType.insertNext(MSG_SEQ_NUM_TAG, msgSeqNumValue);
+                msgSeqNum = msgType.insertNext(MSG_SEQ_NUM_TAG, Integer.toString(msgSeqNumValue));
             } else {
-                msgSeqNum = bodyLength.insertNext(MSG_SEQ_NUM_TAG, msgSeqNumValue);
+                msgSeqNum = bodyLength.insertNext(MSG_SEQ_NUM_TAG, Integer.toString(msgSeqNumValue));
             }
-        } else {
-            msgSeqNum.setValue(msgSeqNumValue);
         }
 
         FixField senderCompID = findField(message, SENDER_COMP_ID_TAG, US_ASCII, bodyLength);
 
         if (senderCompID == null) {
             senderCompID = msgSeqNum.insertNext(SENDER_COMP_ID_TAG, settings.getSenderCompID());
-        } else if (!settings.getSenderCompID().equals(senderCompID.getValue())) {
-            senderCompID.setValue(settings.getSenderCompID());
+        } else {
+            String value = senderCompID.getValue();
+
+            if (value == null || value.isEmpty() || value.equals("null")) {
+                senderCompID.setValue(settings.getSenderCompID());
+            }
         }
 
         FixField targetCompID = findField(message, TARGET_COMP_ID_TAG, US_ASCII, bodyLength);
 
         if (targetCompID == null) {
             targetCompID = senderCompID.insertNext(TARGET_COMP_ID_TAG, settings.getTargetCompID());
-        } else if (!settings.getTargetCompID().equals(targetCompID.getValue())) {
-            targetCompID.setValue(settings.getTargetCompID());
-        }
-
-        FixField senderSubID = findField(message, SENDER_SUB_ID_TAG, US_ASCII, bodyLength);
-        if (senderSubID == null) {
-            if (settings.getSenderSubID() != null) {
-                targetCompID.insertNext(SENDER_SUB_ID_TAG, settings.getSenderSubID());
-            }
         } else {
-            if (settings.getSenderSubID() == null) {
-                senderSubID.clear();
-            } else if (!settings.getSenderSubID().equals(senderSubID.getValue())) {
-                senderSubID.setValue(settings.getSenderSubID());
+            String value = targetCompID.getValue();
+
+            if (value == null || value.isEmpty() || value.equals("null")) {
+                targetCompID.setValue(settings.getTargetCompID());
             }
         }
 
+        if (settings.getSenderSubID() != null) {
+            FixField senderSubID = findField(message, SENDER_SUB_ID_TAG, US_ASCII, bodyLength);
+
+            if (senderSubID == null) {
+                senderSubID = targetCompID.insertNext(SENDER_SUB_ID_TAG, settings.getSenderSubID());
+            } else {
+                String value = senderSubID.getValue();
+
+                if (value == null || value.isEmpty() || value.equals("null")) {
+                    senderSubID.setValue(settings.getSenderSubID());
+                }
+            }
+        }
         FixField sendingTime = findField(message, SENDING_TIME_TAG, US_ASCII, bodyLength);
 
         if (sendingTime == null) {
             targetCompID.insertNext(SENDING_TIME_TAG, getTime());
         } else {
-            sendingTime.setValue(getTime());
+            String value = sendingTime.getValue();
+
+            if (value == null || value.isEmpty() || value.equals("null")) {
+                sendingTime.setValue(getTime());
+            }
         }
 
         updateLength(message);
@@ -1818,7 +1828,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         try {
             Message jsonBody = createMessageBean(mapper.writeValueAsString(Map.of(
                 "StartTime", start.toString(), "EndTime", end.toString(),
-                "Type", type.toString(), "AffectedMessages", messageIDS.stream().map(CommonUtil::getLogId).collect(Collectors.toList())
+                "Type", type.toString(), "AffectedMessages", messageIDS.stream().map(UtilKt::logId).collect(Collectors.toList())
             )));
             Event event = Event
                 .start()

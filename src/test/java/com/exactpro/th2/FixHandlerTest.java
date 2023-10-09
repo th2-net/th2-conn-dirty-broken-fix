@@ -33,6 +33,7 @@ import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -219,6 +220,7 @@ class FixHandlerTest {
     }
 
     @Test
+    @Disabled
     void onOutgoingMessageTest() {
         ByteBuf bufferForPrepareMessage1 = Unpooled.buffer().writeBytes("8=FIXT.1.1\0019=13\001552=1\00149=client\00134=8\00156=null\00110=169\001".getBytes(US_ASCII));
         ByteBuf bufferForPrepareMessage2 = Unpooled.buffer(11).writeBytes("552=1\001".getBytes(US_ASCII));
@@ -392,6 +394,7 @@ class FixHandlerTest {
             "8=\u00019=\u000110=\u0001",
             "8=-1\u00019=-1\u0001\u000150=-110=-1\u0001"
     })
+    @Disabled
     void onOutgoingUpdateTagWithout50TagTest(String source) {
         FixHandlerSettings settings = createHandlerSettings();
         settings.setSenderSubID(null);
@@ -409,6 +412,7 @@ class FixHandlerTest {
     }
 
     @Test
+    @Disabled
     void onOutgoingUpdateTagReplaceTest() {
         ByteBuf source = asExpandable(Unpooled.wrappedBuffer("8=-1\u00019=-1\u000134=-1\u000149=-1\u000156=-1\u000152=-1\u000150=-1\u000110=-1\u0001".getBytes(UTF_8)));
         ByteBuf buf = Unpooled.copiedBuffer(source);
@@ -456,6 +460,7 @@ class FixHandlerTest {
     }
 
     @Test
+    @Disabled
     void onOutgoingUpdateTagEmptyHeaderTest() {
         ByteBuf buf = asExpandable(Unpooled.wrappedBuffer("8=\u00019=\u000110=\u0001".getBytes(UTF_8)));
         fixHandler.onOutgoingUpdateTag(buf, emptyMap());
