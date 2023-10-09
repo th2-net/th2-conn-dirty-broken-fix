@@ -826,7 +826,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                 }
             }
         }
-        FixField sendingTime = findField(message, SENDING_TIME_TAG, US_ASCII, bodyLength);
+        FixField sendingTime = findField(message, SENDING_TIME_TAG, US_ASCII);
 
         if (sendingTime == null) {
             targetCompID.insertNext(SENDING_TIME_TAG, getTime());
