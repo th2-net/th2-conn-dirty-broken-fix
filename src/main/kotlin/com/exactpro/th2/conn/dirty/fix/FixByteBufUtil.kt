@@ -44,7 +44,6 @@ fun ByteBuf.firstField(charset: Charset = UTF_8): FixField? = FixField.atOffset(
 @JvmOverloads
 fun ByteBuf.lastField(charset: Charset = UTF_8): FixField? = FixField.atOffset(this, writerIndex() - 1, charset)
 
-val K_LOGGER = KotlinLogging.logger {  }
 @JvmOverloads
 inline fun ByteBuf.forEachField(
     charset: Charset = UTF_8,
@@ -53,12 +52,9 @@ inline fun ByteBuf.forEachField(
 ) {
     var field = start
 
-    field?.bytes?.let { K_LOGGER.info { "Processing field: ${String(it)}" } }
-
     while (field != null) {
         action(field)
         field = field.next()
-        field?.bytes?.let { K_LOGGER.info { "Processing field: ${String(it)}" } }
     }
 }
 
