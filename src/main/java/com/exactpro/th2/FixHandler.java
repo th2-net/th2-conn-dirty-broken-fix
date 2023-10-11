@@ -305,7 +305,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     @Override
     public void onStart() {
-        channel = context.createChannel(address, settings.getSecurity(), Map.of(), true, settings.getReconnectDelay() * 1000L, Integer.MAX_VALUE);
+        channel = context.createChannel(address, settings.getSecurity(), Map.of(), true, settings.getReconnectDelay() * 1000L, settings.getRateLimit());
         if(settings.isLoadSequencesFromCradle()) {
             SequenceHolder sequences = messageLoader.loadInitialSequences(channel.getSessionAlias());
             LOGGER.info("Loaded sequences are: client - {}, server - {}", sequences.getClientSeq(), sequences.getServerSeq());
@@ -1155,14 +1155,14 @@ public class FixHandler implements AutoCloseable, IHandler {
         long sleepTime = config.getTimeoutBetweenParts();
         List<Instant> sendingTimes = new ArrayList<>();
         for(ByteBuf slice : slices) {
-            channel.send(asExpandable(slice), metadata, eventID, SendMode.DIRECT_SOCKET);
-            resetHeartbeatTask();
-            sendingTimes.add(Instant.now());
             try {
                 Thread.sleep(sleepTime);
             } catch (InterruptedException e) {
                 LOGGER.error("Error while sending messages in different tcp packets.");
             }
+            channel.send(asExpandable(slice), metadata, eventID, SendMode.DIRECT_SOCKET);
+            resetHeartbeatTask();
+            sendingTimes.add(Instant.now());
         }
 
 
