@@ -28,7 +28,6 @@ import com.exactpro.th2.dataprovider.lw.grpc.MessageSearchRequest
 import com.exactpro.th2.dataprovider.lw.grpc.MessageSearchResponse
 import com.exactpro.th2.dataprovider.lw.grpc.MessageStream
 import com.exactpro.th2.dataprovider.lw.grpc.TimeRelation
-import com.exactpro.th2.lme.oe.util.ProviderCall
 import com.google.protobuf.Timestamp
 import com.google.protobuf.util.Timestamps.compare
 import io.netty.buffer.ByteBuf
