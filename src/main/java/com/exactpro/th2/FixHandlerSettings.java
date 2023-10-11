@@ -55,9 +55,10 @@ public class FixHandlerSettings implements IHandlerSettings {
     private Boolean resetSeqNumFlag = false;
     private Boolean resetOnLogon = false;
     private Boolean useNextExpectedSeqNum = false;
-    private Boolean saveAdminMessages = false;
     private Boolean loadSequencesFromCradle = false;
+    private Boolean loadMissedMessagesFromCradle = false;
     private Boolean resetStateOnServerReset = false;
+    private Boolean logoutOnIncorrectServerSequence = false;
 
     @JsonDeserialize(using = LocalTimeDeserializer.class)
     private LocalTime sessionStartTime;
@@ -238,6 +239,14 @@ public class FixHandlerSettings implements IHandlerSettings {
         this.loadSequencesFromCradle = loadSequencesFromCradle;
     }
 
+    public Boolean isLoadMissedMessagesFromCradle() {
+        return loadMissedMessagesFromCradle;
+    }
+
+    public void setLoadMissedMessagesFromCradle(Boolean loadMissedMessagesFromCradle) {
+        this.loadMissedMessagesFromCradle = loadMissedMessagesFromCradle;
+    }
+
     public Boolean getResetStateOnServerReset() {
         return resetStateOnServerReset;
     }
@@ -254,12 +263,12 @@ public class FixHandlerSettings implements IHandlerSettings {
         this.useNextExpectedSeqNum = useNextExpectedSeqNum;
     }
 
-    public Boolean isSaveAdminMessages() {
-        return saveAdminMessages;
+    public Boolean isLogoutOnIncorrectServerSequence() {
+        return logoutOnIncorrectServerSequence;
     }
 
-    public void setSaveAdminMessages(Boolean saveAdminMessages) {
-        this.saveAdminMessages = saveAdminMessages;
+    public void setLogoutOnIncorrectServerSequence(Boolean logoutOnIncorrectServerSequence) {
+        this.logoutOnIncorrectServerSequence = logoutOnIncorrectServerSequence;
     }
 
     public LocalTime getSessionStartTime() {
