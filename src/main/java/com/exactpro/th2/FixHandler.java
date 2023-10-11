@@ -1237,7 +1237,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         ByteBuf message,
         Map<String, String> metadata
     ) {
-        long timeToBlock = strategy.getConfig().getDuration().toMillis();
+        long timeToBlock = strategy.getConfig().getDuration().toMillis() + 3000;
         long startTime = System.currentTimeMillis();
         while (System.currentTimeMillis() - startTime <= timeToBlock) {
             try {
