@@ -1963,7 +1963,6 @@ public class FixHandler implements AutoCloseable, IHandler {
                 .name(message)
                 .bodyData(jsonBody)
                 .status(Event.Status.PASSED);
-            messageIDS.forEach(event::messageID);
             context.send(
                 event,
                 strategyRootEvent
