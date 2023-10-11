@@ -458,7 +458,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         if(msgTypeValue.equals(MSG_TYPE_LOGOUT)) {
             serverMsgSeqNum.incrementAndGet();
             strategy.getState().addMessageID(messageId);
-            handleLogout(message);
+            strategy.getIncomingMessageStrategy(x -> x.getLogoutStrategy()).process(message, metadata);
             return metadata;
         }
 
@@ -602,7 +602,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         checkHeartbeat(message);
     }
 
-    private void handleLogout(@NotNull ByteBuf message) {
+    private Map<String, String> handleLogout(@NotNull ByteBuf message, Map<String, String> metadata) {
         if (LOGGER.isInfoEnabled()) LOGGER.info("Logout received - {}", message.toString(US_ASCII));
         FixField sessionStatus = findField(message, SESSION_STATUS_TAG);
         boolean isSequenceChanged = false;
@@ -633,6 +633,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         cancelFuture(testRequestTimer);
         enabled.set(false);
         context.send(CommonUtil.toEvent("logout for sender - " + settings.getSenderCompID()), null);//make more useful
+        return metadata;
     }
 
     private void resetSequence(ByteBuf message) {
@@ -1292,7 +1293,19 @@ public class FixHandler implements AutoCloseable, IHandler {
         return metadata;
     }
     // </editor-fold>
-
+    private Map<String, String> reconnectOnLogout(@NotNull ByteBuf message, Map<String, String> metadata) {
+        StrategyState state = strategy.getState();
+        TransformMessageConfiguration config = state.getConfig().getTransformMessageConfiguration();
+        if(state.getTransformedIncomingMessagesCount() < config.getNumberOfTimesToTransform()) {
+            cancelFuture(heartbeatTimer);
+            cancelFuture(testRequestTimer);
+            enabled.set(false);
+            context.send(CommonUtil.toEvent("logout for sender - " + settings.getSenderCompID()), null);
+        } else {
+            handleLogout(message, metadata);
+        }
+        return metadata;
+    }
     // <editor-fold desc="outgoing strategies"
 
     private Map<String, String> defaultOutgoingStrategy(ByteBuf message, Map<String, String> metadata) {
@@ -1374,10 +1387,10 @@ public class FixHandler implements AutoCloseable, IHandler {
         var sendStrategy = new SendStrategy(this::defaultMessageProcessor, this::defaultSend);
         var sendStrategyCopy = new SendStrategy(this::defaultMessageProcessor, this::defaultSend);
         var incomingMessagesStrategy = new IncomingMessagesStrategy(
-            this::defaultMessageProcessor, this::handleTestRequest, this::handleLogon
+            this::defaultMessageProcessor, this::handleTestRequest, this::handleLogon, this::handleLogout
         );
         var incomingMessagesStrategyCopy = new IncomingMessagesStrategy(
-            this::defaultMessageProcessor, this::handleTestRequest, this::handleLogon
+            this::defaultMessageProcessor, this::handleTestRequest, this::handleLogon, this::handleLogout
         );
         var outgoingMessagesStrategy = new OutgoingMessagesStrategy(this::defaultOutgoingStrategy);
         var outgoingMessagesStrategyCopy = new OutgoingMessagesStrategy(this::defaultOutgoingStrategy);
@@ -1463,6 +1476,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     private void setupTransformStrategy(RuleConfiguration configuration) {
         strategy.resetStrategyAndState(configuration);
         strategy.updateIncomingMessageStrategy(x -> {x.setLogonStrategy(this::logoutOnLogon); return Unit.INSTANCE;});
+        strategy.updateIncomingMessageStrategy(x -> {x.setLogoutStrategy(this::reconnectOnLogout); return Unit.INSTANCE;});
         strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::transformOutgoingMessageStrategy); return Unit.INSTANCE;});
         strategy.setCleanupHandler(this::cleanupTransformStrategy);
         try {
@@ -1480,6 +1494,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.updateIncomingMessageStrategy(x -> {x.setLogonStrategy(this::handleLogon); return Unit.INSTANCE;});
         strategy.updateSendStrategy(x -> {x.setSendPreprocessor(this::defaultMessageProcessor); return Unit.INSTANCE;});
         strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
+        strategy.updateIncomingMessageStrategy(x -> {x.setLogoutStrategy(this::handleLogout); return Unit.INSTANCE;});
         try {
             disconnect(strategy.getGracefulDisconnect());
             openChannelAndWaitForLogon();
