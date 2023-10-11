@@ -66,6 +66,8 @@ public class FixHandlerSettings implements IHandlerSettings {
     @JsonDeserialize(using = LocalTimeDeserializer.class)
     private LocalTime sessionEndTime;
 
+    private int rateLimit = Integer.MAX_VALUE;
+
     private int testRequestDelay = 60;
     private int reconnectDelay = 5;
     private int disconnectRequestDelay = 5;
@@ -313,5 +315,13 @@ public class FixHandlerSettings implements IHandlerSettings {
 
     public void setBrokenConnConfiguration(BrokenConnConfiguration brokenConnConfiguration) {
         this.brokenConnConfiguration = brokenConnConfiguration;
+    }
+
+    public int getRateLimit() {
+        return rateLimit;
+    }
+
+    public void setRateLimit(int rateLimit) {
+        this.rateLimit = rateLimit;
     }
 }
