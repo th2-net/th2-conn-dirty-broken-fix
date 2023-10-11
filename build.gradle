@@ -1,6 +1,6 @@
 plugins {
     id 'java'
-    id 'org.jetbrains.kotlin.jvm' version '1.6.21'
+    id 'org.jetbrains.kotlin.jvm' version '1.8.22'
     id 'com.palantir.docker' version '0.25.0'
     id "org.owasp.dependencycheck" version "8.2.1"
     id "com.gorylenko.gradle-git-properties" version "2.4.1"
@@ -38,17 +38,18 @@ repositories {
 }
 
 dependencies {
-    api platform('com.exactpro.th2:bom:4.4.0')
+    api platform('com.exactpro.th2:bom:4.5.0')
 
-    implementation("com.exactpro.th2:common:5.3.0-separate-executor+") {
-        exclude group: 'com.exactpro.th2', module: 'task-utils'
+    implementation("com.exactpro.th2:common:5.4.0-dev") {
+        exclude group: 'com.exactpro.th2', module: 'cradle-core'
+        exclude group: 'com.exactpro.th2', module: 'cradle-cassandra'
     }
-    implementation "com.exactpro.th2:common-utils:2.1.0-TH2-5001+"
+    implementation group: 'com.exactpro.th2', name: 'common-utils', version: '2.2.1-dev'
 
     implementation 'com.exactpro.th2:netty-bytebuf-utils:0.0.1'
     implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.15.2'
 
-    implementation 'com.exactpro.th2:conn-dirty-tcp-core:3.1.0-TH2-5001+'
+    implementation 'com.exactpro.th2:conn-dirty-tcp-core:3.2.1-TH2-5001+'
     implementation 'com.exactpro.th2:grpc-lw-data-provider:2.0.0-dev-version-2+'
 
     implementation 'org.slf4j:slf4j-api'

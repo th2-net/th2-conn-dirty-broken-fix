@@ -65,6 +65,7 @@ data class RuleConfiguration(
             RuleType.SPLIT_SEND -> {
                 require(splitSendConfiguration != null) { "`splitSendConfiguration` is required for $ruleType" }
             }
+            else -> {}
         }
     }
 
