@@ -81,6 +81,7 @@ public class Constants {
     public static final String RESET_SEQ_NUM = SOH + RESET_SEQ_NUM_TAG + "=";
     public static final String NEXT_EXPECTED_SEQ_NUM = SOH + NEXT_EXPECTED_SEQ_NUMBER_TAG + "=";
     public static final String POSS_DUP = SOH + POSS_DUP_TAG + "=";
+    public static final String TEXT = SOH + TEXT_TAG + "=";
 
     //message types
     public static final String MSG_TYPE_LOGON = "A";
@@ -99,5 +100,6 @@ public class Constants {
     );
 
     public static final String IS_POSS_DUP = "Y";
+    public static final String IS_SEQUENCE_RESET_FLAG = "Y";
     public static final int SUCCESSFUL_LOGOUT_CODE = 4;
 }

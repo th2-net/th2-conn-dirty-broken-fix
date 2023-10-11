@@ -19,6 +19,7 @@ import com.exactpro.th2.common.grpc.EventID;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel;
 import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerContext;
+import com.exactpro.th2.dataprovider.lw.grpc.DataProviderService;
 import io.netty.buffer.ByteBuf;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
@@ -33,6 +34,16 @@ public class Channel implements IChannel {
     private final FixHandlerSettings fixHandlerSettings;
     private final MyFixHandler fixHandler;
     private final List<ByteBuf> queue = new ArrayList<>();
+
+    public Channel(FixHandlerSettings fixHandlerSettings, DataProviderService dataProviderService) {
+        this.fixHandlerSettings = fixHandlerSettings;
+        IHandlerContext context = Mockito.mock(IHandlerContext.class);
+        Mockito.when(context.getSettings()).thenReturn(this.fixHandlerSettings);
+        Mockito.when(context.getGrpcService(DataProviderService.class)).thenReturn(dataProviderService);
+        Mockito.when(context.getBookName()).thenReturn("TEST_BOOK");
+
+        this.fixHandler = new MyFixHandler(context);
+    }
 
     public Channel(FixHandlerSettings fixHandlerSettings) {
         this.fixHandlerSettings = fixHandlerSettings;

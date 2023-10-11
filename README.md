@@ -43,12 +43,14 @@ This microservice allows sending and receiving messages via FIX protocol
 + *resetSeqNumFlag* - resetting sequence number in initial Logon message (when conn started)
 + *resetOnLogon* - resetting the sequence number in Logon in other cases (e.g. disconnect)
 + *loadSequencesFromCradle* - defines if sequences will be loaded from cradle to use them in logon message.
++ *loadMissedMessagesFromCradle* - defines how retransmission will be handled. If true, then requested through `ResendRequest` messages (or messages requested on Logon with `NextExpectedSeqNum`) will be loaded from cradle.
 + *sessionStartTime* - UTC time when session starts. (`nullable`)
 + *sessionEndTime* - UTC time when session ends. required if startSessionTime is filled.
 + *sendingDateTimeFormat* - `SendingTime` field format for outgoing messages. (`nullable`, `default format` in this case is `"yyyyMMdd-HH:mm:ss.SSSSSSSSS"`) 
 + *useNextExpectedSeqNum* - session management based on next expected sequence number. (`false` by default)
 + *saveAdminMessages* - defines if admin messages will be saved to internal outgoing buffer. (`false` by default)
 + *resetStateOnServerReset* - whether to reset the server sequence after receiving logout with text `Next Expected MSN too high, MSN to be sent is x but received y`.
++ *logoutOnIncorrectServerSequence* - whether to logout session when server send message with sequence number less than expected. If `false` then internal conn sequence will be reset to sequence number from server message.
 
 ### Security settings
 
@@ -327,6 +329,32 @@ spec:
 ```
 
 # Changelog
+### 1.4.1
+* Use UTC time zone for sending time tag
+
+### 1.4.0
+* Ungraceful session disconnect support.
+* Removed NPE when session is reset by schedule.
+
+### 1.3.2
+* Improve logging: log session group and session alias for each log message.
+
+# 1.3.1
+* fix multiple consequent SOH characters
+
+## 1.3.0
+* Added handling for incoming test request messages
+* Fixed resetSeqNum flag handling on incoming logon messages.
+* Added option to automatically reset server sequence when internal conn sequence doesn't match with sequence that server sent.
+
+## 1.2.0
+* loading requested messages from cradle.
+
+## 1.1.1
+* fix scheduling: hasn't worked for some ranges.
+
+## 1.1.0
+* state reset option on server update.
 
 ## 1.2.0
 * Added support for th2 transport protocol
@@ -345,6 +373,12 @@ spec:
 ## 1.0.0
 * Bump `conn-dirty-tcp-core` to `3.0.0` for books and pages support
 
+<<<<<<< HEAD
+=======
+## 0.3.0
+* Ability to recover messages from cradle.
+
+>>>>>>> original/dev-version-1
 ## 0.2.0
 * optional state reset on silent server reset.
 
