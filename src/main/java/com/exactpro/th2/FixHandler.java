@@ -312,7 +312,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             msgSeqNum.set(sequences.getClientSeq());
             serverMsgSeqNum.set(sequences.getServerSeq());
         }
-        channel.open();
+        if(!channel.isOpen()) channel.open();
     }
 
     @NotNull
@@ -666,7 +666,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         if(messageLoader != null) {
             messageLoader.updateTime();
         }
-        channel.open();
+        if(!channel.isOpen()) channel.open();
     }
 
     public void sendResendRequest(int beginSeqNo, int endSeqNo) { //do private
@@ -1283,7 +1283,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             handleLogon(message, metadata);
             try {
                 disconnect(strategy.getGracefulDisconnect());
-                channel.open().get();
+                if(!channel.isOpen()) channel.open().get();
             } catch (Exception e) {
                 LOGGER.error("Error while reconnecting.");
             }
@@ -1487,7 +1487,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.setCleanupHandler(this::cleanupTransformStrategy);
         try {
             disconnect(configuration.getGracefulDisconnect());
-            channel.open().get();
+            if(!channel.isOpen()) channel.open().get();
         } catch (Exception e) {
             String message = String.format("Error while setting up %s", strategy.getType());
             LOGGER.error(message, e);
@@ -1866,7 +1866,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void openChannelAndWaitForLogon() throws ExecutionException, InterruptedException {
-        channel.open().get();
+        if(!channel.isOpen()) channel.open().get();
         waitUntilLoggedIn();
     }
 
