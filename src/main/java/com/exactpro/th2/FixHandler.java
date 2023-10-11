@@ -1301,6 +1301,12 @@ public class FixHandler implements AutoCloseable, IHandler {
             cancelFuture(testRequestTimer);
             enabled.set(false);
             context.send(CommonUtil.toEvent("logout for sender - " + settings.getSenderCompID()), null);
+            try {
+                disconnect(strategy.getConfig().getGracefulDisconnect());
+                openChannelAndWaitForLogon();
+            } catch (Exception e) {
+                LOGGER.error("Error while reconnecting for transform strategy.");
+            }
         } else {
             handleLogout(message, metadata);
         }
