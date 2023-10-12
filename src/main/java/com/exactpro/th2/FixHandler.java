@@ -764,6 +764,12 @@ public class FixHandler implements AutoCloseable, IHandler {
                     return true;
                 };
 
+                // waiting for messages to be writen in cradle
+                try {
+                    Thread.sleep(1000);
+                } catch (Exception e) {
+                    LOGGER.error("Error while waiting messages to write into cradle");
+                }
                 messageLoader.processMessagesInRange(
                     Direction.SECOND,
                     channel.getSessionAlias(),
