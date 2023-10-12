@@ -765,11 +765,6 @@ public class FixHandler implements AutoCloseable, IHandler {
                 };
 
                 // waiting for messages to be writen in cradle
-                try {
-                    Thread.sleep(1000);
-                } catch (Exception e) {
-                    LOGGER.error("Error while waiting messages to write into cradle");
-                }
                 messageLoader.processMessagesInRange(
                     Direction.SECOND,
                     channel.getSessionAlias(),
@@ -1299,25 +1294,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         return metadata;
     }
     // </editor-fold>
-    private Map<String, String> reconnectOnLogout(@NotNull ByteBuf message, Map<String, String> metadata) {
-        StrategyState state = strategy.getState();
-        TransformMessageConfiguration config = state.getConfig().getTransformMessageConfiguration();
-        if(state.getTransformedIncomingMessagesCount() < config.getNumberOfTimesToTransform()) {
-            cancelFuture(heartbeatTimer);
-            cancelFuture(testRequestTimer);
-            enabled.set(false);
-            context.send(CommonUtil.toEvent("logout for sender - " + settings.getSenderCompID()), null);
-            try {
-                disconnect(strategy.getConfig().getGracefulDisconnect());
-                openChannelAndWaitForLogon();
-            } catch (Exception e) {
-                LOGGER.error("Error while reconnecting for transform strategy.");
-            }
-        } else {
-            handleLogout(message, metadata);
-        }
-        return metadata;
-    }
+
     // <editor-fold desc="outgoing strategies"
 
     private Map<String, String> defaultOutgoingStrategy(ByteBuf message, Map<String, String> metadata) {
@@ -1488,7 +1465,6 @@ public class FixHandler implements AutoCloseable, IHandler {
     private void setupTransformStrategy(RuleConfiguration configuration) {
         strategy.resetStrategyAndState(configuration);
         strategy.updateIncomingMessageStrategy(x -> {x.setLogonStrategy(this::logoutOnLogon); return Unit.INSTANCE;});
-        strategy.updateIncomingMessageStrategy(x -> {x.setLogoutStrategy(this::reconnectOnLogout); return Unit.INSTANCE;});
         strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::transformOutgoingMessageStrategy); return Unit.INSTANCE;});
         strategy.setCleanupHandler(this::cleanupTransformStrategy);
         try {
