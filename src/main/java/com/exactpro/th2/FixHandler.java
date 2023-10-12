@@ -1861,8 +1861,8 @@ public class FixHandler implements AutoCloseable, IHandler {
             sendLogout();
             waitLogoutResponse();
         }
-        channel.close().get();
         enabled.set(false);
+        channel.close().get();
     }
 
     private void openChannelAndWaitForLogon() throws ExecutionException, InterruptedException {
