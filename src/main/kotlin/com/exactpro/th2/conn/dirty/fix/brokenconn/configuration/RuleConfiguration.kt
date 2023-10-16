@@ -65,7 +65,9 @@ data class RuleConfiguration(
             RuleType.SPLIT_SEND -> {
                 require(splitSendConfiguration != null) { "`splitSendConfiguration` is required for $ruleType" }
             }
-            else -> {}
+            RuleType.DEFAULT -> {}
+            RuleType.FAKE_RETRANSMISSION -> {}
+            RuleType.LOGON_AFTER_LOGON -> {}
         }
     }
 

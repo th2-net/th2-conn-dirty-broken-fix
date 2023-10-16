@@ -33,6 +33,7 @@ import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.ResendRequestCon
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RuleConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.SplitSendConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.TransformMessageConfiguration;
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.TransformationConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.DefaultStrategyHolder;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.IncomingMessagesStrategy;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.OutgoingMessagesStrategy;
@@ -144,6 +145,7 @@ import static com.exactpro.th2.constants.Constants.PASSWORD;
 import static com.exactpro.th2.constants.Constants.PASSWORD_TAG;
 import static com.exactpro.th2.constants.Constants.POSS_DUP;
 import static com.exactpro.th2.constants.Constants.POSS_DUP_TAG;
+import static com.exactpro.th2.constants.Constants.POSS_RESEND;
 import static com.exactpro.th2.constants.Constants.RESET_SEQ_NUM;
 import static com.exactpro.th2.constants.Constants.RESET_SEQ_NUM_TAG;
 import static com.exactpro.th2.constants.Constants.SENDER_COMP_ID;
@@ -164,6 +166,7 @@ import static com.exactpro.th2.constants.Constants.USERNAME;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.asExpandable;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.indexOf;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.isEmpty;
+import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.startsWith;
 import static com.exactpro.th2.util.MessageUtil.findByte;
 import static com.exactpro.th2.util.MessageUtil.getBodyLength;
 import static com.exactpro.th2.util.MessageUtil.getChecksum;
@@ -186,6 +189,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     private static final String STRATEGY_EVENT_TYPE = "StrategyState";
     private static final DateTimeFormatter formatter = DateTimeFormatter.ISO_INSTANT;
     private static final ObjectMapper mapper = new ObjectMapper();
+    private static final List<Integer> retransmissionFlags = List.of(POSS_DUP_TAG, POSS_DUP_TAG);
 
     private final Random random = new Random();
     private final AtomicInteger msgSeqNum = new AtomicInteger(0);
@@ -1187,7 +1191,9 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
 
         TransformMessageConfiguration config = strategy.getTransformMessageConfiguration();
-        if(!msgTypeField.getValue().equals(config.getMessageType())) {
+        TransformationConfiguration transformation = getRandomElementFromList(config.getTransformations());
+
+        if(!msgTypeField.getValue().equals(transformation.getMessageType())) {
             return null;
         }
 
@@ -1196,22 +1202,22 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategyState.transformIfCondition(
             x -> x <= config.getNumberOfTimesToTransform(),
             () -> {
-                messageTransformer.transformWithoutResults(message, config.getActions());
-                if(config.getNewPassword() != null) {
+                messageTransformer.transformWithoutResults(message, transformation.getCombinedActions());
+                if(transformation.getNewPassword() != null) {
                     if(settings.getPasswordEncryptKey() != null) {
                         FixField encryptedPassword = findField(message, ENCRYPTED_PASSWORD_TAG);
                         if(encryptedPassword != null) {
-                            encryptedPassword.setValue(encrypt(config.getNewPassword()));
+                            encryptedPassword.setValue(encrypt(transformation.getNewPassword()));
                         }
                     } else {
                         FixField password = findField(message, PASSWORD_TAG);
                         if(password != null) {
-                            password.setValue(config.getNewPassword());
+                            password.setValue(transformation.getNewPassword());
                         }
                     }
                 }
 
-                if(config.getUseOldPasswords() && !previouslyUsedPasswords.isEmpty()) {
+                if(transformation.getUseOldPasswords() && !previouslyUsedPasswords.isEmpty()) {
                     if(settings.getPasswordEncryptKey() != null) {
                         FixField encryptedPassword = findField(message, ENCRYPTED_PASSWORD_TAG);
                         if(encryptedPassword != null) {
@@ -1308,6 +1314,22 @@ public class FixHandler implements AutoCloseable, IHandler {
         return null;
     }
 
+    private Map<String, String> fakeRetransmissionOutgoingProcessor(ByteBuf message, Map<String, String> metadata) {
+        onOutgoingUpdateTag(message, metadata);
+        FixField msgType = findField(message, MSG_TYPE_TAG, US_ASCII);
+
+        if(msgType != null && ADMIN_MESSAGES.contains(msgType.getValue())) return null;
+
+        FixField sendingTime = requireNonNull(findField(message, SENDING_TIME_TAG));
+        Integer retransmissionFlag = getRandomElementFromList(retransmissionFlags);
+        if(retransmissionFlag == null) return null;
+        strategy.getState().addMissedMessageToCacheIfCondition(msgSeqNum.get(), Unpooled.copiedBuffer(message), x -> true);
+
+        sendingTime.insertNext(retransmissionFlag, IS_POSS_DUP);
+
+        return null;
+    }
+
     private Map<String, String> missOutgoingMessages(ByteBuf message, Map<String, String> metadata) {
         int countToMiss = strategy.getMissOutgoingMessagesConfiguration().getCount();
         var strategyState = strategy.getState();
@@ -1401,6 +1423,36 @@ public class FixHandler implements AutoCloseable, IHandler {
                 this::defaultOnCloseHandler
             )
         );
+    }
+
+    private void setupFakeRetransmissionStrategy(RuleConfiguration configuration) {
+        strategy.resetStrategyAndState(configuration);
+        strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::fakeRetransmissionOutgoingProcessor); return Unit.INSTANCE;});
+        strategy.setCleanupHandler(this::cleanupFakeRetransmissionStrategy);
+        ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
+    }
+
+    private void cleanupFakeRetransmissionStrategy() {
+        strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
+        strategy.cleanupStrategy();
+        ruleEndEvent(strategy.getType(), strategy.getState().getStartTime(), strategy.getState().getMessageIDs());
+    }
+
+    private void runLogonAfterLogonStrategy(RuleConfiguration configuration) {
+        Instant start = Instant.now();
+        strategy.resetStrategyAndState(configuration);
+        ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
+        if(!enabled.get()) {
+            ruleErrorEvent(strategy.getType(), String.format("Session %s isn't logged in.", channel.getSessionAlias()), null);
+            return;
+        }
+
+        try {
+            sendLogon();
+        } catch (Exception e) {
+            ruleErrorEvent(strategy.getType(), null, e);
+        }
+        ruleEndEvent(configuration.getRuleType(), start, strategy.getState().getMessageIDs());
     }
 
     private void setupDisconnectStrategy(RuleConfiguration configuration) {
@@ -1703,7 +1755,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         } catch (Exception e) {
             String message = String.format("Error while cleaning up strategy: %s", strategy.getState().getType());
             LOGGER.error(message, e);
-            ruleErrorEvent(strategy.getState().getType(), e);
+            ruleErrorEvent(strategy.getState().getType(), null, e);
         }
 
         if(!sessionActive.get()) {
@@ -1719,7 +1771,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         } catch (Exception e) {
             String message = String.format("Error while setting up strategy: %s", strategy.getState().getType());
             LOGGER.error(message, e);
-            ruleErrorEvent(nextStrategyConfig.getRuleType(), e);
+            ruleErrorEvent(nextStrategyConfig.getRuleType(), null, e);
         }
 
         LOGGER.info("Next strategy applied: {}", nextStrategyConfig.getRuleType());
@@ -1740,6 +1792,8 @@ public class FixHandler implements AutoCloseable, IHandler {
             case PARTIAL_CLIENT_OUTAGE: return this::setupPartialClientOutageStrategy;
             case IGNORE_INCOMING_MESSAGES: return this::setupIgnoreIncomingMessagesStrategy;
             case DISCONNECT_WITH_RECONNECT: return this::setupDisconnectStrategy;
+            case FAKE_RETRANSMISSION: return this::setupFakeRetransmissionStrategy;
+            case LOGON_AFTER_LOGON: return this::runLogonAfterLogonStrategy;
             case DEFAULT: return configuration -> strategy.cleanupStrategy();
             default: throw new IllegalStateException(String.format("Unknown strategy type %s.", config.getRuleType()));
         }
@@ -1908,6 +1962,11 @@ public class FixHandler implements AutoCloseable, IHandler {
         return previouslyUsedPasswords.get(random.nextInt(previouslyUsedPasswords.size()));
     }
 
+    private <T> T getRandomElementFromList(List<T> elements) {
+        if(elements.isEmpty()) return null;
+        return elements.get(random.nextInt(elements.size()));
+    }
+
     public AtomicBoolean getEnabled() {
         return enabled;
     }
@@ -1975,15 +2034,15 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
     }
 
-    private void ruleErrorEvent(RuleType type, Throwable error) {
-        String message = String.format("Rule %s error event: %s", type, error);
-        LOGGER.error(message, error);
+    private void ruleErrorEvent(RuleType type, String message, Throwable error) {
+        String errorLog = String.format("Rule %s error event: message - %s, error - %s", type, message, error);
+        LOGGER.error(errorLog, error);
         context.send(
             Event
                 .start()
                 .endTimestamp()
                 .type(STRATEGY_EVENT_TYPE)
-                .name(message)
+                .name(errorLog)
                 .exception(error, true)
                 .status(Event.Status.FAILED),
             strategyRootEvent

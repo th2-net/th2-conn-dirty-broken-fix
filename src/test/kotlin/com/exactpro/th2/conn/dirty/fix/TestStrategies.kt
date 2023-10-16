@@ -30,6 +30,7 @@ import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.ResendRequestCon
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RuleConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.SplitSendConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.TransformMessageConfiguration
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.TransformationConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.RuleType
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.SchedulerType
 import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel
@@ -229,7 +230,7 @@ class TestStrategies {
                     duration = businessRuleDuration,
                     cleanUpDuration = Duration.of(2, ChronoUnit.SECONDS),
                     transformMessageConfiguration = TransformMessageConfiguration(
-                        listOf(
+                        listOf(TransformationConfiguration(listOf(
                             Action(
                                 replace = FieldSelector(
                                     tag = Constants.PASSWORD_TAG,
@@ -243,8 +244,7 @@ class TestStrategies {
                                     valueOneOf = null
                                 )
                             )
-                        ), "A", numberOfTimesToTransform = 2
-                    )
+                        ), "A")), 2),
                 ),
             )
         )) { msg, mode, mtd ->

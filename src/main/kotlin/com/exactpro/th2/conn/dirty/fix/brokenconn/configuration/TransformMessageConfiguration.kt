@@ -20,9 +20,13 @@ import com.exactpro.th2.conn.dirty.fix.FieldDefinition
 import com.exactpro.th2.constants.Constants
 
 data class TransformMessageConfiguration(
-    val actions: List<Action> = emptyList(),
+   val transformations: List<TransformationConfiguration>,
+   val numberOfTimesToTransform: Int,
+)
+
+data class TransformationConfiguration(
+    private val actions: List<Action> = emptyList(),
     val messageType: String,
-    val numberOfTimesToTransform: Int,
     val useOldPasswords: Boolean = false,
     val newUsername: String? = null,
     val newPassword: String? = null,
