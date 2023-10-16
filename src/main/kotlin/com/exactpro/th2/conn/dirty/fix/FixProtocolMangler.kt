@@ -28,6 +28,7 @@ import com.exactpro.th2.conn.dirty.tcp.core.api.IManglerContext
 import com.exactpro.th2.conn.dirty.tcp.core.api.IManglerFactory
 import com.exactpro.th2.conn.dirty.tcp.core.api.IManglerSettings
 import com.fasterxml.jackson.databind.json.JsonMapper
+import com.fasterxml.jackson.module.kotlin.KotlinFeature
 import com.fasterxml.jackson.module.kotlin.KotlinModule
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.google.auto.service.AutoService
@@ -38,7 +39,16 @@ import mu.KotlinLogging
 private val LOGGER = KotlinLogging.logger {}
 
 private val MAPPER = JsonMapper.builder()
-    .addModule(KotlinModule(nullIsSameAsDefault = true))
+    .addModule(
+        KotlinModule.Builder()
+            .withReflectionCacheSize(512)
+            .configure(KotlinFeature.NullToEmptyCollection, false)
+            .configure(KotlinFeature.NullToEmptyMap, false)
+            .configure(KotlinFeature.NullIsSameAsDefault, enabled = true)
+            .configure(KotlinFeature.SingletonSupport, false)
+            .configure(KotlinFeature.StrictNullChecks, false)
+            .build()
+    )
     .build()
 
 private const val RULE_NAME_PROPERTY = "rule-name"
@@ -63,7 +73,7 @@ class FixProtocolMangler(context: IManglerContext) : IMangler {
             }
         }
 
-        val (name, results, message) = MessageTransformer.transform(message, rule, unconditionally) ?: return null
+        val (name, results, byteBuf) = MessageTransformer.transform(message, rule, unconditionally) ?: return null
 
         return Event.start().apply {
             type(MANGLE_EVENT_TYPE)
@@ -84,7 +94,7 @@ class FixProtocolMangler(context: IManglerContext) : IMangler {
             }
 
             bodyData(createMessageBean("Original message:"))
-            bodyData(createMessageBean(ByteBufUtil.prettyHexDump(message)))
+            bodyData(createMessageBean(ByteBufUtil.prettyHexDump(byteBuf)))
 
             TableBuilder<ActionRow>().run {
                 results.forEach { result ->

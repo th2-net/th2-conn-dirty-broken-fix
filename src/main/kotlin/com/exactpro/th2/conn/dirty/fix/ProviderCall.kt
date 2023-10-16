@@ -15,13 +15,7 @@ class ProviderCall {
     companion object {
         fun <T> withCancellation(code: () -> T): T {
             return Context.current().withCancellation().use { context ->
-                val toRestore = context.attach()
-                val result = try {
-                    code()
-                } finally {
-                    context.detach(toRestore)
-                }
-                return@use result
+                context.call { code() }
             }
         }
     }

@@ -20,6 +20,8 @@ import com.exactpro.th2.common.event.Event;
 import com.exactpro.th2.common.event.bean.Message;
 import com.exactpro.th2.common.grpc.Direction;
 import com.exactpro.th2.common.grpc.EventID;
+import com.exactpro.th2.common.grpc.EventID;
+import com.exactpro.th2.common.grpc.Direction;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.utils.event.transport.EventUtilsKt;
@@ -78,6 +80,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -305,13 +308,16 @@ public class FixHandler implements AutoCloseable, IHandler {
         var brokenConnConfig = settings.getBrokenConnConfiguration();
         scheduler = new StrategyScheduler(brokenConnConfig.getSchedulerType(), brokenConnConfig.getRules());
         executorService.schedule(this::applyNextStrategy, 0, TimeUnit.MILLISECONDS);
+        if (settings.getConnectionTimeoutOnSend() <= 0) {
+            throw new IllegalArgumentException("connectionTimeoutOnSend must be greater than zero");
+        }
     }
 
     @Override
     public void onStart() {
         channel = context.createChannel(address, settings.getSecurity(), Map.of(), true, settings.getReconnectDelay() * 1000L, settings.getRateLimit());
         if(settings.isLoadSequencesFromCradle()) {
-            SequenceHolder sequences = messageLoader.loadInitialSequences(channel.getSessionAlias());
+            SequenceHolder sequences = messageLoader.loadInitialSequences(channel.getSessionGroup(), channel.getSessionAlias());
             LOGGER.info("Loaded sequences are: client - {}, server - {}", sequences.getClientSeq(), sequences.getServerSeq());
             msgSeqNum.set(sequences.getClientSeq());
             serverMsgSeqNum.set(sequences.getServerSeq());
@@ -335,23 +341,30 @@ public class FixHandler implements AutoCloseable, IHandler {
             return CompletableFuture.completedFuture(null);
         }
 
-        if (!channel.isOpen()) {
-            try {
-                channel.open().get();
-            } catch (Exception e) {
-                ExceptionUtils.rethrow(e);
-            }
-        }
-
         boolean isUngracefulDisconnect = Boolean.getBoolean(properties.get(UNGRACEFUL_DISCONNECT_PROPERTY));
         if(isLogout) {
             context.send(CommonUtil.toEvent(String.format("Closing session %s. Is graceful disconnect: %b", channel.getSessionAlias(), !isUngracefulDisconnect)));
             try {
                 disconnect(!isUngracefulDisconnect);
+                enabled.set(false);
+                channel.open().get(settings.getConnectionTimeoutOnSend(), TimeUnit.MILLISECONDS);
             } catch (Exception e) {
                 context.send(CommonUtil.toErrorEvent(String.format("Error while ending session %s by user logout. Is graceful disconnect: %b", channel.getSessionAlias(), !isUngracefulDisconnect), e));
             }
             return CompletableFuture.completedFuture(null);
+        }
+
+        long deadline = System.currentTimeMillis() + settings.getConnectionTimeoutOnSend();
+        if (!channel.isOpen()) {
+            try {
+                channel.open().get(settings.getConnectionTimeoutOnSend(), TimeUnit.MILLISECONDS);
+            } catch (TimeoutException e) {
+                ExceptionUtils.rethrow(new TimeoutException(
+                        String.format("could not open connection before timeout %d mls elapsed",
+                                settings.getConnectionTimeoutOnSend())));
+            } catch (Exception e) {
+                ExceptionUtils.rethrow(e);
+            }
         }
 
         while (channel.isOpen() && !enabled.get()) {
@@ -361,6 +374,11 @@ public class FixHandler implements AutoCloseable, IHandler {
                 Thread.sleep(1000);
             } catch (InterruptedException e) {
                 LOGGER.error("Error while sleeping.");
+            }
+            if (System.currentTimeMillis() > deadline) {
+                // The method should have checked exception in signature...
+                ExceptionUtils.rethrow(new TimeoutException(String.format("session was not established within %d mls",
+                        settings.getConnectionTimeoutOnSend())));
             }
         }
         try {
@@ -454,8 +472,8 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         FixField possDup = findField(message, POSS_DUP_TAG);
         boolean isDup = false;
-        if(possDup != null && possDup.getValue() != null) {
-            isDup = possDup.getValue().equals(IS_POSS_DUP);
+        if(possDup != null) {
+            isDup = Objects.equals(possDup.getValue(), IS_POSS_DUP);
         }
 
         String msgTypeValue = requireNonNull(msgType.getValue());
@@ -748,9 +766,8 @@ public class FixHandler implements AutoCloseable, IHandler {
                     if(possDup != null && Objects.equals(possDup.getValue(), IS_POSS_DUP)) return true;
 
                     if(sequence - 1 != lastProcessedSequence.get() ) {
-                        int newSeqNo = sequence;
                         StringBuilder sequenceReset =
-                                createSequenceReset(Math.max(beginSeqNo, lastProcessedSequence.get() + 1), newSeqNo);
+                                createSequenceReset(Math.max(beginSeqNo, lastProcessedSequence.get() + 1), sequence);
                         channel.send(Unpooled.wrappedBuffer(sequenceReset.toString().getBytes(StandardCharsets.UTF_8)), Collections.emptyMap(), null, SendMode.MANGLE);
                         resetHeartbeatTask();
                     }
@@ -770,9 +787,8 @@ public class FixHandler implements AutoCloseable, IHandler {
 
                 // waiting for messages to be writen in cradle
                 messageLoader.processMessagesInRange(
-                    Direction.SECOND,
-                    channel.getSessionAlias(),
-                    beginSeqNo,
+                        channel.getSessionGroup(), channel.getSessionAlias(), Direction.SECOND,
+                        beginSeqNo,
                     processMessage
                 );
 
@@ -851,6 +867,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.getOutgoingMessageStrategy(OutgoingMessagesStrategy::getOutgoingMessageProcessor).process(message, metadata);
 
         if (LOGGER.isInfoEnabled()) LOGGER.info("Outgoing message: {}", message.toString(US_ASCII));
+        if(enabled.get()) resetHeartbeatTask();
     }
 
     public void onOutgoingUpdateTag(@NotNull ByteBuf message, @NotNull Map<String, String> metadata) {
