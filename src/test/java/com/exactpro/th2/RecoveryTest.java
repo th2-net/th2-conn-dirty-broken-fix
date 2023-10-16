@@ -20,17 +20,18 @@ import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.conn.dirty.fix.MessageSearcher;
 import com.exactpro.th2.dataprovider.lw.grpc.DataProviderService;
 import com.exactpro.th2.dataprovider.lw.grpc.MessageGroupResponse;
-import com.exactpro.th2.dataprovider.lw.grpc.MessageSearchRequest;
+import com.exactpro.th2.dataprovider.lw.grpc.MessageGroupsSearchRequest;
 import com.exactpro.th2.dataprovider.lw.grpc.MessageSearchResponse;
 import com.google.protobuf.ByteString;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
 
 import static com.exactpro.th2.TestUtils.createHandlerSettings;
 import static com.exactpro.th2.conn.dirty.fix.FixByteBufUtilKt.findField;
@@ -41,6 +42,7 @@ import static com.exactpro.th2.constants.Constants.NEW_SEQ_NO_TAG;
 import static com.exactpro.th2.constants.Constants.POSS_DUP_TAG;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+@SuppressWarnings("DataFlowIssue")
 public class RecoveryTest {
 
     private static final ByteBuf logonResponse = Unpooled.wrappedBuffer("8=FIXT.1.1\0019=105\00135=A\00134=1\00149=server\00156=client\00150=system\00152=2014-12-22T10:15:30Z\00198=0\001108=30\0011137=9\0011409=0\00110=203\001".getBytes(StandardCharsets.US_ASCII));
@@ -60,8 +62,8 @@ public class RecoveryTest {
                 messageSearchResponse(5)
             )
         );
-        Mockito.when(dataProviderService.searchMessages(Mockito.any())).thenAnswer(
-            x -> ms.searchMessages(x.getArgument(0, MessageSearchRequest.class))
+        Mockito.when(dataProviderService.searchMessageGroups(Mockito.any())).thenAnswer(
+            x -> ms.searchMessages(x.getArgumentAt(0, MessageGroupsSearchRequest.class))
         );
         channel = new Channel(settings, dataProviderService);
         fixHandler = channel.getFixHandler();
@@ -91,8 +93,8 @@ public class RecoveryTest {
                 messageSearchResponse(5)
             )
         );
-        Mockito.when(dataProviderService.searchMessages(Mockito.any())).thenAnswer(
-            x -> ms.searchMessages(x.getArgument(0, MessageSearchRequest.class))
+        Mockito.when(dataProviderService.searchMessageGroups(Mockito.any())).thenAnswer(
+            x -> ms.searchMessages(x.getArgumentAt(0, MessageGroupsSearchRequest.class))
         );
         channel = new Channel(settings, dataProviderService);
         fixHandler = channel.getFixHandler();
@@ -151,8 +153,8 @@ public class RecoveryTest {
                 messageSearchResponse(6)
             )
         );
-        Mockito.when(dataProviderService.searchMessages(Mockito.any())).thenAnswer(
-            x -> ms.searchMessages(x.getArgument(0, MessageSearchRequest.class))
+        Mockito.when(dataProviderService.searchMessageGroups(Mockito.any())).thenAnswer(
+            x -> ms.searchMessages(x.getArgumentAt(0, MessageGroupsSearchRequest.class))
         );
         channel = new Channel(settings, dataProviderService);
         fixHandler = channel.getFixHandler();
@@ -183,8 +185,8 @@ public class RecoveryTest {
                 messageSearchResponseAdmin(6)
             )
         );
-        Mockito.when(dataProviderService.searchMessages(Mockito.any())).thenAnswer(
-            x -> ms.searchMessages(x.getArgument(0, MessageSearchRequest.class))
+        Mockito.when(dataProviderService.searchMessageGroups(Mockito.any())).thenAnswer(
+            x -> ms.searchMessages(x.getArgumentAt(0, MessageGroupsSearchRequest.class))
         );
         channel = new Channel(settings, dataProviderService);
         fixHandler = channel.getFixHandler();
@@ -226,9 +228,7 @@ public class RecoveryTest {
         FixHandlerSettings settings = createHandlerSettings();
         settings.setLoadMissedMessagesFromCradle(true);
         DataProviderService dataProviderService = Mockito.mock(DataProviderService.class);
-        Mockito.when(dataProviderService.searchMessages(Mockito.any())).thenReturn(
-            new ArrayList().iterator()
-        );
+        Mockito.when(dataProviderService.searchMessageGroups(Mockito.any())).thenReturn(Collections.emptyIterator());
         channel = new Channel(settings, dataProviderService);
         fixHandler = channel.getFixHandler();
         fixHandler.onOpen(channel);
@@ -273,7 +273,7 @@ public class RecoveryTest {
     }
 
     private String messageWithoutSeqNum() {
-        return String.format("8=FIXT.1.1\u00019=70\u000135=C\u0001552=1\u000149=client\u000156=server\u000152=2014-12-22T10:15:30Z\u000150=trader\u000110=132\u0001");
+        return "8=FIXT.1.1\u00019=70\u000135=C\u0001552=1\u000149=client\u000156=server\u000152=2014-12-22T10:15:30Z\u000150=trader\u000110=132\u0001";
     }
 
     private String adminMessage(Integer sequence) {

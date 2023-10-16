@@ -15,19 +15,18 @@
  */
 package com.exactpro.th2.conn.dirty.fix
 
-import com.exactpro.th2.dataprovider.lw.grpc.MessageSearchRequest
+import com.exactpro.th2.dataprovider.lw.grpc.MessageGroupsSearchRequest
 import com.exactpro.th2.dataprovider.lw.grpc.MessageSearchResponse
 import com.exactpro.th2.dataprovider.lw.grpc.TimeRelation
 import com.google.protobuf.util.Timestamps
 
 class MessageSearcher(private val messages: List<MessageSearchResponse>) {
 
-    fun searchMessages(request: MessageSearchRequest): Iterator<MessageSearchResponse> {
-        val limit = request.resultCountLimit.value
+    fun searchMessages(request: MessageGroupsSearchRequest): Iterator<MessageSearchResponse> {
         val startTimestamp = request.startTimestamp
         val searchDirection = request.searchDirection
 
-        var filteredMessages = if (searchDirection == TimeRelation.NEXT) {
+        val filteredMessages = if (searchDirection == TimeRelation.NEXT) {
             messages.filter {
                 Timestamps.compare(it.message.messageId.timestamp, startTimestamp) >= 0 }
         } else {

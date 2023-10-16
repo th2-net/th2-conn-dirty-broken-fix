@@ -28,6 +28,7 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 
 public class FixHandlerSettings implements IHandlerSettings {
+    private static final int DEFAULT_CONNECTION_TIMEOUT_ON_SEND = 30_000;
     private String host = null;
     private int port = 0;
     private Security security = new Security();
@@ -73,6 +74,11 @@ public class FixHandlerSettings implements IHandlerSettings {
     private int disconnectRequestDelay = 5;
 
     private BrokenConnConfiguration brokenConnConfiguration;
+    /**
+     * Timeout in milliseconds during which the connection should be opened and session is logged in.
+     * Otherwise, the send operation will be interrupted
+     */
+    private long connectionTimeoutOnSend = DEFAULT_CONNECTION_TIMEOUT_ON_SEND;
 
     @JsonDeserialize(using = DateTimeFormatterDeserializer.class)
     private DateTimeFormatter sendingDateTimeFormat = DateTimeFormatter.ofPattern("yyyyMMdd-HH:mm:ss.SSSSSSSSS");
@@ -323,5 +329,13 @@ public class FixHandlerSettings implements IHandlerSettings {
 
     public void setRateLimit(int rateLimit) {
         this.rateLimit = rateLimit;
+    }
+
+    public long getConnectionTimeoutOnSend() {
+        return connectionTimeoutOnSend;
+    }
+
+    public void setConnectionTimeoutOnSend(long connectionTimeoutOnSend) {
+        this.connectionTimeoutOnSend = connectionTimeoutOnSend;
     }
 }

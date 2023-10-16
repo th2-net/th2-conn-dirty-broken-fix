@@ -24,7 +24,7 @@ import com.exactpro.th2.constants.Constants.MSG_SEQ_NUM_TAG
 import com.exactpro.th2.constants.Constants.POSS_DUP_TAG
 import com.exactpro.th2.dataprovider.lw.grpc.DataProviderService
 import com.exactpro.th2.dataprovider.lw.grpc.MessageGroupResponse
-import com.exactpro.th2.dataprovider.lw.grpc.MessageSearchRequest
+import com.exactpro.th2.dataprovider.lw.grpc.MessageGroupsSearchRequest
 import com.exactpro.th2.dataprovider.lw.grpc.MessageSearchResponse
 import com.exactpro.th2.dataprovider.lw.grpc.MessageStream
 import com.exactpro.th2.dataprovider.lw.grpc.TimeRelation
@@ -102,53 +102,39 @@ class MessageLoader(
         }
     }
 
-    fun loadInitialSequences(sessionAlias: String): SequenceHolder = searchLock.withLock {
-        val serverSeq = ProviderCall.withCancellation {
-            searchMessage(
-                dataProvider.searchMessages(
-                    createSearchRequest(
-                        Instant.now().toTimestamp(),
-                        Direction.FIRST,
-                        sessionAlias
-                    )
-                )
-            ) {  _, seqNum -> seqNum?.toInt() ?: 0 }
-        }
-        val clientSeq = ProviderCall.withCancellation {
-            searchMessage(
-                dataProvider.searchMessages(
-                    createSearchRequest(
-                        Instant.now().toTimestamp(),
-                        Direction.SECOND,
-                        sessionAlias
-                    )
-                ),
-                true
-            ) { _, seqNum -> seqNum?.toInt() ?: 0 }
-        }
+    fun loadInitialSequences(sessionGroup: String, sessionAlias: String): SequenceHolder = searchLock.withLock {
+        val serverSeq = searchMessage(sessionGroup, sessionAlias, Direction.FIRST, false)
+        val clientSeq = searchMessage(sessionGroup, sessionAlias, Direction.SECOND, true)
         K_LOGGER.info { "Loaded sequences: client sequence - $clientSeq; server sequence - $serverSeq" }
         return SequenceHolder(clientSeq, serverSeq)
     }
 
     fun processMessagesInRange(
-        direction: Direction,
+        sessionGroup: String,
         sessionAlias: String,
+        direction: Direction,
         fromSequence: Long,
         processMessage: (ByteBuf) -> Boolean
     ) = searchLock.withLock {
-        processMessagesInRangeInternal(direction, sessionAlias, fromSequence, processMessage)
+        processMessagesInRangeInternal(sessionGroup, sessionAlias, direction, fromSequence, processMessage)
     }
 
-    fun processMessagesInRangeInternal(
-        direction: Direction,
+    private fun processMessagesInRangeInternal(
+        sessionGroup: String,
         sessionAlias: String,
+        direction: Direction,
         fromSequence: Long,
         processMessage: (ByteBuf) -> Boolean
     ) {
         var timestamp: Timestamp? = null
         ProviderCall.withCancellation {
-            val backwardIterator = dataProvider.searchMessages(
-                createSearchRequest(Instant.now().toTimestamp(), direction, sessionAlias)
+            val backwardIterator = dataProvider.searchMessageGroups(
+                createSearchGroupRequest(
+                    from = Instant.now().toTimestamp(),
+                    sessionGroup = sessionGroup,
+                    sessionAlias = sessionAlias,
+                    direction = direction
+                )
             )
 
             val firstValidMessage = firstValidMessageDetails(backwardIterator) ?: return@withCancellation
@@ -197,13 +183,14 @@ class MessageLoader(
 
         ProviderCall.withCancellation {
 
-            val iterator = dataProvider.searchMessages(
-                createSearchRequest(
-                    startSearchTimestamp,
-                    direction,
-                    sessionAlias,
-                    TimeRelation.NEXT,
-                    Instant.now().toTimestamp()
+            val iterator = dataProvider.searchMessageGroups(
+                createSearchGroupRequest(
+                    from = startSearchTimestamp,
+                    to = Instant.now().toTimestamp(),
+                    sessionGroup = sessionGroup,
+                    sessionAlias = sessionAlias,
+                    direction = direction,
+                    timeRelation = TimeRelation.NEXT,
                 )
             )
 
@@ -212,6 +199,25 @@ class MessageLoader(
                 if (!processMessage(message)) break
             }
         }
+    }
+
+    private fun searchMessage(
+        sessionGroup: String,
+        sessionAlias: String,
+        direction: Direction,
+        checkPossFlag: Boolean
+    ) = ProviderCall.withCancellation {
+        searchMessage(
+            dataProvider.searchMessageGroups(
+                createSearchGroupRequest(
+                    from = Instant.now().toTimestamp(),
+                    sessionGroup = sessionGroup,
+                    sessionAlias = sessionAlias,
+                    direction = direction
+                )
+            ),
+            checkPossFlag
+        ) { _, seqNum -> seqNum?.toInt() ?: 0 }
     }
 
     private fun <T> searchMessage(
@@ -244,23 +250,25 @@ class MessageLoader(
         MessageDetails(seqNum.toInt(), message.messageId.sequence, message.messageId.timestamp)
     }
 
-    private fun createSearchRequest(
-        timestamp: Timestamp,
-        direction: Direction,
+    private fun createSearchGroupRequest(
+        from: Timestamp,
+        to: Timestamp = previousDaySessionStart,
+        sessionGroup: String,
         sessionAlias: String,
-        searchDirection: TimeRelation = TimeRelation.PREVIOUS,
-        endTimestamp: Timestamp = previousDaySessionStart
-    ) = MessageSearchRequest.newBuilder().apply {
-        startTimestamp = timestamp
-        this.endTimestamp = endTimestamp
+        direction: Direction,
+        timeRelation: TimeRelation = TimeRelation.PREVIOUS,
+    ) = MessageGroupsSearchRequest.newBuilder().apply {
+        startTimestamp = from
+        endTimestamp = to
         addResponseFormats(BASE64_FORMAT)
         addStream(
             MessageStream.newBuilder()
                 .setName(sessionAlias)
                 .setDirection(direction)
         )
+        addMessageGroup(MessageGroupsSearchRequest.Group.newBuilder().setName(sessionGroup))
         bookIdBuilder.name = bookName
-        this.searchDirection = searchDirection
+        searchDirection = timeRelation
     }.build()
 
     private fun checkPossDup(buf: ByteBuf): Boolean = buf.findField(POSS_DUP_TAG)?.value == IS_POSS_DUP
