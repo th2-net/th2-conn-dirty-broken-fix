@@ -53,6 +53,7 @@ public class Constants {
     public static final Integer RESET_SEQ_NUM_TAG = 141;
     public static final Integer NEXT_EXPECTED_SEQ_NUMBER_TAG = 789;
     public static final Integer POSS_DUP_TAG = 43;
+    public static final Integer POSS_RESEND_TAG = 97;
 
     //Fields
     public static final String BEGIN_STRING = SOH + BEGIN_STRING_TAG + "=";
@@ -81,6 +82,7 @@ public class Constants {
     public static final String RESET_SEQ_NUM = SOH + RESET_SEQ_NUM_TAG + "=";
     public static final String NEXT_EXPECTED_SEQ_NUM = SOH + NEXT_EXPECTED_SEQ_NUMBER_TAG + "=";
     public static final String POSS_DUP = SOH + POSS_DUP_TAG + "=";
+    public static final String POSS_RESEND = SOH + POSS_RESEND_TAG + "=";
     public static final String TEXT = SOH + TEXT_TAG + "=";
 
     //message types

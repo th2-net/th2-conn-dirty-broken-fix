@@ -28,5 +28,7 @@ enum class RuleType {
     SEQUENCE_RESET,
     BATCH_SEND,
     SPLIT_SEND,
+    LOGON_AFTER_LOGON,
+    FAKE_RETRANSMISSION,
     DEFAULT
 }
