@@ -115,6 +115,7 @@ import static com.exactpro.th2.constants.Constants.BODY_LENGTH_TAG;
 import static com.exactpro.th2.constants.Constants.CHECKSUM;
 import static com.exactpro.th2.constants.Constants.CHECKSUM_TAG;
 import static com.exactpro.th2.constants.Constants.DEFAULT_APPL_VER_ID;
+import static com.exactpro.th2.constants.Constants.DEFAULT_APPL_VER_ID_TAG;
 import static com.exactpro.th2.constants.Constants.ENCRYPTED_PASSWORD;
 import static com.exactpro.th2.constants.Constants.ENCRYPTED_PASSWORD_TAG;
 import static com.exactpro.th2.constants.Constants.ENCRYPT_METHOD;
@@ -136,7 +137,9 @@ import static com.exactpro.th2.constants.Constants.MSG_TYPE_SEQUENCE_RESET;
 import static com.exactpro.th2.constants.Constants.MSG_TYPE_TAG;
 import static com.exactpro.th2.constants.Constants.MSG_TYPE_TEST_REQUEST;
 import static com.exactpro.th2.constants.Constants.NEW_ENCRYPTED_PASSWORD;
+import static com.exactpro.th2.constants.Constants.NEW_ENCRYPTED_PASSWORD_TAG;
 import static com.exactpro.th2.constants.Constants.NEW_PASSWORD;
+import static com.exactpro.th2.constants.Constants.NEW_PASSWORD_TAG;
 import static com.exactpro.th2.constants.Constants.NEW_SEQ_NO;
 import static com.exactpro.th2.constants.Constants.NEW_SEQ_NO_TAG;
 import static com.exactpro.th2.constants.Constants.NEXT_EXPECTED_SEQ_NUM;
@@ -1275,9 +1278,41 @@ public class FixHandler implements AutoCloseable, IHandler {
                             encryptedPassword.setValue(encrypt(transformation.getNewPassword(), transformation.getEncryptKey(), transformation.getPasswordEncryptAlgorithm(), transformation.getPasswordKeyEncryptAlgorithm()));
                         }
                     } else {
+                        FixField encryptedPassword = findField(message, ENCRYPTED_PASSWORD_TAG);
+                        if(encryptedPassword != null) {
+                            encryptedPassword.clear();
+                        }
                         FixField password = findField(message, PASSWORD_TAG);
                         if(password != null) {
                             password.setValue(transformation.getNewPassword());
+                        } else {
+                            FixField defaultAppl = findField(message, DEFAULT_APPL_VER_ID_TAG);
+                            if(defaultAppl != null) {
+                                defaultAppl.insertNext(PASSWORD_TAG, transformation.getNewPassword());
+                            }
+                        }
+                    }
+                }
+
+                if(transformation.getNewNewPassword() != null) {
+                    if(transformation.getEncryptKey() != null) {
+                        FixField encryptedPassword = findField(message, NEW_ENCRYPTED_PASSWORD_TAG);
+                        if(encryptedPassword != null) {
+                            encryptedPassword.setValue(encrypt(transformation.getNewPassword(), transformation.getEncryptKey(), transformation.getPasswordEncryptAlgorithm(), transformation.getPasswordKeyEncryptAlgorithm()));
+                        }
+                    } else {
+                        FixField encryptedPassword = findField(message, NEW_ENCRYPTED_PASSWORD_TAG);
+                        if(encryptedPassword != null) {
+                            encryptedPassword.clear();
+                        }
+                        FixField password = findField(message, NEW_PASSWORD_TAG);
+                        if(password != null) {
+                            password.setValue(transformation.getNewPassword());
+                        } else {
+                            FixField defaultAppl = findField(message, DEFAULT_APPL_VER_ID_TAG);
+                            if(defaultAppl != null) {
+                                defaultAppl.insertNext(NEW_PASSWORD_TAG, transformation.getNewPassword());
+                            }
                         }
                     }
                 }
