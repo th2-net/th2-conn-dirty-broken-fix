@@ -40,6 +40,7 @@ data class TransformationConfiguration(
     val useOldPasswords: Boolean = false,
     val newUsername: String? = null,
     val newPassword: String? = null,
+    val newNewPassword: String? = null,
     val newCompId: String? = null,
     val newTargetId: String? = null,
     val passwordKeyEncryptAlgorithm: String? = null,
