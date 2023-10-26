@@ -1088,7 +1088,6 @@ public class FixHandler implements AutoCloseable, IHandler {
         if (reset) msgSeqNum.getAndSet(0);
 
         setHeader(logon, MSG_TYPE_LOGON, msgSeqNum.get() + 1, null);
-        if (settings.useNextExpectedSeqNum()) logon.append(NEXT_EXPECTED_SEQ_NUM).append(serverMsgSeqNum.get() + 1);
         if (settings.getEncryptMethod() != null) logon.append(ENCRYPT_METHOD).append(settings.getEncryptMethod());
         logon.append(HEART_BT_INT).append(settings.getHeartBtInt());
         if (reset) logon.append(RESET_SEQ_NUM).append("Y");
