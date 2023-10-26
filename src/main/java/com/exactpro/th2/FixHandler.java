@@ -1257,7 +1257,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
 
         TransformMessageConfiguration config = strategy.getTransformMessageConfiguration();
-        TransformationConfiguration transformation = getRandomElementFromList(config.getTransformations());
+        TransformationConfiguration transformation = config.getNextTransformation();
 
         if(!msgTypeField.getValue().equals(transformation.getMessageType())) {
             return null;
@@ -1298,7 +1298,9 @@ public class FixHandler implements AutoCloseable, IHandler {
                 }
 
                 updateLength(message);
-                updateChecksum(message);
+                if(transformation.getUpdateChecksum()) {
+                    updateChecksum(message);
+                }
                 return Unit.INSTANCE;
             }
         );
@@ -1631,6 +1633,20 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.cleanupStrategy();
     }
 
+    private void setupTransformMessageStrategy(RuleConfiguration configuration) {
+        strategy.resetStrategyAndState(configuration);
+        strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::transformOutgoingMessageStrategy); return Unit.INSTANCE;});
+        strategy.setCleanupHandler(this::cleanupTransformMessageStrategy);
+        strategy.setOnCloseHandler(this::outageOnCloseHandler);
+        ruleStartEvent(strategy.getType(), strategy.getStartTime());
+    }
+
+    private void cleanupTransformMessageStrategy() {
+        strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
+        ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
+        strategy.cleanupStrategy();
+    }
+
     private void setupBidirectionalResendRequestStrategy(RuleConfiguration configuration) {
         strategy.resetStrategyAndState(configuration);
         strategy.setCleanupHandler(this::cleanupBidirectionalResendRequestStrategy);
@@ -1894,6 +1910,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             case RESEND_REQUEST: return this::runResendRequestStrategy;
             case SEQUENCE_RESET: return this::runReconnectWithSequenceResetStrategy;
             case TRANSFORM_LOGON: return this::setupTransformStrategy;
+            case TRANSFORM_MESSAGE_STRATEGY: return this::setupTransformMessageStrategy;
             case CREATE_OUTGOING_GAP: return this::setupOutgoingGapStrategy;
             case PARTIAL_CLIENT_OUTAGE: return this::setupPartialClientOutageStrategy;
             case IGNORE_INCOMING_MESSAGES: return this::setupIgnoreIncomingMessagesStrategy;

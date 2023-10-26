@@ -21,8 +21,16 @@ import com.exactpro.th2.constants.Constants
 
 data class TransformMessageConfiguration(
    val transformations: List<TransformationConfiguration>,
-   val numberOfTimesToTransform: Int,
-)
+   val numberOfTimesToTransform: Int = transformations.size
+) {
+    private var transformationsIdx = 0
+    fun getNextTransformation(): TransformationConfiguration {
+        if(transformationsIdx > numberOfTimesToTransform) {
+            return transformations[0]
+        }
+        return transformations[transformationsIdx++]
+    }
+}
 
 data class TransformationConfiguration(
     private val actions: List<Action> = emptyList(),
@@ -34,7 +42,8 @@ data class TransformationConfiguration(
     val newTargetId: String? = null,
     val passwordKeyEncryptAlgorithm: String? = null,
     val passwordEncryptAlgorithm: String? = null,
-    val encryptKey: String? = null
+    val encryptKey: String? = null,
+    val updateChecksum: Boolean = true
 ) {
     private val simpleActions: List<Action>
     init {

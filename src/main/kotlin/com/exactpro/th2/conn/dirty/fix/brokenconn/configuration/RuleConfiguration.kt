@@ -48,6 +48,9 @@ data class RuleConfiguration(
             RuleType.TRANSFORM_LOGON -> {
                 require(transformMessageConfiguration != null) { "`transformMessageConfiguration` is required for $ruleType"}
             }
+            RuleType.TRANSFORM_MESSAGE_STRATEGY -> {
+                require(transformMessageConfiguration != null) { "`transformMessageConfiguration` is required for $ruleType"}
+            }
             RuleType.BI_DIRECTIONAL_RESEND_REQUEST -> {
                 require(missIncomingMessagesConfiguration != null) { "`blockIncomingMessagesConfiguration` is required for $ruleType" }
                 require(missOutgoingMessagesConfiguration != null) { "`blockOutgoingMessagesConfiguration` is required for $ruleType" }
