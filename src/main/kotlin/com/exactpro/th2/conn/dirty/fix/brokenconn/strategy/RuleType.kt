@@ -27,6 +27,7 @@ enum class RuleType {
     RESEND_REQUEST,
     SLOW_CONSUMER,
     SEQUENCE_RESET, // TODO: Without gap fill flag // TODO: Resend Request before receiving recovery from peer
+    SEND_SEQUENCE_RESET,
     BATCH_SEND,
     SPLIT_SEND,
     LOGON_AFTER_LOGON,

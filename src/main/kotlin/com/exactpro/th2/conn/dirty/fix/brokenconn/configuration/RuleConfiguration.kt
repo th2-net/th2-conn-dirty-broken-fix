@@ -45,6 +45,7 @@ data class RuleConfiguration(
             RuleType.IGNORE_INCOMING_MESSAGES -> {
                 require(missIncomingMessagesConfiguration != null) { "`blockIncomingMessagesConfiguration` is required for $ruleType" }
             }
+            RuleType.SEND_SEQUENCE_RESET -> {}
             RuleType.TRANSFORM_LOGON -> {
                 require(transformMessageConfiguration != null) { "`transformMessageConfiguration` is required for $ruleType"}
             }
