@@ -1336,6 +1336,10 @@ public class FixHandler implements AutoCloseable, IHandler {
                 if(transformation.getUpdateChecksum()) {
                     updateChecksum(message);
                 }
+
+                if(transformation.getComment() != null) {
+                    metadata.put("transformationComment", transformation.getComment());
+                }
                 return Unit.INSTANCE;
             }
         );

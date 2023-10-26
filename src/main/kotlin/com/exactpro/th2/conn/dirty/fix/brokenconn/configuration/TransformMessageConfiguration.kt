@@ -46,7 +46,8 @@ data class TransformationConfiguration(
     val passwordKeyEncryptAlgorithm: String? = null,
     val passwordEncryptAlgorithm: String? = null,
     val encryptKey: String? = null,
-    val updateChecksum: Boolean = true
+    val updateChecksum: Boolean = true,
+    val comment: String? = null
 ) {
     private val simpleActions: List<Action>
     init {
