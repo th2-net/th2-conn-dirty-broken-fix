@@ -19,6 +19,7 @@ enum class RuleType {
     DISCONNECT_WITH_RECONNECT,
     IGNORE_INCOMING_MESSAGES, // TODO: Resend Request before receiving recovery from peer
     TRANSFORM_LOGON,
+    TRANSFORM_MESSAGE_STRATEGY,
     BI_DIRECTIONAL_RESEND_REQUEST,
     CREATE_OUTGOING_GAP, // TODO: Random recovery order // TODO: Allow non recovery messages during recovery // Recovering admin messages with poss dup
     CLIENT_OUTAGE,
