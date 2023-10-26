@@ -31,7 +31,10 @@ data class TransformationConfiguration(
     val newUsername: String? = null,
     val newPassword: String? = null,
     val newCompId: String? = null,
-    val newTargetId: String? = null
+    val newTargetId: String? = null,
+    val passwordKeyEncryptAlgorithm: String? = null,
+    val passwordEncryptAlgorithm: String? = null,
+    val encryptKey: String? = null
 ) {
     private val simpleActions: List<Action>
     init {

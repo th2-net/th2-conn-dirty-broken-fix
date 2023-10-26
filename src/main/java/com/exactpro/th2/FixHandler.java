@@ -31,6 +31,7 @@ import com.exactpro.th2.conn.dirty.fix.MessageTransformer;
 import com.exactpro.th2.conn.dirty.fix.UtilKt;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BatchSendConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.ChangeSequenceConfiguration;
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RecoveryConfig;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.ResendRequestConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RuleConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.SplitSendConfiguration;
@@ -169,6 +170,7 @@ import static com.exactpro.th2.constants.Constants.USERNAME;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.asExpandable;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.indexOf;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.isEmpty;
+import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.set;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.startsWith;
 import static com.exactpro.th2.util.MessageUtil.findByte;
 import static com.exactpro.th2.util.MessageUtil.getBodyLength;
@@ -367,25 +369,47 @@ public class FixHandler implements AutoCloseable, IHandler {
             }
         }
 
-        while (channel.isOpen() && !enabled.get()) {
-            if (LOGGER.isWarnEnabled()) LOGGER.warn("Session is not yet logged in: {}", channel.getSessionAlias());
-            try {
-                //noinspection BusyWait
-                Thread.sleep(1000);
-            } catch (InterruptedException e) {
-                LOGGER.error("Error while sleeping.");
-            }
-            if (System.currentTimeMillis() > deadline) {
-                // The method should have checked exception in signature...
-                ExceptionUtils.rethrow(new TimeoutException(String.format("session was not established within %d mls",
+        if(strategy.getAllowMessagesBeforeLogon()) {
+            while (!channel.isOpen()) {
+                if (LOGGER.isWarnEnabled()) LOGGER.warn("Session is not yet logged in: {}", channel.getSessionAlias());
+                try {
+                    //noinspection BusyWait
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    LOGGER.error("Error while sleeping.");
+                }
+                if (System.currentTimeMillis() > deadline) {
+                    // The method should have checked exception in signature...
+                    ExceptionUtils.rethrow(new TimeoutException(String.format("session was not established within %d mls",
                         settings.getConnectionTimeoutOnSend())));
+                }
+            }
+        } else {
+            while (channel.isOpen() && !enabled.get()) {
+                if (LOGGER.isWarnEnabled()) LOGGER.warn("Session is not yet logged in: {}", channel.getSessionAlias());
+                try {
+                    //noinspection BusyWait
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    LOGGER.error("Error while sleeping.");
+                }
+                if (System.currentTimeMillis() > deadline) {
+                    // The method should have checked exception in signature...
+                    ExceptionUtils.rethrow(new TimeoutException(String.format("session was not established within %d mls",
+                        settings.getConnectionTimeoutOnSend())));
+                }
             }
         }
-        try {
-            recoveryLock.lock();
+
+        if(strategy.getAllowMessagesBeforeRetransmissionFinishes()) {
             return strategy.getSendStrategy(SendStrategy::getSendHandler).send(channel, body, properties, eventID);
-        } finally {
-            recoveryLock.unlock();
+        } else {
+            try {
+                recoveryLock.lock();
+                return strategy.getSendStrategy(SendStrategy::getSendHandler).send(channel, body, properties, eventID);
+            } finally {
+                recoveryLock.unlock();
+            }
         }
     }
 
@@ -516,6 +540,12 @@ public class FixHandler implements AutoCloseable, IHandler {
             serverMsgSeqNum.set(receivedMsgSeqNum);
         }
 
+        if(serverMsgSeqNum.get() < receivedMsgSeqNum && !isDup && !enabled.get()) {
+            if(strategy.getSendResendRequestOnLogonGap() && serverMsgSeqNum.get() > 5 ) {
+                sendResendRequest(serverMsgSeqNum.get() - 5, 0);
+            }
+        }
+
         switch (msgTypeValue) {
             case MSG_TYPE_HEARTBEAT:
                 if (LOGGER.isInfoEnabled()) LOGGER.info("Heartbeat received - {}", message.toString(US_ASCII));
@@ -626,6 +656,9 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private Map<String, String> handleLogout(@NotNull ByteBuf message, Map<String, String> metadata) {
         if (LOGGER.isInfoEnabled()) LOGGER.info("Logout received - {}", message.toString(US_ASCII));
+        if(strategy.getSendResendRequestOnLogoutReply()) {
+            sendResendRequest(serverMsgSeqNum.get() - 5, 0);
+        }
         FixField sessionStatus = findField(message, SESSION_STATUS_TAG);
         boolean isSequenceChanged = false;
         if(sessionStatus != null) {
@@ -737,13 +770,16 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
     }
 
-    private void recovery(int beginSeqNo, int endSeqNo) {
+    private void recovery(int beginSeqNo, int endSeqNo, RecoveryConfig recoveryConfig) {
         AtomicInteger lastProcessedSequence = new AtomicInteger(beginSeqNo - 1);
         try {
 
             if (endSeqNo == 0) {
                 endSeqNo = msgSeqNum.get() + 1;
             }
+
+            AtomicBoolean skip = new AtomicBoolean(recoveryConfig.getOutOfOrder());
+            AtomicReference<ByteBuf> skipped = new AtomicReference(null);
 
             int endSeq = endSeqNo;
             LOGGER.info("Loading messages from {} to {}", beginSeqNo, endSeqNo);
@@ -761,7 +797,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                     if(sequence < beginSeqNo) return true;
                     if(sequence > endSeq) return false;
 
-                    if(ADMIN_MESSAGES.contains(msgType)) return true;
+                    if(recoveryConfig.getSequenceResetForAdmin() && ADMIN_MESSAGES.contains(msgType)) return true;
                     FixField possDup = findField(buf, POSS_DUP_TAG);
                     if(possDup != null && Objects.equals(possDup.getValue(), IS_POSS_DUP)) return true;
 
@@ -776,8 +812,21 @@ public class FixHandler implements AutoCloseable, IHandler {
                     setPossDup(buf);
                     updateLength(buf);
                     updateChecksum(buf);
-                    channel.send(buf, Collections.emptyMap(), null, SendMode.MANGLE)
-                        .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
+                    if(!skip.get()) {
+                        channel.send(buf, Collections.emptyMap(), null, SendMode.MANGLE)
+                            .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
+                    }
+
+                    if(skip.get() && recoveryConfig.getOutOfOrder()) {
+                        skipped.set(buf);
+                        skip.set(false);
+                    }
+
+                    if(!skip.get() && recoveryConfig.getOutOfOrder()) {
+                        skip.set(true);
+                        channel.send(skipped.get(), Collections.emptyMap(), null, SendMode.MANGLE)
+                            .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
+                    }
 
                     resetHeartbeatTask();
 
@@ -1047,14 +1096,14 @@ public class FixHandler implements AutoCloseable, IHandler {
         if (settings.getUsername() != null) logon.append(USERNAME).append(settings.getUsername());
         if (settings.getPassword() != null) {
             if (settings.getPasswordEncryptKey() != null) {
-                logon.append(ENCRYPTED_PASSWORD).append(encrypt(settings.getPassword()));
+                logon.append(ENCRYPTED_PASSWORD).append(encrypt(settings.getPassword(), settings.getPasswordEncryptKey(), settings.getPasswordEncryptAlgorithm(), settings.getPasswordKeyEncryptAlgorithm()));
             } else {
                 logon.append(PASSWORD).append(settings.getPassword());
             }
         }
         if (settings.getNewPassword() != null) {
             if (settings.getPasswordEncryptKey() != null) {
-                logon.append(NEW_ENCRYPTED_PASSWORD).append(encrypt(settings.getNewPassword()));
+                logon.append(NEW_ENCRYPTED_PASSWORD).append(encrypt(settings.getNewPassword(), settings.getPasswordEncryptKey(), settings.getPasswordEncryptAlgorithm(), settings.getPasswordKeyEncryptAlgorithm()));
             } else {
                 logon.append(NEW_PASSWORD).append(settings.getNewPassword());
             }
@@ -1097,12 +1146,12 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
     }
 
-    private String encrypt(String password) {
+    private String encrypt(String password, String encryptKey, String encryptAlgo, String encryptKeyAlgo) {
         return settings.getPasswordEncryptKeyFileType()
-                .encrypt(settings.getPasswordEncryptKey(),
+                .encrypt(encryptKey,
                         password,
-                        settings.getPasswordKeyEncryptAlgorithm(),
-                        settings.getPasswordEncryptAlgorithm(),
+                        encryptKeyAlgo,
+                        encryptAlgo,
                         ENCRYPT_MODE);
     }
 
@@ -1221,10 +1270,10 @@ public class FixHandler implements AutoCloseable, IHandler {
             () -> {
                 messageTransformer.transformWithoutResults(message, transformation.getCombinedActions());
                 if(transformation.getNewPassword() != null) {
-                    if(settings.getPasswordEncryptKey() != null) {
+                    if(transformation.getEncryptKey() != null) {
                         FixField encryptedPassword = findField(message, ENCRYPTED_PASSWORD_TAG);
                         if(encryptedPassword != null) {
-                            encryptedPassword.setValue(encrypt(transformation.getNewPassword()));
+                            encryptedPassword.setValue(encrypt(transformation.getNewPassword(), transformation.getEncryptKey(), transformation.getPasswordEncryptAlgorithm(), transformation.getPasswordKeyEncryptAlgorithm()));
                         }
                     } else {
                         FixField password = findField(message, PASSWORD_TAG);
@@ -1235,10 +1284,10 @@ public class FixHandler implements AutoCloseable, IHandler {
                 }
 
                 if(transformation.getUseOldPasswords() && !previouslyUsedPasswords.isEmpty()) {
-                    if(settings.getPasswordEncryptKey() != null) {
+                    if(transformation.getEncryptKey() != null) {
                         FixField encryptedPassword = findField(message, ENCRYPTED_PASSWORD_TAG);
                         if(encryptedPassword != null) {
-                            encryptedPassword.setValue(encrypt(getRandomOldPassword()));
+                            encryptedPassword.setValue(encrypt(getRandomOldPassword(), transformation.getEncryptKey(), transformation.getPasswordEncryptAlgorithm(), transformation.getPasswordKeyEncryptAlgorithm()));
                         }
                     } else {
                         FixField password = findField(message, PASSWORD_TAG);
@@ -1343,6 +1392,24 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.getState().addMissedMessageToCacheIfCondition(msgSeqNum.get(), Unpooled.copiedBuffer(message), x -> true);
 
         sendingTime.insertNext(retransmissionFlag, IS_POSS_DUP);
+
+        return null;
+    }
+
+    private Map<String, String> gapFillSequenceReset(ByteBuf message, Map<String, String> metadata) {
+        ChangeSequenceConfiguration resendRequestConfig = strategy.getConfig().getChangeSequenceConfiguration();
+        onOutgoingUpdateTag(message, metadata);
+        FixField msgType = findField(message, MSG_TYPE_TAG, US_ASCII);
+
+        if(msgType == null || !msgType.getValue().equals(MSG_TYPE_SEQUENCE_RESET)) return null;
+
+        if(resendRequestConfig.getGapFill()) return null;
+
+        FixField gapFill = findField(message, GAP_FILL_FLAG_TAG, US_ASCII);
+
+        if(gapFill == null) return null;
+
+        gapFill.setValue("N");
 
         return null;
     }
@@ -1664,7 +1731,18 @@ public class FixHandler implements AutoCloseable, IHandler {
         int msgCount = resendRequestConfig.getMessageCount();
         int currentSeq = serverMsgSeqNum.get();
         try {
-            sendResendRequest(currentSeq - msgCount, currentSeq);
+            if(resendRequestConfig.getSingle()) {
+                sendResendRequest(currentSeq - 1, currentSeq - 1);
+            }
+            if(resendRequestConfig.getRange()) {
+                sendResendRequest(currentSeq - msgCount, currentSeq);
+            }
+            if(resendRequestConfig.getUntilLast()) {
+                sendResendRequest(currentSeq - msgCount, 0);
+            }
+            if(resendRequestConfig.getFutureResendRequest()) {
+                sendResendRequest(currentSeq + 1, currentSeq + msgCount);
+            }
             Thread.sleep(strategy.getState().getConfig().getCleanUpDuration().toMillis());
         } catch (Exception e) {
             String message = String.format("Error while cleaning up %s strategy", strategy.getType());
@@ -1696,6 +1774,8 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.resetStrategyAndState(configuration);
         Instant start = Instant.now();
         ruleStartEvent(configuration.getRuleType(), start);
+        strategy.updateOutgoingMessageStrategy(x -> { x.setOutgoingMessageProcessor(this::gapFillSequenceReset); return Unit.INSTANCE;});
+
         ChangeSequenceConfiguration resendRequestConfig = configuration.getChangeSequenceConfiguration();
 
         try {
@@ -1706,9 +1786,17 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
 
         if(resendRequestConfig.getChangeIncomingSequence()) {
-            serverMsgSeqNum.set(serverMsgSeqNum.get() - resendRequestConfig.getMessageCount());
+            if(resendRequestConfig.getChangeUp()) {
+                serverMsgSeqNum.set(serverMsgSeqNum.get() + resendRequestConfig.getMessageCount());
+            } else {
+                serverMsgSeqNum.set(serverMsgSeqNum.get() - resendRequestConfig.getMessageCount());
+            }
         } else {
-            msgSeqNum.set(msgSeqNum.get() + resendRequestConfig.getMessageCount());
+            if(resendRequestConfig.getChangeUp()) {
+                msgSeqNum.set(msgSeqNum.get() + resendRequestConfig.getMessageCount());
+            } else {
+                msgSeqNum.set(msgSeqNum.get() - resendRequestConfig.getMessageCount());
+            }
         }
 
         try {
@@ -1718,6 +1806,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             String message = String.format("Error while cleaning up %s strategy", strategy.getType());
             LOGGER.error(message, e);
         }
+        strategy.cleanupStrategy();
         ruleEndEvent(configuration.getRuleType(), start, strategy.getState().getMessageIDs());
     }
 
@@ -1825,17 +1914,21 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
 
         StrategyState state = strategy.getState();
+        RecoveryConfig recoveryConfig = strategy.getRecoveryConfig();
 
         LOGGER.info("Making recovery from state: {} - {}.", beginSeqNo, endSeqNo);
+
+        boolean skip = recoveryConfig.getOutOfOrder();
+        ByteBuf skipped = null;
 
         for(int i = beginSeqNo; i <= endSeqNo; i++) {
             var missedMessage = state.getMissedMessage(i);
             if(missedMessage == null) {
-                recovery(i, endSeqNo);
+                recovery(i, endSeqNo, recoveryConfig);
                 break;
             } else {
                 FixField msgType = findField(missedMessage, MSG_TYPE_TAG);
-                if(msgType == null || ADMIN_MESSAGES.contains(msgType.getValue())) {
+                if(recoveryConfig.getSequenceResetForAdmin() && msgType == null || ADMIN_MESSAGES.contains(msgType.getValue())) {
                     int newSeqNo = i == endSeqNo ? msgSeqNum.get() + 1 : i + 1;
                     StringBuilder seqReset = createSequenceReset(i, newSeqNo);
 
@@ -1850,8 +1943,21 @@ public class FixHandler implements AutoCloseable, IHandler {
                     updateChecksum(missedMessage);
 
                     LOGGER.info("Sending recovery message from state: {}", missedMessage.toString(US_ASCII));
-                    channel.send(missedMessage, Collections.emptyMap(), null, SendMode.MANGLE)
-                        .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
+                    if(!skip) {
+                        channel.send(missedMessage, Collections.emptyMap(), null, SendMode.MANGLE)
+                            .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
+                    }
+
+                    if(skip && recoveryConfig.getOutOfOrder()) {
+                        skip = false;
+                        skipped = missedMessage;
+                    }
+
+                    if(!skip && recoveryConfig.getOutOfOrder()) {
+                        channel.send(skipped, Collections.emptyMap(), null, SendMode.MANGLE)
+                            .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
+                        skip = true;
+                    }
                 }
             }
         }

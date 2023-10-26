@@ -15,4 +15,10 @@
  */
 package com.exactpro.th2.conn.dirty.fix.brokenconn.configuration
 
-data class ResendRequestConfiguration(val messageCount: Int)
+data class ResendRequestConfiguration(
+    val messageCount: Int,
+    val single: Boolean = false,
+    val range: Boolean = true,
+    val untilLast: Boolean = false,
+    val futureResendRequest: Boolean = false
+)
