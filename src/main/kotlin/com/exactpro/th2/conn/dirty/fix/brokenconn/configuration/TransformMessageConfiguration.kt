@@ -34,6 +34,7 @@ data class TransformMessageConfiguration(
 
 data class TransformationConfiguration(
     private val actions: List<Action> = emptyList(),
+    val anyMessageType: Boolean = false,
     val messageType: String,
     val useOldPasswords: Boolean = false,
     val newUsername: String? = null,

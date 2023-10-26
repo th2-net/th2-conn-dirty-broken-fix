@@ -1260,7 +1260,9 @@ public class FixHandler implements AutoCloseable, IHandler {
         TransformationConfiguration transformation = config.getNextTransformation();
 
         if(!msgTypeField.getValue().equals(transformation.getMessageType())) {
-            return null;
+            if(!transformation.getAnyMessageType()) {
+                return null;
+            }
         }
 
         var strategyState = strategy.getState();
@@ -1826,6 +1828,24 @@ public class FixHandler implements AutoCloseable, IHandler {
         ruleEndEvent(configuration.getRuleType(), start, strategy.getState().getMessageIDs());
     }
 
+    private void sendSequenceReset(RuleConfiguration configuration) {
+        strategy.resetStrategyAndState(configuration);
+        Instant start = Instant.now();
+
+        StringBuilder sequenceReset = new StringBuilder();
+        String time = getTime();
+        setHeader(sequenceReset, MSG_TYPE_SEQUENCE_RESET, msgSeqNum.incrementAndGet(), time);
+        sequenceReset.append(ORIG_SENDING_TIME).append(time);
+        sequenceReset.append(NEW_SEQ_NO).append(msgSeqNum.get() - 5);
+        setChecksumAndBodyLength(sequenceReset);
+
+        channel.send(Unpooled.wrappedBuffer(sequenceReset.toString().getBytes(StandardCharsets.UTF_8)), Collections.emptyMap(), null, SendMode.HANDLE_AND_MANGLE)
+            .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
+        resetHeartbeatTask();
+        strategy.cleanupStrategy();
+        ruleEndEvent(configuration.getRuleType(), start, strategy.getState().getMessageIDs());
+    }
+
     private void setupBatchSendStrategy(RuleConfiguration configuration) {
         strategy.resetStrategyAndState(configuration);
         strategy.updateSendStrategy(x -> {x.setSendHandler(this::bulkSend); return Unit.INSTANCE;});
@@ -1909,6 +1929,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             case SLOW_CONSUMER: return this::setupSlowConsumerStrategy;
             case RESEND_REQUEST: return this::runResendRequestStrategy;
             case SEQUENCE_RESET: return this::runReconnectWithSequenceResetStrategy;
+            case SEND_SEQUENCE_RESET: return this::sendSequenceReset;
             case TRANSFORM_LOGON: return this::setupTransformStrategy;
             case TRANSFORM_MESSAGE_STRATEGY: return this::setupTransformMessageStrategy;
             case CREATE_OUTGOING_GAP: return this::setupOutgoingGapStrategy;
