@@ -82,6 +82,14 @@ class StatefulStrategy(
         get() = state.config?.sendResendRequestOnLogoutReply ?: false
         private set
 
+    var increaseNextExpectedSequenceNumber: Boolean = false
+        get() = state.config?.increaseNextExpectedSequenceNumber ?: false
+        private set
+
+    var decreaseNextExpectedSequenceNumber: Boolean = false
+        get() = state.config?.decreaseNextExpectedSequenceNumber ?: false
+        private set
+
     var recoveryConfig: RecoveryConfig = RecoveryConfig()
         get() = state.config?.recoveryConfig ?: RecoveryConfig()
         private set

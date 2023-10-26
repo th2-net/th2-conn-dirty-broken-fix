@@ -29,6 +29,8 @@ data class RuleConfiguration(
     val sendResendRequestOnLogonGap: Boolean = false,
     val allowMessagesBeforeRetransmissionFinishes: Boolean = false,
     val sendResendRequestOnLogoutReply: Boolean = false,
+    val increaseNextExpectedSequenceNumber: Boolean = true,
+    val decreaseNextExpectedSequenceNumber: Boolean = true,
     val weight: Int? = null,
     val gracefulDisconnect: Boolean = false,
     val missIncomingMessagesConfiguration: MissMessageConfiguration? = null,
