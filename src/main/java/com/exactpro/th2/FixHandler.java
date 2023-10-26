@@ -20,8 +20,6 @@ import com.exactpro.th2.common.event.Event;
 import com.exactpro.th2.common.event.bean.Message;
 import com.exactpro.th2.common.grpc.Direction;
 import com.exactpro.th2.common.grpc.EventID;
-import com.exactpro.th2.common.grpc.EventID;
-import com.exactpro.th2.common.grpc.Direction;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.utils.event.transport.EventUtilsKt;
@@ -149,7 +147,6 @@ import static com.exactpro.th2.constants.Constants.PASSWORD;
 import static com.exactpro.th2.constants.Constants.PASSWORD_TAG;
 import static com.exactpro.th2.constants.Constants.POSS_DUP;
 import static com.exactpro.th2.constants.Constants.POSS_DUP_TAG;
-import static com.exactpro.th2.constants.Constants.POSS_RESEND;
 import static com.exactpro.th2.constants.Constants.RESET_SEQ_NUM;
 import static com.exactpro.th2.constants.Constants.RESET_SEQ_NUM_TAG;
 import static com.exactpro.th2.constants.Constants.SENDER_COMP_ID;
@@ -170,7 +167,6 @@ import static com.exactpro.th2.constants.Constants.USERNAME;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.asExpandable;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.indexOf;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.isEmpty;
-import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.set;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.startsWith;
 import static com.exactpro.th2.util.MessageUtil.findByte;
 import static com.exactpro.th2.util.MessageUtil.getBodyLength;
@@ -1261,7 +1257,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         if(!msgTypeField.getValue().equals(transformation.getMessageType())) {
             if(!transformation.getAnyMessageType()) {
-                config.decresaseCounter();
+                config.decreaseCounter();
                 return null;
             }
         }
