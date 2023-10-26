@@ -1639,7 +1639,6 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.resetStrategyAndState(configuration);
         strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::transformOutgoingMessageStrategy); return Unit.INSTANCE;});
         strategy.setCleanupHandler(this::cleanupTransformMessageStrategy);
-        strategy.setOnCloseHandler(this::outageOnCloseHandler);
         ruleStartEvent(strategy.getType(), strategy.getStartTime());
     }
 
