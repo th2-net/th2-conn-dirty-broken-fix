@@ -17,15 +17,15 @@ package com.exactpro.th2.conn.dirty.fix.brokenconn.strategy
 
 enum class RuleType {
     DISCONNECT_WITH_RECONNECT,
-    IGNORE_INCOMING_MESSAGES,
+    IGNORE_INCOMING_MESSAGES, // TODO: Resend Request before receiving recovery from peer
     TRANSFORM_LOGON,
     BI_DIRECTIONAL_RESEND_REQUEST,
-    CREATE_OUTGOING_GAP,
+    CREATE_OUTGOING_GAP, // TODO: Random recovery order // TODO: Allow non recovery messages during recovery // Recovering admin messages with poss dup
     CLIENT_OUTAGE,
     PARTIAL_CLIENT_OUTAGE,
     RESEND_REQUEST,
     SLOW_CONSUMER,
-    SEQUENCE_RESET,
+    SEQUENCE_RESET, // TODO: Without gap fill flag // TODO: Resend Request before receiving recovery from peer
     BATCH_SEND,
     SPLIT_SEND,
     LOGON_AFTER_LOGON,

@@ -18,6 +18,7 @@ package com.exactpro.th2.conn.dirty.fix.brokenconn.strategy
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BatchSendConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BlockMessageConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.MissMessageConfiguration
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RecoveryConfig
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RuleConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.SplitSendConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.TransformMessageConfiguration
@@ -65,7 +66,25 @@ class StatefulStrategy(
         get() = state.config?.splitSendConfiguration ?: error("split send configuration isn't present.")
         private set
 
+    var allowMessagesBeforeLogon: Boolean = false
+        get() = state.config?.allowMessagesBeforeLogonReply ?: false
+        private set
 
+    var sendResendRequestOnLogonGap: Boolean = false
+        get() = state.config?.sendResendRequestOnLogonGap ?: false
+        private set
+
+    var allowMessagesBeforeRetransmissionFinishes: Boolean = false
+        get() = state.config?.allowMessagesBeforeRetransmissionFinishes ?: false
+        private set
+
+    var sendResendRequestOnLogoutReply: Boolean = false
+        get() = state.config?.sendResendRequestOnLogoutReply ?: false
+        private set
+
+    var recoveryConfig: RecoveryConfig = RecoveryConfig()
+        get() = state.config?.recoveryConfig ?: RecoveryConfig()
+        private set
     // strategies
     fun updateSendStrategy(func: SendStrategy.() -> Unit) = lock.write {
         sendStrategy.func()
