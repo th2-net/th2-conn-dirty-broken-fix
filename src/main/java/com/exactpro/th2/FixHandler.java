@@ -150,6 +150,7 @@ import static com.exactpro.th2.constants.Constants.PASSWORD;
 import static com.exactpro.th2.constants.Constants.PASSWORD_TAG;
 import static com.exactpro.th2.constants.Constants.POSS_DUP;
 import static com.exactpro.th2.constants.Constants.POSS_DUP_TAG;
+import static com.exactpro.th2.constants.Constants.POSS_RESEND_TAG;
 import static com.exactpro.th2.constants.Constants.RESET_SEQ_NUM;
 import static com.exactpro.th2.constants.Constants.RESET_SEQ_NUM_TAG;
 import static com.exactpro.th2.constants.Constants.SENDER_COMP_ID;
@@ -193,7 +194,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     private static final String STRATEGY_EVENT_TYPE = "StrategyState";
     private static final DateTimeFormatter formatter = DateTimeFormatter.ISO_INSTANT;
     private static final ObjectMapper mapper = new ObjectMapper();
-    private static final List<Integer> retransmissionFlags = List.of(POSS_DUP_TAG, POSS_DUP_TAG);
+    private static final List<Integer> retransmissionFlags = List.of(POSS_RESEND_TAG, POSS_DUP_TAG);
 
     private final Random random = new Random();
     private final AtomicInteger msgSeqNum = new AtomicInteger(0);
@@ -1420,8 +1421,6 @@ public class FixHandler implements AutoCloseable, IHandler {
         onOutgoingUpdateTag(message, metadata);
         FixField msgType = findField(message, MSG_TYPE_TAG, US_ASCII);
 
-        if(msgType != null && ADMIN_MESSAGES.contains(msgType.getValue())) return null;
-
         FixField sendingTime = requireNonNull(findField(message, SENDING_TIME_TAG));
         Integer retransmissionFlag = getRandomElementFromList(retransmissionFlags);
         if(retransmissionFlag == null) return null;
@@ -1865,9 +1864,9 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         StringBuilder sequenceReset = new StringBuilder();
         String time = getTime();
-        setHeader(sequenceReset, MSG_TYPE_SEQUENCE_RESET, msgSeqNum.incrementAndGet(), time);
+        setHeader(sequenceReset, MSG_TYPE_SEQUENCE_RESET, msgSeqNum.get() - 5, time);
         sequenceReset.append(ORIG_SENDING_TIME).append(time);
-        sequenceReset.append(NEW_SEQ_NO).append(msgSeqNum.get() - 5);
+        sequenceReset.append(NEW_SEQ_NO).append(msgSeqNum.get());
         setChecksumAndBodyLength(sequenceReset);
 
         channel.send(Unpooled.wrappedBuffer(sequenceReset.toString().getBytes(StandardCharsets.UTF_8)), Collections.emptyMap(), null, SendMode.HANDLE_AND_MANGLE)
