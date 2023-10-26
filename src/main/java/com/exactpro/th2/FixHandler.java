@@ -1261,6 +1261,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         if(!msgTypeField.getValue().equals(transformation.getMessageType())) {
             if(!transformation.getAnyMessageType()) {
+                config.decresaseCounter();
                 return null;
             }
         }
