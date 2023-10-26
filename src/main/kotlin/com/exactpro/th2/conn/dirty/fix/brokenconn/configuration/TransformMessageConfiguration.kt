@@ -25,7 +25,7 @@ data class TransformMessageConfiguration(
 ) {
     private var transformationsIdx = 0
     fun getNextTransformation(): TransformationConfiguration {
-        if(transformationsIdx > numberOfTimesToTransform) {
+        if(transformationsIdx >= numberOfTimesToTransform) {
             return transformations[0]
         }
         return transformations[transformationsIdx++]
