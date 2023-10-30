@@ -1299,11 +1299,11 @@ public class FixHandler implements AutoCloseable, IHandler {
                     if(transformation.getEncryptKey() != null) {
                         FixField encryptedPassword = findField(message, NEW_ENCRYPTED_PASSWORD_TAG);
                         if(encryptedPassword != null) {
-                            encryptedPassword.setValue(encrypt(transformation.getNewPassword(), transformation.getEncryptKey(), transformation.getPasswordEncryptAlgorithm(), transformation.getPasswordKeyEncryptAlgorithm()));
+                            encryptedPassword.setValue(encrypt(transformation.getNewNewPassword(), transformation.getEncryptKey(), transformation.getPasswordEncryptAlgorithm(), transformation.getPasswordKeyEncryptAlgorithm()));
                         } else {
                             FixField defaultAppl = findField(message, DEFAULT_APPL_VER_ID_TAG);
                             if(defaultAppl != null) {
-                                defaultAppl.insertNext(NEW_ENCRYPTED_PASSWORD_TAG, encrypt(transformation.getNewPassword(), transformation.getEncryptKey(), transformation.getPasswordEncryptAlgorithm(), transformation.getPasswordKeyEncryptAlgorithm()));
+                                defaultAppl.insertNext(NEW_ENCRYPTED_PASSWORD_TAG, encrypt(transformation.getNewNewPassword(), transformation.getEncryptKey(), transformation.getPasswordEncryptAlgorithm(), transformation.getPasswordKeyEncryptAlgorithm()));
                             }
                         }
                     } else {
