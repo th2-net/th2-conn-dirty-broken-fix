@@ -1300,6 +1300,11 @@ public class FixHandler implements AutoCloseable, IHandler {
                         FixField encryptedPassword = findField(message, NEW_ENCRYPTED_PASSWORD_TAG);
                         if(encryptedPassword != null) {
                             encryptedPassword.setValue(encrypt(transformation.getNewPassword(), transformation.getEncryptKey(), transformation.getPasswordEncryptAlgorithm(), transformation.getPasswordKeyEncryptAlgorithm()));
+                        } else {
+                            FixField defaultAppl = findField(message, DEFAULT_APPL_VER_ID_TAG);
+                            if(defaultAppl != null) {
+                                defaultAppl.insertNext(NEW_ENCRYPTED_PASSWORD_TAG, encrypt(transformation.getNewPassword(), transformation.getEncryptKey(), transformation.getPasswordEncryptAlgorithm(), transformation.getPasswordKeyEncryptAlgorithm()));
+                            }
                         }
                     } else {
                         FixField encryptedPassword = findField(message, NEW_ENCRYPTED_PASSWORD_TAG);
@@ -1423,14 +1428,11 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private Map<String, String> fakeRetransmissionOutgoingProcessor(ByteBuf message, Map<String, String> metadata) {
         onOutgoingUpdateTag(message, metadata);
-        FixField msgType = findField(message, MSG_TYPE_TAG, US_ASCII);
 
         FixField sendingTime = requireNonNull(findField(message, SENDING_TIME_TAG));
-        Integer retransmissionFlag = getRandomElementFromList(retransmissionFlags);
-        if(retransmissionFlag == null) return null;
         strategy.getState().addMissedMessageToCacheIfCondition(msgSeqNum.get(), Unpooled.copiedBuffer(message), x -> true);
 
-        sendingTime.insertNext(retransmissionFlag, IS_POSS_DUP);
+        sendingTime.insertNext(POSS_DUP_TAG, IS_POSS_DUP).insertNext(POSS_RESEND_TAG, IS_POSS_DUP);
 
         return null;
     }
@@ -1868,9 +1870,9 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         StringBuilder sequenceReset = new StringBuilder();
         String time = getTime();
-        setHeader(sequenceReset, MSG_TYPE_SEQUENCE_RESET, msgSeqNum.get() - 5, time);
+        setHeader(sequenceReset, MSG_TYPE_SEQUENCE_RESET, msgSeqNum.incrementAndGet(), time);
         sequenceReset.append(ORIG_SENDING_TIME).append(time);
-        sequenceReset.append(NEW_SEQ_NO).append(msgSeqNum.get());
+        sequenceReset.append(NEW_SEQ_NO).append(msgSeqNum.get() - 5);
         setChecksumAndBodyLength(sequenceReset);
 
         channel.send(Unpooled.wrappedBuffer(sequenceReset.toString().getBytes(StandardCharsets.UTF_8)), Collections.emptyMap(), null, SendMode.HANDLE_AND_MANGLE)
