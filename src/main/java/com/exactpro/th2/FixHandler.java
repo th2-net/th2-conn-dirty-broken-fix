@@ -1433,6 +1433,8 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.getState().addMissedMessageToCacheIfCondition(msgSeqNum.get(), Unpooled.copiedBuffer(message), x -> true);
 
         sendingTime.insertNext(POSS_DUP_TAG, IS_POSS_DUP).insertNext(POSS_RESEND_TAG, IS_POSS_DUP);
+        updateLength(message);
+        updateChecksum(message);
 
         return null;
     }
