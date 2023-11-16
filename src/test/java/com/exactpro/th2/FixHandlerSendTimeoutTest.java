@@ -59,6 +59,7 @@ class FixHandlerSendTimeoutTest {
         settings.setPort(42);
         settings.setHost("localhost");
         settings.setConnectionTimeoutOnSend(300); // 300 millis
+        settings.setMinConnectionTimeoutOnSend(100);
         Mockito.when(contextMock.getSettings())
                 .thenReturn(settings);
         var fixHandler = new FixHandler(contextMock);
@@ -100,6 +101,7 @@ class FixHandlerSendTimeoutTest {
         settings.setPort(42);
         settings.setHost("localhost");
         settings.setConnectionTimeoutOnSend(300); // 300 millis
+        settings.setMinConnectionTimeoutOnSend(100);
         LocalTime currentTime = LocalTime.now(ZoneOffset.UTC);
         int deltaMinutes = currentTime.isAfter(LocalTime.NOON)
                 ? -1

@@ -46,6 +46,7 @@ import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.StatefulStrategy;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.StrategyScheduler;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.StrategyState;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.CleanupHandler;
+import com.exactpro.th2.conn.dirty.tcp.core.SendingTimeoutHandler;
 import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel;
 import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel.SendMode;
 import com.exactpro.th2.conn.dirty.tcp.core.api.IHandler;
@@ -217,6 +218,8 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private final AtomicReference<Future<?>> heartbeatTimer = new AtomicReference<>(CompletableFuture.completedFuture(null));
     private final AtomicReference<Future<?>> testRequestTimer = new AtomicReference<>(CompletableFuture.completedFuture(null));
+
+    private final SendingTimeoutHandler sendingTimeoutHandler;
     private Future<?> reconnectRequestTimer = CompletableFuture.completedFuture(null);
     private volatile IChannel channel;
     protected FixHandlerSettings settings;
@@ -302,6 +305,12 @@ public class FixHandler implements AutoCloseable, IHandler {
             throw new IllegalStateException("`newPassword` contains password that was already used in the past.");
         }
 
+        this.sendingTimeoutHandler = SendingTimeoutHandler.create(
+            settings.getMinConnectionTimeoutOnSend(),
+            settings.getConnectionTimeoutOnSend(),
+            context::send
+        );
+
         if (settings.getBrokenConnConfiguration() == null) {
             scheduler = new StrategyScheduler(SchedulerType.CONSECUTIVE, Collections.emptyList());
             return;
@@ -349,21 +358,26 @@ public class FixHandler implements AutoCloseable, IHandler {
             try {
                 disconnect(!isUngracefulDisconnect);
                 enabled.set(false);
-                channel.open().get(settings.getConnectionTimeoutOnSend(), TimeUnit.MILLISECONDS);
+                sendingTimeoutHandler.getWithTimeout(channel.open());
             } catch (Exception e) {
                 context.send(CommonUtil.toErrorEvent(String.format("Error while ending session %s by user logout. Is graceful disconnect: %b", channel.getSessionAlias(), !isUngracefulDisconnect), e));
             }
             return CompletableFuture.completedFuture(null);
         }
 
-        long deadline = System.currentTimeMillis() + settings.getConnectionTimeoutOnSend();
+        // TODO: probably, this should be moved to the core part
+        // But those changes will break API
+        // So, let's keep it here for now
+        long deadline = sendingTimeoutHandler.getDeadline();
+        long currentTimeout = sendingTimeoutHandler.getCurrentTimeout();
+
         if (!channel.isOpen()) {
             try {
-                channel.open().get(settings.getConnectionTimeoutOnSend(), TimeUnit.MILLISECONDS);
+                sendingTimeoutHandler.getWithTimeout(channel.open());
             } catch (TimeoutException e) {
                 ExceptionUtils.rethrow(new TimeoutException(
                         String.format("could not open connection before timeout %d mls elapsed",
-                                settings.getConnectionTimeoutOnSend())));
+                                currentTimeout)));
             } catch (Exception e) {
                 ExceptionUtils.rethrow(e);
             }
@@ -724,10 +738,14 @@ public class FixHandler implements AutoCloseable, IHandler {
         if(!channel.isOpen()) channel.open();
     }
 
-    public void sendResendRequest(int beginSeqNo, int endSeqNo) { //do private
+    public void sendResendRequest(int beginSeqNo, int endSeqNo) {
+        sendResendRequest(beginSeqNo, endSeqNo, false);
+    }
+
+    public void sendResendRequest(int beginSeqNo, int endSeqNo, boolean isPossDup) { //do private
         LOGGER.info("Sending resend request: {} - {}", beginSeqNo, endSeqNo);
         StringBuilder resendRequest = new StringBuilder();
-        setHeader(resendRequest, MSG_TYPE_RESEND_REQUEST, msgSeqNum.incrementAndGet(), null);
+        setHeader(resendRequest, MSG_TYPE_RESEND_REQUEST, msgSeqNum.incrementAndGet(), null, isPossDup);
         resendRequest.append(BEGIN_SEQ_NO).append(beginSeqNo);
         resendRequest.append(END_SEQ_NO).append(endSeqNo);
         setChecksumAndBodyLength(resendRequest);
@@ -747,8 +765,6 @@ public class FixHandler implements AutoCloseable, IHandler {
             channel.send(Unpooled.wrappedBuffer(resendRequest.toString().getBytes(StandardCharsets.UTF_8)), new HashMap<String, String>(), null, SendMode.HANDLE_AND_MANGLE)
                 .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
             resetHeartbeatTask();
-        } else {
-            sendLogon();
         }
     }
 
@@ -1030,15 +1046,23 @@ public class FixHandler implements AutoCloseable, IHandler {
         sendLogon();
     }
 
-    public void sendHeartbeat() {
-        sendHeartbeatWithTestRequest(null);
+    public void sendHeartbeatWithPossDup(boolean isPossDup) {
+        sendHeartbeatWithTestRequest(null, isPossDup);
     }
 
-    private void sendHeartbeatWithTestRequest(String testRequestId) {
+    private void sendHeartbeatWithTestRequest(String testRequestID) {
+        sendHeartbeatWithTestRequest(testRequestID, false);
+    }
+
+    public void sendHeartbeat() {
+        sendHeartbeatWithTestRequest(null, false);
+    }
+
+    private void sendHeartbeatWithTestRequest(String testRequestId, boolean possDup) {
         StringBuilder heartbeat = new StringBuilder();
         int seqNum = msgSeqNum.incrementAndGet();
 
-        setHeader(heartbeat, MSG_TYPE_HEARTBEAT, seqNum, null);
+        setHeader(heartbeat, MSG_TYPE_HEARTBEAT, seqNum, null, possDup);
 
         if(testRequestId != null) {
             heartbeat.append(TEST_REQ_ID).append(testRequestId);
@@ -1057,8 +1081,12 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     public void sendTestRequest() { //do private
+        sendTestRequestWithPossDup(false);
+    }
+
+    public void sendTestRequestWithPossDup(boolean isPossDup) { //do private
         StringBuilder testRequest = new StringBuilder();
-        setHeader(testRequest, MSG_TYPE_TEST_REQUEST, msgSeqNum.incrementAndGet(), null);
+        setHeader(testRequest, MSG_TYPE_TEST_REQUEST, msgSeqNum.incrementAndGet(), null, isPossDup);
         testRequest.append(TEST_REQ_ID).append(testReqID.incrementAndGet());
         setChecksumAndBodyLength(testRequest);
         if (enabled.get()) {
@@ -1115,14 +1143,22 @@ public class FixHandler implements AutoCloseable, IHandler {
             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
     }
 
-    private void sendLogout() {
-        sendLogout(null);
+    private void sendLogout(boolean isPossDup) {
+        sendLogout(null, isPossDup);
     }
 
     private void sendLogout(String text) {
+        sendLogout(text, false);
+    }
+
+    private void sendLogout() {
+        sendLogout(null, false);
+    }
+
+    private void sendLogout(String text, boolean isPossDup) {
         if (enabled.get()) {
             StringBuilder logout = new StringBuilder();
-            setHeader(logout, MSG_TYPE_LOGOUT, msgSeqNum.incrementAndGet(), null);
+            setHeader(logout, MSG_TYPE_LOGOUT, msgSeqNum.incrementAndGet(), null, isPossDup);
             if(text != null) {
                logout.append(TEXT).append(text);
             }
@@ -1582,6 +1618,22 @@ public class FixHandler implements AutoCloseable, IHandler {
         ruleEndEvent(configuration.getRuleType(), start, strategy.getState().getMessageIDs());
     }
 
+    private void runPossDupSessionMessages(RuleConfiguration configuration) {
+        Instant start = Instant.now();
+        strategy.resetStrategyAndState(configuration);
+        ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
+        if(!enabled.get()) {
+            ruleErrorEvent(strategy.getType(), String.format("Session %s isn't logged in.", channel.getSessionAlias()), null);
+            return;
+        }
+
+        sendResendRequest(serverMsgSeqNum.get() - 2, serverMsgSeqNum.get(), true);
+        sendHeartbeatWithPossDup(true);
+        sendTestRequestWithPossDup(true);
+        sendLogout(true);
+        ruleEndEvent(configuration.getRuleType(), start, strategy.getState().getMessageIDs());
+    }
+
     private void setupDisconnectStrategy(RuleConfiguration configuration) {
         strategy.resetStrategyAndState(configuration);
         strategy.updateSendStrategy(x -> {x.setSendPreprocessor(this::blockSend); return Unit.INSTANCE; });
@@ -1975,7 +2027,9 @@ public class FixHandler implements AutoCloseable, IHandler {
             case IGNORE_INCOMING_MESSAGES: return this::setupIgnoreIncomingMessagesStrategy;
             case DISCONNECT_WITH_RECONNECT: return this::setupDisconnectStrategy;
             case FAKE_RETRANSMISSION: return this::setupFakeRetransmissionStrategy;
+            case INVALID_CHECKSUM: return this::setupTransformMessageStrategy;
             case LOGON_AFTER_LOGON: return this::runLogonAfterLogonStrategy;
+            case POSS_DUP_SESSION_MESSAGES: return this::runPossDupSessionMessages;
             case DEFAULT: return configuration -> strategy.cleanupStrategy();
             default: throw new IllegalStateException(String.format("Unknown strategy type %s.", config.getRuleType()));
         }
@@ -2130,6 +2184,10 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void setHeader(StringBuilder stringBuilder, String msgType, Integer seqNum, String time) {
+        setHeader(stringBuilder, msgType, seqNum, time, false);
+    }
+
+    private void setHeader(StringBuilder stringBuilder, String msgType, Integer seqNum, String time, boolean isPossDup) {
         stringBuilder.append(BEGIN_STRING_TAG).append("=").append(settings.getBeginString());
         stringBuilder.append(MSG_TYPE).append(msgType);
         stringBuilder.append(MSG_SEQ_NUM).append(seqNum);
@@ -2141,6 +2199,9 @@ public class FixHandler implements AutoCloseable, IHandler {
             stringBuilder.append(time);
         } else {
             stringBuilder.append(getTime());
+        }
+        if(isPossDup) {
+            stringBuilder.append(POSS_DUP).append(IS_POSS_DUP);
         }
     }
 

@@ -54,6 +54,9 @@ data class RuleConfiguration(
             RuleType.TRANSFORM_MESSAGE_STRATEGY -> {
                 require(transformMessageConfiguration != null) { "`transformMessageConfiguration` is required for $ruleType"}
             }
+            RuleType.INVALID_CHECKSUM -> {
+                require(transformMessageConfiguration != null) { "`transformMessageConfiguration` is required for $ruleType" }
+            }
             RuleType.BI_DIRECTIONAL_RESEND_REQUEST -> {
                 require(missIncomingMessagesConfiguration != null) { "`blockIncomingMessagesConfiguration` is required for $ruleType" }
                 require(missOutgoingMessagesConfiguration != null) { "`blockOutgoingMessagesConfiguration` is required for $ruleType" }
@@ -79,6 +82,7 @@ data class RuleConfiguration(
             RuleType.DEFAULT -> {}
             RuleType.FAKE_RETRANSMISSION -> {}
             RuleType.LOGON_AFTER_LOGON -> {}
+            RuleType.POSS_DUP_SESSION_MESSAGES -> {}
         }
     }
 
