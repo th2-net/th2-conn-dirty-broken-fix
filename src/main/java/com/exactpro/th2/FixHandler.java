@@ -2160,7 +2160,8 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void waitUntilLoggedIn() {
-        while (!enabled.get()) {
+        long start = System.currentTimeMillis();
+        while (!enabled.get() && System.currentTimeMillis() - start < 2000) {
             LOGGER.info("Waiting until session will be logged in: {}", channel.getSessionAlias());
             try {
                 Thread.sleep(100);
