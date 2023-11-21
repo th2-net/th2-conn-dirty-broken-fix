@@ -1611,6 +1611,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         try {
             sendLogon();
+            msgSeqNum.incrementAndGet();
         } catch (Exception e) {
             ruleErrorEvent(strategy.getType(), null, e);
         }
