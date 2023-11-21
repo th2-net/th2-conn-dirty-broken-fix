@@ -554,12 +554,6 @@ public class FixHandler implements AutoCloseable, IHandler {
             serverMsgSeqNum.set(receivedMsgSeqNum);
         }
 
-        if(serverMsgSeqNum.get() < receivedMsgSeqNum && !isDup && !enabled.get()) {
-            if(strategy.getSendResendRequestOnLogonGap() && serverMsgSeqNum.get() > 5 ) {
-                sendResendRequest(serverMsgSeqNum.get() - 5, 0);
-            }
-        }
-
         switch (msgTypeValue) {
             case MSG_TYPE_HEARTBEAT:
                 if (LOGGER.isInfoEnabled()) LOGGER.info("Heartbeat received - {}", message.toString(US_ASCII));
@@ -569,6 +563,11 @@ public class FixHandler implements AutoCloseable, IHandler {
                 strategy.getState().addMessageID(messageId);strategy.getState().addMessageID(messageId);
                 Map<String, String> logonMetadata = strategy.getIncomingMessageStrategy(IncomingMessagesStrategy::getLogonStrategy).process(message, metadata);
                 if (logonMetadata != null) return logonMetadata;
+                if(serverMsgSeqNum.get() < receivedMsgSeqNum && !isDup && !enabled.get()) {
+                    if(strategy.getSendResendRequestOnLogonGap() && serverMsgSeqNum.get() > 5 ) {
+                        sendResendRequest(serverMsgSeqNum.get() - 5, 0);
+                    }
+                }
                 break;
             case MSG_TYPE_RESEND_REQUEST:
                 strategy.getState().addMessageID(messageId);
