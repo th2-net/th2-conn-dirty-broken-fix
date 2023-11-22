@@ -32,6 +32,7 @@ import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.ChangeSequenceCo
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RecoveryConfig;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.ResendRequestConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RuleConfiguration;
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.SendSequenceResetConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.SplitSendConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.TransformMessageConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.TransformationConfiguration;
@@ -1921,12 +1922,19 @@ public class FixHandler implements AutoCloseable, IHandler {
     private void sendSequenceReset(RuleConfiguration configuration) {
         strategy.resetStrategyAndState(configuration);
         Instant start = Instant.now();
+        SendSequenceResetConfiguration config = configuration.getSendSequenceResetConfiguration();
 
         StringBuilder sequenceReset = new StringBuilder();
         String time = getTime();
         setHeader(sequenceReset, MSG_TYPE_SEQUENCE_RESET, msgSeqNum.incrementAndGet(), time);
         sequenceReset.append(ORIG_SENDING_TIME).append(time);
-        sequenceReset.append(NEW_SEQ_NO).append(msgSeqNum.get() - 5);
+        if(config.getChangeUp()) {
+            int seqNum = msgSeqNum.get();
+            sequenceReset.append(NEW_SEQ_NO).append(seqNum + 5);
+            msgSeqNum.set(seqNum + 5);
+        } else {
+            sequenceReset.append(NEW_SEQ_NO).append(msgSeqNum.get() - 5);
+        }
         setChecksumAndBodyLength(sequenceReset);
 
         channel.send(Unpooled.wrappedBuffer(sequenceReset.toString().getBytes(StandardCharsets.UTF_8)), new HashMap<String, String>(), null, SendMode.HANDLE_AND_MANGLE)

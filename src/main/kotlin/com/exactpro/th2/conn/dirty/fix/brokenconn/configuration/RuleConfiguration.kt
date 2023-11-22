@@ -39,7 +39,8 @@ data class RuleConfiguration(
     val batchSendConfiguration: BatchSendConfiguration? = null,
     val splitSendConfiguration: SplitSendConfiguration? = null,
     val changeSequenceConfiguration: ChangeSequenceConfiguration? = null,
-    val resendRequestConfiguration: ResendRequestConfiguration? = null
+    val resendRequestConfiguration: ResendRequestConfiguration? = null,
+    val sendSequenceResetConfiguration: SendSequenceResetConfiguration? = null
 ) {
     init {
         when(ruleType) {
