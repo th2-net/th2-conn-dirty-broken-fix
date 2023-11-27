@@ -63,7 +63,7 @@ public class RecoveryTest {
             )
         );
         Mockito.when(dataProviderService.searchMessageGroups(Mockito.any())).thenAnswer(
-            x -> ms.searchMessages(x.getArgumentAt(0, MessageGroupsSearchRequest.class))
+            x -> ms.searchMessages(x.getArgument(0, MessageGroupsSearchRequest.class))
         );
         channel = new Channel(settings, dataProviderService);
         fixHandler = channel.getFixHandler();
@@ -94,7 +94,7 @@ public class RecoveryTest {
             )
         );
         Mockito.when(dataProviderService.searchMessageGroups(Mockito.any())).thenAnswer(
-            x -> ms.searchMessages(x.getArgumentAt(0, MessageGroupsSearchRequest.class))
+            x -> ms.searchMessages(x.getArgument(0, MessageGroupsSearchRequest.class))
         );
         channel = new Channel(settings, dataProviderService);
         fixHandler = channel.getFixHandler();
@@ -154,7 +154,7 @@ public class RecoveryTest {
             )
         );
         Mockito.when(dataProviderService.searchMessageGroups(Mockito.any())).thenAnswer(
-            x -> ms.searchMessages(x.getArgumentAt(0, MessageGroupsSearchRequest.class))
+            x -> ms.searchMessages(x.getArgument(0, MessageGroupsSearchRequest.class))
         );
         channel = new Channel(settings, dataProviderService);
         fixHandler = channel.getFixHandler();
@@ -186,7 +186,7 @@ public class RecoveryTest {
             )
         );
         Mockito.when(dataProviderService.searchMessageGroups(Mockito.any())).thenAnswer(
-            x -> ms.searchMessages(x.getArgumentAt(0, MessageGroupsSearchRequest.class))
+            x -> ms.searchMessages(x.getArgument(0, MessageGroupsSearchRequest.class))
         );
         channel = new Channel(settings, dataProviderService);
         fixHandler = channel.getFixHandler();

@@ -65,7 +65,6 @@ import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
 
-@Disabled
 class TestStrategies {
 
     private class TestContext(
@@ -82,11 +81,11 @@ class TestStrategies {
         val testContext = createTestContext(BrokenConnConfiguration(
             SchedulerType.CONSECUTIVE,
             listOf(
-                RuleConfiguration(RuleType.DEFAULT, duration = Duration.of(2, ChronoUnit.SECONDS), cleanUpDuration = Duration.of(0, ChronoUnit.SECONDS)),
+                RuleConfiguration(RuleType.DEFAULT, duration = defaultRuleDuration, cleanUpDuration = Duration.of(0, ChronoUnit.MILLIS)),
                 RuleConfiguration(
                     RuleType.DISCONNECT_WITH_RECONNECT,
-                    duration = Duration.of(4, ChronoUnit.SECONDS),
-                    cleanUpDuration = Duration.of(1, ChronoUnit.SECONDS)
+                    duration = businessRuleDuration,
+                    cleanUpDuration = businessRuleCleanupDuration
                 ),
             )
         ), enableAdditionalHandling = false)
@@ -230,21 +229,41 @@ class TestStrategies {
                     duration = businessRuleDuration,
                     cleanUpDuration = Duration.of(2, ChronoUnit.SECONDS),
                     transformMessageConfiguration = TransformMessageConfiguration(
-                        listOf(TransformationConfiguration(listOf(
-                            Action(
-                                replace = FieldSelector(
-                                    tag = Constants.PASSWORD_TAG,
-                                    matches = Pattern.compile("pass"),
-                                    tagOneOf = null
-                                ),
-                                with = FieldDefinition(
-                                    tag = Constants.PASSWORD_TAG,
-                                    value = "mangledPassword",
-                                    tagOneOf = null,
-                                    valueOneOf = null
-                                )
-                            )
-                        ), false, "A")), 2),
+                        listOf(
+                            TransformationConfiguration(
+                                listOf(
+                                    Action(
+                                        replace = FieldSelector(
+                                            tag = Constants.PASSWORD_TAG,
+                                            matches = Pattern.compile("pass"),
+                                            tagOneOf = null
+                                        ),
+                                        with = FieldDefinition(
+                                            tag = Constants.PASSWORD_TAG,
+                                            value = "mangledPassword",
+                                            tagOneOf = null,
+                                            valueOneOf = null
+                                        )
+                                    )
+                            ), false, "A"),
+                            TransformationConfiguration(
+                                listOf(
+                                    Action(
+                                        replace = FieldSelector(
+                                            tag = Constants.PASSWORD_TAG,
+                                            matches = Pattern.compile("pass"),
+                                            tagOneOf = null
+                                        ),
+                                        with = FieldDefinition(
+                                            tag = Constants.PASSWORD_TAG,
+                                            value = "mangledPassword",
+                                            tagOneOf = null,
+                                            valueOneOf = null
+                                        )
+                                    )
+                                ), false, "A")
+                        )
+                    ),
                 ),
             )
         )) { msg, mode, mtd ->
@@ -403,7 +422,6 @@ class TestStrategies {
     }
 
     @Test
-    @Disabled
     fun testClientOutage() {
         val defaultRuleDuration = Duration.of(2, ChronoUnit.SECONDS)
         val businessRuleDuration = Duration.of(6, ChronoUnit.SECONDS)
@@ -452,7 +470,6 @@ class TestStrategies {
     }
 
     @Test
-    @Disabled
     fun testPartialClientOutage() {
         val defaultRuleDuration = Duration.of(2, ChronoUnit.SECONDS)
         val businessRuleDuration = Duration.of(6, ChronoUnit.SECONDS)

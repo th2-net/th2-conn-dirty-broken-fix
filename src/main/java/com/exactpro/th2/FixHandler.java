@@ -196,7 +196,6 @@ public class FixHandler implements AutoCloseable, IHandler {
     private static final String STRATEGY_EVENT_TYPE = "StrategyState";
     private static final DateTimeFormatter formatter = DateTimeFormatter.ISO_INSTANT;
     private static final ObjectMapper mapper = new ObjectMapper();
-    private static final List<Integer> retransmissionFlags = List.of(POSS_RESEND_TAG, POSS_DUP_TAG);
 
     private final Random random = new Random();
     private final AtomicInteger msgSeqNum = new AtomicInteger(0);
@@ -885,23 +884,6 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
     }
 
-    private void sendSequenceReset() {
-        StringBuilder sequenceReset = new StringBuilder();
-        String time = getTime();
-        setHeader(sequenceReset, MSG_TYPE_SEQUENCE_RESET, msgSeqNum.incrementAndGet(), time);
-        sequenceReset.append(ORIG_SENDING_TIME).append(time);
-        sequenceReset.append(NEW_SEQ_NO).append(msgSeqNum.get() + 1);
-        setChecksumAndBodyLength(sequenceReset);
-
-        if (enabled.get()) {
-            channel.send(Unpooled.wrappedBuffer(sequenceReset.toString().getBytes(StandardCharsets.UTF_8)), new HashMap<String, String>(), null, SendMode.HANDLE_AND_MANGLE)
-                .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
-            resetHeartbeatTask();
-        } else {
-            sendLogon();
-        }
-    }
-
     private void checkHeartbeat(ByteBuf message) {
 
         FixField receivedTestReqID = findField(message, TEST_REQ_ID_TAG);
@@ -976,15 +958,17 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
 
         FixField msgSeqNum = findField(message, MSG_SEQ_NUM_TAG, US_ASCII, bodyLength);
+        int msgSeqNumValue = this.msgSeqNum.incrementAndGet();
 
         if (msgSeqNum == null) {
-            int msgSeqNumValue = this.msgSeqNum.incrementAndGet();
 
             if (msgType != null) {
                 msgSeqNum = msgType.insertNext(MSG_SEQ_NUM_TAG, Integer.toString(msgSeqNumValue));
             } else {
                 msgSeqNum = bodyLength.insertNext(MSG_SEQ_NUM_TAG, Integer.toString(msgSeqNumValue));
             }
+        } else {
+            msgSeqNum.setValue(Integer.toString(msgSeqNumValue));
         }
 
         FixField senderCompID = findField(message, SENDER_COMP_ID_TAG, US_ASCII, bodyLength);
@@ -1231,7 +1215,6 @@ public class FixHandler implements AutoCloseable, IHandler {
         onOutgoingUpdateTag(message, properties);
         StrategyState strategyState = strategy.getState();
 
-        CompletableFuture<MessageID> messageID;
         strategyState.updateCacheAndRunOnCondition(message, x -> x >= config.getBatchSize(), buffer -> {
             try {
                 LOGGER.info("Sending batch of size: {}", config.getBatchSize());
@@ -1440,7 +1423,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                 disconnect(strategy.getGracefulDisconnect());
                 if(!channel.isOpen()) channel.open().get();
             } catch (Exception e) {
-                LOGGER.error("Error while reconnecting.");
+                LOGGER.error("Error while reconnecting.", e);
             }
         } else {
             handleLogon(message, metadata);
