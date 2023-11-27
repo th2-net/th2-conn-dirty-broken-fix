@@ -20,10 +20,10 @@ import com.exactpro.th2.conn.dirty.fix.FieldDefinition
 import com.exactpro.th2.constants.Constants
 
 data class TransformMessageConfiguration(
-   val transformations: List<TransformationConfiguration>,
-   val numberOfTimesToTransform: Int = transformations.size
+   val transformations: List<TransformationConfiguration>
 ) {
     private var transformationsIdx = 0
+    val numberOfTimesToTransform: Int = transformations.size
     fun getNextTransformation(): TransformationConfiguration {
         return transformations[transformationsIdx++ % numberOfTimesToTransform]
     }

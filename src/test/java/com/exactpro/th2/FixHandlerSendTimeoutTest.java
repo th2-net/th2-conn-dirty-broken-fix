@@ -32,11 +32,10 @@ import java.time.ZoneOffset;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeoutException;
 
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyBoolean;
-import static org.mockito.Matchers.anyInt;
-import static org.mockito.Matchers.anyLong;
-import static org.mockito.Matchers.anyVararg;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 
 class FixHandlerSendTimeoutTest {
     @Test
@@ -49,8 +48,7 @@ class FixHandlerSendTimeoutTest {
                         any(),
                         anyBoolean(),
                         anyLong(),
-                        anyInt(),
-                        anyVararg()
+                        anyInt()
                 ))
                 .thenReturn(channelMock);
         Mockito.when(channelMock.open())
@@ -90,8 +88,7 @@ class FixHandlerSendTimeoutTest {
                         any(),
                         anyBoolean(),
                         anyLong(),
-                        anyInt(),
-                        anyVararg()
+                        anyInt()
                 ))
                 .thenReturn(channelMock);
         Mockito.when(channelMock.open())
