@@ -1465,7 +1465,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         onOutgoingUpdateTag(message, metadata);
 
         FixField sendingTime = requireNonNull(findField(message, SENDING_TIME_TAG));
-        strategy.getState().addMissedMessageToCacheIfCondition(msgSeqNum.get(), Unpooled.copiedBuffer(message), x -> true);
+        strategy.getState().addMissedMessageToCacheIfCondition(msgSeqNum.get(), message.copy(), x -> true);
 
         sendingTime
             .insertNext(ORIG_SENDING_TIME_TAG, sendingTime.getValue())
@@ -2077,8 +2077,13 @@ public class FixHandler implements AutoCloseable, IHandler {
                         new HashMap<String, String>(), null, SendMode.MANGLE
                     ).thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
                 } else {
-                    setTime(missedMessage);
-                    setPossDup(missedMessage);
+                    FixField possDup = findField(missedMessage, POSS_DUP_TAG);
+                    if(possDup == null || !Objects.equals(possDup.getValue(), IS_POSS_DUP)) {
+                        setPossDup(missedMessage);
+                        setTime(missedMessage);
+                    } else {
+                        updateSendingTime(missedMessage);
+                    }
                     updateLength(missedMessage);
                     updateChecksum(missedMessage);
 
@@ -2143,6 +2148,11 @@ public class FixHandler implements AutoCloseable, IHandler {
     private void setPossDup(ByteBuf buf) {
         FixField sendingTime = requireNonNull(findField(buf, SENDING_TIME_TAG));
         sendingTime.insertNext(POSS_DUP_TAG, IS_POSS_DUP);
+    }
+
+    private void updateSendingTime(ByteBuf buf) {
+        FixField sendingTime = Objects.requireNonNull(findField(buf, SENDING_TIME_TAG));
+        sendingTime.setValue(getTime());
     }
 
     private void setTime(ByteBuf buf) {
