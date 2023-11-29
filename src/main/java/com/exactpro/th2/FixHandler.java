@@ -630,7 +630,10 @@ public class FixHandler implements AutoCloseable, IHandler {
                 if(nextExpectedSeqNumber < seqNum) {
                     try {
                         recoveryLock.lock();
+                        Thread.sleep(settings.getCradleSaveTimeoutMs());
                         strategy.getRecoveryHandler().recovery(nextExpectedSeqNumber, seqNum);
+                    } catch (InterruptedException e) {
+                        LOGGER.error("Error while waiting for cradle save timeout.", e);
                     } finally {
                         recoveryLock.unlock();
                     }
@@ -778,7 +781,10 @@ public class FixHandler implements AutoCloseable, IHandler {
 
             try {
                 recoveryLock.lock();
+                Thread.sleep(settings.getCradleSaveTimeoutMs());
                 strategy.getRecoveryHandler().recovery(beginSeqNo, endSeqNo);
+            } catch (InterruptedException e) {
+                LOGGER.error("Error while waiting for cradle save timeout.", e);
             } finally {
                 recoveryLock.unlock();
             }
@@ -830,6 +836,11 @@ public class FixHandler implements AutoCloseable, IHandler {
                     if(!skip.get()) {
                         channel.send(buf, new HashMap<String, String>(), null, SendMode.MANGLE)
                             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
+                        try {
+                            Thread.sleep(settings.getRecoverySendIntervalMs());
+                        } catch (InterruptedException e) {
+                            LOGGER.error("Error while waiting send interval during recovery", e);
+                        }
                     }
 
                     if(skip.get() && recoveryConfig.getOutOfOrder()) {
@@ -841,6 +852,11 @@ public class FixHandler implements AutoCloseable, IHandler {
                         skip.set(true);
                         channel.send(skipped.get(), new HashMap<String, String>(), null, SendMode.MANGLE)
                             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
+                        try {
+                            Thread.sleep(settings.getRecoverySendIntervalMs());
+                        } catch (InterruptedException e) {
+                            LOGGER.error("Error while waiting send interval during recovery", e);
+                        }
                     }
 
                     resetHeartbeatTask();
@@ -1451,7 +1467,10 @@ public class FixHandler implements AutoCloseable, IHandler {
         FixField sendingTime = requireNonNull(findField(message, SENDING_TIME_TAG));
         strategy.getState().addMissedMessageToCacheIfCondition(msgSeqNum.get(), Unpooled.copiedBuffer(message), x -> true);
 
-        sendingTime.insertNext(POSS_DUP_TAG, IS_POSS_DUP).insertNext(POSS_RESEND_TAG, IS_POSS_DUP);
+        sendingTime
+            .insertNext(ORIG_SENDING_TIME_TAG, sendingTime.getValue())
+            .insertNext(POSS_DUP_TAG, IS_POSS_DUP)
+            .insertNext(POSS_RESEND_TAG, IS_POSS_DUP);
         updateLength(message);
         updateChecksum(message);
 
@@ -2067,6 +2086,11 @@ public class FixHandler implements AutoCloseable, IHandler {
                     if(!skip) {
                         channel.send(missedMessage, new HashMap<String, String>(), null, SendMode.MANGLE)
                             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
+                        try {
+                            Thread.sleep(settings.getRecoverySendIntervalMs());
+                        } catch (InterruptedException e) {
+                            LOGGER.error("Error while waiting send interval during recovery", e);
+                        }
                     }
 
                     if(skip && recoveryConfig.getOutOfOrder()) {
@@ -2077,6 +2101,11 @@ public class FixHandler implements AutoCloseable, IHandler {
                     if(!skip && recoveryConfig.getOutOfOrder()) {
                         channel.send(skipped, new HashMap<String, String>(), null, SendMode.MANGLE)
                             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
+                        try {
+                            Thread.sleep(settings.getRecoverySendIntervalMs());
+                        } catch (InterruptedException e) {
+                            LOGGER.error("Error while waiting send interval during recovery", e);
+                        }
                         skip = true;
                     }
                 }
@@ -2142,6 +2171,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             waitLogoutResponse();
         }
         enabled.set(false);
+        Thread.sleep(settings.getDisconnectCleanUpTimeoutMs());
         channel.close().get();
     }
 
@@ -2187,12 +2217,15 @@ public class FixHandler implements AutoCloseable, IHandler {
         if (settings.getTargetCompID() != null) stringBuilder.append(TARGET_COMP_ID).append(settings.getTargetCompID());
         if (settings.getSenderSubID() != null) stringBuilder.append(SENDER_SUB_ID).append(settings.getSenderSubID());
         stringBuilder.append(SENDING_TIME);
+        String now = getTime();
         if(time != null) {
             stringBuilder.append(time);
+            now = time;
         } else {
-            stringBuilder.append(getTime());
+            stringBuilder.append(now);
         }
         if(isPossDup) {
+            stringBuilder.append(ORIG_SENDING_TIME).append(now);
             stringBuilder.append(POSS_DUP).append(IS_POSS_DUP);
         }
     }
