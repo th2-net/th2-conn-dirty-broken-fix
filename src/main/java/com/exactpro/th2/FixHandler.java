@@ -634,7 +634,11 @@ public class FixHandler implements AutoCloseable, IHandler {
                         recoveryLock.lock();
                         activeRecovery.set(true);
                         Thread.sleep(settings.getCradleSaveTimeoutMs());
-                        strategy.getRecoveryHandler().recovery(nextExpectedSeqNumber, seqNum);
+                        if(!channel.isOpen()) {
+                            LOGGER.warn("Recovery is interrupted.");
+                        } else {
+                            strategy.getRecoveryHandler().recovery(nextExpectedSeqNumber, seqNum);
+                        }
                     } catch (InterruptedException e) {
                         LOGGER.error("Error while waiting for cradle save timeout.", e);
                     } finally {
@@ -787,7 +791,11 @@ public class FixHandler implements AutoCloseable, IHandler {
                 recoveryLock.lock();
                 activeRecovery.set(true);
                 Thread.sleep(settings.getCradleSaveTimeoutMs());
-                strategy.getRecoveryHandler().recovery(beginSeqNo, endSeqNo);
+                if(!channel.isOpen()) {
+                    LOGGER.warn("Recovery is interrupted.");
+                } else {
+                    strategy.getRecoveryHandler().recovery(beginSeqNo, endSeqNo);
+                }
             } catch (InterruptedException e) {
                 LOGGER.error("Error while waiting for cradle save timeout.", e);
             } finally {
