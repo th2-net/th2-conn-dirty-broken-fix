@@ -72,6 +72,9 @@ public class FixHandlerSettings implements IHandlerSettings {
     private int testRequestDelay = 60;
     private int reconnectDelay = 5;
     private int disconnectRequestDelay = 5;
+    private long disconnectCleanUpTimeoutMs = 1000;
+    private long cradleSaveTimeoutMs = 2000;
+    private long recoverySendIntervalMs = 10;
 
     private BrokenConnConfiguration brokenConnConfiguration;
     /**
@@ -347,5 +350,29 @@ public class FixHandlerSettings implements IHandlerSettings {
 
     public void setMinConnectionTimeoutOnSend(long minConnectionTimeoutOnSend) {
         this.minConnectionTimeoutOnSend = minConnectionTimeoutOnSend;
+    }
+
+    public long getDisconnectCleanUpTimeoutMs() {
+        return disconnectCleanUpTimeoutMs;
+    }
+
+    public void setDisconnectCleanUpTimeoutMs(long disconnectCleanUpTimeoutMs) {
+        this.disconnectCleanUpTimeoutMs = disconnectCleanUpTimeoutMs;
+    }
+
+    public long getCradleSaveTimeoutMs() {
+        return cradleSaveTimeoutMs;
+    }
+
+    public void setCradleSaveTimeoutMs(long cradleSaveTimeoutMs) {
+        this.cradleSaveTimeoutMs = cradleSaveTimeoutMs;
+    }
+
+    public long getRecoverySendIntervalMs() {
+        return recoverySendIntervalMs;
+    }
+
+    public void setRecoverySendIntervalMs(long recoverySendIntervalMs) {
+        this.recoverySendIntervalMs = recoverySendIntervalMs;
     }
 }
