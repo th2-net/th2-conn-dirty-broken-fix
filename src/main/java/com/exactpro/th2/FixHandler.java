@@ -2084,6 +2084,10 @@ public class FixHandler implements AutoCloseable, IHandler {
                     } else {
                         updateSendingTime(missedMessage);
                     }
+                    FixField possResend = findField(missedMessage, POSS_RESEND_TAG);
+                    if(possResend != null && Objects.equals(possResend.getValue(), IS_POSS_DUP)) {
+                        possResend.clear();
+                    }
                     updateLength(missedMessage);
                     updateChecksum(missedMessage);
 
