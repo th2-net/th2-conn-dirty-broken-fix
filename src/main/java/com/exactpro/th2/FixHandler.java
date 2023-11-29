@@ -401,7 +401,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                 }
             }
         } else {
-            while (channel.isOpen() && !enabled.get()) {
+            while (!enabled.get()) {
                 if (LOGGER.isWarnEnabled()) LOGGER.warn("Session is not yet logged in: {}", channel.getSessionAlias());
                 try {
                     //noinspection BusyWait
@@ -712,6 +712,12 @@ public class FixHandler implements AutoCloseable, IHandler {
         cancelFuture(testRequestTimer);
         enabled.set(false);
         context.send(CommonUtil.toEvent("logout for sender - " + settings.getSenderCompID()), null);//make more useful
+        try {
+            disconnect(false);
+            channel.open();
+        } catch (Exception e) {
+            LOGGER.error("Error while disconnecting in handle logout.");
+        }
         return metadata;
     }
 
