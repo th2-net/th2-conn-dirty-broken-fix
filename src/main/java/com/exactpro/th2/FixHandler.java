@@ -1991,33 +1991,38 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     // <editor-fold desc="strategies scheduling and cleanup">
     private void applyNextStrategy() {
-        LOGGER.info("Cleaning up current strategy {}", strategy.getState().getType());
         try {
-            strategy.getCleanupHandler().cleanup();
-        } catch (Exception e) {
-            String message = String.format("Error while cleaning up strategy: %s", strategy.getState().getType());
-            LOGGER.error(message, e);
-            ruleErrorEvent(strategy.getState().getType(), null, e);
-        }
+            recoveryLock.lock();
+            LOGGER.info("Cleaning up current strategy {}", strategy.getState().getType());
+            try {
+                strategy.getCleanupHandler().cleanup();
+            } catch (Exception e) {
+                String message = String.format("Error while cleaning up strategy: %s", strategy.getState().getType());
+                LOGGER.error(message, e);
+                ruleErrorEvent(strategy.getState().getType(), null, e);
+            }
 
-        if(!sessionActive.get()) {
-            strategy.resetStrategyAndState(RuleConfiguration.Companion.defaultConfiguration());
-            executorService.schedule(this::applyNextStrategy, Duration.of(10, ChronoUnit.MINUTES).toMinutes(), TimeUnit.MINUTES);
-            return;
-        }
+            if(!sessionActive.get()) {
+                strategy.resetStrategyAndState(RuleConfiguration.Companion.defaultConfiguration());
+                executorService.schedule(this::applyNextStrategy, Duration.of(10, ChronoUnit.MINUTES).toMinutes(), TimeUnit.MINUTES);
+                return;
+            }
 
-        RuleConfiguration nextStrategyConfig = scheduler.next();
-        Consumer<RuleConfiguration> nextStrategySetupFunction = getSetupFunction(nextStrategyConfig);
-        try {
-            nextStrategySetupFunction.accept(nextStrategyConfig);
-        } catch (Exception e) {
-            String message = String.format("Error while setting up strategy: %s", strategy.getState().getType());
-            LOGGER.error(message, e);
-            ruleErrorEvent(nextStrategyConfig.getRuleType(), null, e);
-        }
+            RuleConfiguration nextStrategyConfig = scheduler.next();
+            Consumer<RuleConfiguration> nextStrategySetupFunction = getSetupFunction(nextStrategyConfig);
+            try {
+                nextStrategySetupFunction.accept(nextStrategyConfig);
+            } catch (Exception e) {
+                String message = String.format("Error while setting up strategy: %s", strategy.getState().getType());
+                LOGGER.error(message, e);
+                ruleErrorEvent(nextStrategyConfig.getRuleType(), null, e);
+            }
 
-        LOGGER.info("Next strategy applied: {}", nextStrategyConfig.getRuleType());
-        executorService.schedule(this::applyNextStrategy, nextStrategyConfig.getDuration().toMillis(), TimeUnit.MILLISECONDS);
+            LOGGER.info("Next strategy applied: {}", nextStrategyConfig.getRuleType());
+            executorService.schedule(this::applyNextStrategy, nextStrategyConfig.getDuration().toMillis(), TimeUnit.MILLISECONDS);
+        } finally {
+            recoveryLock.unlock();
+        }
     }
 
     private Consumer<RuleConfiguration> getSetupFunction(RuleConfiguration config) {
