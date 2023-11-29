@@ -202,7 +202,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     private final AtomicInteger msgSeqNum = new AtomicInteger(0);
     private final AtomicInteger serverMsgSeqNum = new AtomicInteger(0);
     private final AtomicInteger testReqID = new AtomicInteger(0);
-    private final AtomicBoolean activeRecovery = new AtomicBoolean(true);
+    private final AtomicBoolean activeRecovery = new AtomicBoolean(false);
     private final AtomicBoolean sessionActive = new AtomicBoolean(true);
     private final AtomicBoolean enabled = new AtomicBoolean(false);
     private final AtomicBoolean connStarted = new AtomicBoolean(false);
@@ -2006,14 +2006,16 @@ public class FixHandler implements AutoCloseable, IHandler {
     // <editor-fold desc="strategies scheduling and cleanup">
     private void applyNextStrategy() {
         LOGGER.info("Cleaning up current strategy {}", strategy.getState().getType());
+        LOGGER.info("Started waiting for recovery finish.");
         while (activeRecovery.get()) {
-            LOGGER.info("Waiting for recovery to finish.");
+            LOGGER.debug("Waiting for recovery to finish.");
             try {
                 Thread.sleep(100);
             } catch (InterruptedException e) {
                 LOGGER.error("Error while waiting for recovery to finish", e);
             }
         }
+        LOGGER.info("Stopped waiting for recovery finish.");
         try {
             strategy.getCleanupHandler().cleanup();
         } catch (Exception e) {
@@ -2202,14 +2204,16 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void disconnect(boolean graceful) throws ExecutionException, InterruptedException {
+        LOGGER.info("Started waiting for recovery finish.");
         while (activeRecovery.get()) {
-            LOGGER.info("Waiting for recovery to finish.");
+            LOGGER.debug("Waiting for recovery to finish.");
             try {
                 Thread.sleep(100);
             } catch (InterruptedException e) {
                 LOGGER.error("Error while waiting for recovery to finish", e);
             }
         }
+        LOGGER.info("Finished waiting for recovery finish.");
         if(graceful) {
             sendLogout();
             waitLogoutResponse();
