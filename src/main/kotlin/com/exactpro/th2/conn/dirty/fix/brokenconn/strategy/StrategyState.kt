@@ -79,7 +79,7 @@ class StrategyState(val config: RuleConfiguration? = null,
             }
         }
 
-    fun getMissedMessage(sequence: Long): ByteBuf? = lock.read { missedMessagesCache[sequence] }
+    fun getMissedMessage(sequence: Long): ByteBuf? = lock.read { missedMessagesCache.remove(sequence) }
 
     fun updateCacheAndRunOnCondition(message: ByteBuf, condition: (Int) -> Boolean, function: (ByteBuf) -> Unit) = lock.write {
         batchMessageCache.addComponent(true, message.copy().asExpandable())
