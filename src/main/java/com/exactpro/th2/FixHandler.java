@@ -2224,6 +2224,14 @@ public class FixHandler implements AutoCloseable, IHandler {
             sendLogout();
             waitLogoutResponse();
         }
+        while (activeRecovery.get()) {
+            LOGGER.debug("Waiting for recovery to finish.");
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                LOGGER.error("Error while waiting for recovery to finish", e);
+            }
+        }
         enabled.set(false);
         Thread.sleep(settings.getDisconnectCleanUpTimeoutMs());
         channel.close().get();
