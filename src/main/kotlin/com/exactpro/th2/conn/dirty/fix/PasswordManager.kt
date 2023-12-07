@@ -65,6 +65,7 @@ class PasswordManager(
                     K_LOGGER.error { "Error while pulling passwords: ${response.code}" }
                     return@execute
                 }
+                K_LOGGER.info { "Got the following content from infra: ${response.entity.content}" }
                 val responseMap: Map<String, String> =
                     OBJECT_MAPPER.readValue(response.entity.content, Map::class.java) as Map<String, String>
 
