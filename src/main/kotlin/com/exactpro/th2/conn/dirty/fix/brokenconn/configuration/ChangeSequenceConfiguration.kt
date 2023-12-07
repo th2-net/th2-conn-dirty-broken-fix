@@ -15,4 +15,9 @@
  */
 package com.exactpro.th2.conn.dirty.fix.brokenconn.configuration
 
-data class ChangeSequenceConfiguration(val messageCount: Int, val changeIncomingSequence: Boolean)
+data class ChangeSequenceConfiguration(
+    val messageCount: Int,
+    val changeIncomingSequence: Boolean = false,
+    val changeUp: Boolean = true,
+    val gapFill: Boolean = true
+)

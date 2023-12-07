@@ -28,6 +28,7 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 
 public class FixHandlerSettings implements IHandlerSettings {
+    private static final int DEFAULT_CONNECTION_TIMEOUT_ON_SEND = 30_000;
     private String host = null;
     private int port = 0;
     private Security security = new Security();
@@ -55,9 +56,10 @@ public class FixHandlerSettings implements IHandlerSettings {
     private Boolean resetSeqNumFlag = false;
     private Boolean resetOnLogon = false;
     private Boolean useNextExpectedSeqNum = false;
-    private Boolean saveAdminMessages = false;
     private Boolean loadSequencesFromCradle = false;
+    private Boolean loadMissedMessagesFromCradle = false;
     private Boolean resetStateOnServerReset = false;
+    private Boolean logoutOnIncorrectServerSequence = false;
 
     @JsonDeserialize(using = LocalTimeDeserializer.class)
     private LocalTime sessionStartTime;
@@ -65,11 +67,23 @@ public class FixHandlerSettings implements IHandlerSettings {
     @JsonDeserialize(using = LocalTimeDeserializer.class)
     private LocalTime sessionEndTime;
 
+    private int rateLimit = Integer.MAX_VALUE;
+
     private int testRequestDelay = 60;
     private int reconnectDelay = 5;
     private int disconnectRequestDelay = 5;
+    private long disconnectCleanUpTimeoutMs = 1000;
+    private long cradleSaveTimeoutMs = 2000;
+    private long recoverySendIntervalMs = 10;
 
     private BrokenConnConfiguration brokenConnConfiguration;
+    /**
+     * Timeout in milliseconds during which the connection should be opened and session is logged in.
+     * Otherwise, the send operation will be interrupted
+     */
+    private long connectionTimeoutOnSend = DEFAULT_CONNECTION_TIMEOUT_ON_SEND;
+
+    private long minConnectionTimeoutOnSend = 1_000;
 
     @JsonDeserialize(using = DateTimeFormatterDeserializer.class)
     private DateTimeFormatter sendingDateTimeFormat = DateTimeFormatter.ofPattern("yyyyMMdd-HH:mm:ss.SSSSSSSSS");
@@ -238,6 +252,14 @@ public class FixHandlerSettings implements IHandlerSettings {
         this.loadSequencesFromCradle = loadSequencesFromCradle;
     }
 
+    public Boolean isLoadMissedMessagesFromCradle() {
+        return loadMissedMessagesFromCradle;
+    }
+
+    public void setLoadMissedMessagesFromCradle(Boolean loadMissedMessagesFromCradle) {
+        this.loadMissedMessagesFromCradle = loadMissedMessagesFromCradle;
+    }
+
     public Boolean getResetStateOnServerReset() {
         return resetStateOnServerReset;
     }
@@ -254,12 +276,12 @@ public class FixHandlerSettings implements IHandlerSettings {
         this.useNextExpectedSeqNum = useNextExpectedSeqNum;
     }
 
-    public Boolean isSaveAdminMessages() {
-        return saveAdminMessages;
+    public Boolean isLogoutOnIncorrectServerSequence() {
+        return logoutOnIncorrectServerSequence;
     }
 
-    public void setSaveAdminMessages(Boolean saveAdminMessages) {
-        this.saveAdminMessages = saveAdminMessages;
+    public void setLogoutOnIncorrectServerSequence(Boolean logoutOnIncorrectServerSequence) {
+        this.logoutOnIncorrectServerSequence = logoutOnIncorrectServerSequence;
     }
 
     public LocalTime getSessionStartTime() {
@@ -304,5 +326,53 @@ public class FixHandlerSettings implements IHandlerSettings {
 
     public void setBrokenConnConfiguration(BrokenConnConfiguration brokenConnConfiguration) {
         this.brokenConnConfiguration = brokenConnConfiguration;
+    }
+
+    public int getRateLimit() {
+        return rateLimit;
+    }
+
+    public void setRateLimit(int rateLimit) {
+        this.rateLimit = rateLimit;
+    }
+
+    public long getConnectionTimeoutOnSend() {
+        return connectionTimeoutOnSend;
+    }
+
+    public void setConnectionTimeoutOnSend(long connectionTimeoutOnSend) {
+        this.connectionTimeoutOnSend = connectionTimeoutOnSend;
+    }
+
+    public long getMinConnectionTimeoutOnSend() {
+        return minConnectionTimeoutOnSend;
+    }
+
+    public void setMinConnectionTimeoutOnSend(long minConnectionTimeoutOnSend) {
+        this.minConnectionTimeoutOnSend = minConnectionTimeoutOnSend;
+    }
+
+    public long getDisconnectCleanUpTimeoutMs() {
+        return disconnectCleanUpTimeoutMs;
+    }
+
+    public void setDisconnectCleanUpTimeoutMs(long disconnectCleanUpTimeoutMs) {
+        this.disconnectCleanUpTimeoutMs = disconnectCleanUpTimeoutMs;
+    }
+
+    public long getCradleSaveTimeoutMs() {
+        return cradleSaveTimeoutMs;
+    }
+
+    public void setCradleSaveTimeoutMs(long cradleSaveTimeoutMs) {
+        this.cradleSaveTimeoutMs = cradleSaveTimeoutMs;
+    }
+
+    public long getRecoverySendIntervalMs() {
+        return recoverySendIntervalMs;
+    }
+
+    public void setRecoverySendIntervalMs(long recoverySendIntervalMs) {
+        this.recoverySendIntervalMs = recoverySendIntervalMs;
     }
 }

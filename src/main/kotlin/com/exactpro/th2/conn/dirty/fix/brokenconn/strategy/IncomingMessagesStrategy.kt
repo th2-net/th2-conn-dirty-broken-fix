@@ -22,5 +22,6 @@ import kotlin.concurrent.withLock
 class IncomingMessagesStrategy(
     var incomingMessagesPreprocessor: MessageProcessor,
     var testRequestProcessor: MessageProcessor,
-    var logonStrategy: MessageProcessor
+    var logonStrategy: MessageProcessor,
+    var logoutStrategy: MessageProcessor
 )

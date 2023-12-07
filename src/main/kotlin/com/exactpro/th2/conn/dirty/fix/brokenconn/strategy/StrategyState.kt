@@ -30,14 +30,15 @@ import kotlin.concurrent.read
 import kotlin.concurrent.write
 import mu.KotlinLogging
 
-class StrategyState(val config: RuleConfiguration? = null) {
+class StrategyState(val config: RuleConfiguration? = null,
+                    private val missedMessagesCache: ConcurrentHashMap<Long, ByteBuf> = ConcurrentHashMap()
+) {
     val startTime: Instant = Instant.now()
     val type = config?.ruleType ?: RuleType.DEFAULT
     private val batchMessageCache: CompositeByteBuf = Unpooled.compositeBuffer()
-    val messageIDs: MutableList<MessageID> = Collections.synchronizedList(ArrayList<MessageID>())
+    private val messageIDs: MutableList<MessageID> = ArrayList<MessageID>()
 
     private val lock = ReentrantReadWriteLock()
-    private val missedMessagesCache: MutableMap<Long, ByteBuf> = ConcurrentHashMap<Long, ByteBuf>()
     private var batchMessageCacheSize = 0
 
     private var missedIncomingMessagesCount = 0
@@ -78,7 +79,7 @@ class StrategyState(val config: RuleConfiguration? = null) {
             }
         }
 
-    fun getMissedMessage(sequence: Long): ByteBuf? = lock.read { missedMessagesCache[sequence] }
+    fun getMissedMessage(sequence: Long): ByteBuf? = lock.read { missedMessagesCache.remove(sequence) }
 
     fun updateCacheAndRunOnCondition(message: ByteBuf, condition: (Int) -> Boolean, function: (ByteBuf) -> Unit) = lock.write {
         batchMessageCache.addComponent(true, message.copy().asExpandable())
@@ -108,8 +109,14 @@ class StrategyState(val config: RuleConfiguration? = null) {
         messageID?.let { messageIDs.add(it) }
     }
 
+    fun getMessageIDs() = lock.read {
+        ArrayList(messageIDs)
+    }
+
     companion object {
         private const val TOO_BIG_MESSAGE_IDS_LIST = 300;
         private val K_LOGGER = KotlinLogging.logger {  }
+
+        fun StrategyState.resetAndCopyMissedMessages(ruleConfiguration: RuleConfiguration? = null): StrategyState = StrategyState(ruleConfiguration, this.missedMessagesCache)
     }
 }

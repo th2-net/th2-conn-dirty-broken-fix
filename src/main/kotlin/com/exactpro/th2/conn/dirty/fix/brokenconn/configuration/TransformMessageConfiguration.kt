@@ -20,14 +20,34 @@ import com.exactpro.th2.conn.dirty.fix.FieldDefinition
 import com.exactpro.th2.constants.Constants
 
 data class TransformMessageConfiguration(
-    val actions: List<Action> = emptyList(),
-    val messageType: String,
-    val numberOfTimesToTransform: Int,
+   val transformations: List<TransformationConfiguration>
+) {
+    private var transformationsIdx = 0
+    val numberOfTimesToTransform: Int = transformations.size
+    fun getNextTransformation(): TransformationConfiguration {
+        return transformations[transformationsIdx++ % numberOfTimesToTransform]
+    }
+
+    fun decreaseCounter() {
+        transformationsIdx -= 1
+    }
+}
+
+data class TransformationConfiguration(
+    private val actions: List<Action> = emptyList(),
+    val anyMessageType: Boolean = false,
+    val messageType: String?,
     val useOldPasswords: Boolean = false,
     val newUsername: String? = null,
     val newPassword: String? = null,
+    val newNewPassword: String? = null,
     val newCompId: String? = null,
-    val newTargetId: String? = null
+    val newTargetId: String? = null,
+    val passwordKeyEncryptAlgorithm: String? = null,
+    val passwordEncryptAlgorithm: String? = null,
+    val encryptKey: String? = null,
+    val updateChecksum: Boolean = true,
+    val comment: String? = null
 ) {
     private val simpleActions: List<Action>
     init {

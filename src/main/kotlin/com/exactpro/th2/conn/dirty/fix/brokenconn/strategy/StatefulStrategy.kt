@@ -18,9 +18,11 @@ package com.exactpro.th2.conn.dirty.fix.brokenconn.strategy
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BatchSendConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BlockMessageConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.MissMessageConfiguration
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RecoveryConfig
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RuleConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.SplitSendConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.TransformMessageConfiguration
+import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.StrategyState.Companion.resetAndCopyMissedMessages
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.CleanupHandler
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.MessageProcessor
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.OnCloseHandler
@@ -64,7 +66,33 @@ class StatefulStrategy(
         get() = state.config?.splitSendConfiguration ?: error("split send configuration isn't present.")
         private set
 
+    var allowMessagesBeforeLogon: Boolean = false
+        get() = state.config?.allowMessagesBeforeLogonReply ?: false
+        private set
 
+    var sendResendRequestOnLogonGap: Boolean = false
+        get() = state.config?.sendResendRequestOnLogonGap ?: false
+        private set
+
+    var allowMessagesBeforeRetransmissionFinishes: Boolean = false
+        get() = state.config?.allowMessagesBeforeRetransmissionFinishes ?: false
+        private set
+
+    var sendResendRequestOnLogoutReply: Boolean = false
+        get() = state.config?.sendResendRequestOnLogoutReply ?: false
+        private set
+
+    var increaseNextExpectedSequenceNumber: Boolean = false
+        get() = state.config?.increaseNextExpectedSequenceNumber ?: false
+        private set
+
+    var decreaseNextExpectedSequenceNumber: Boolean = false
+        get() = state.config?.decreaseNextExpectedSequenceNumber ?: false
+        private set
+
+    var recoveryConfig: RecoveryConfig = RecoveryConfig()
+        get() = state.config?.recoveryConfig ?: RecoveryConfig()
+        private set
     // strategies
     fun updateSendStrategy(func: SendStrategy.() -> Unit) = lock.write {
         sendStrategy.func()
@@ -136,7 +164,7 @@ class StatefulStrategy(
 
     fun resetStrategyAndState(config: RuleConfiguration) {
         lock.write {
-            state = StrategyState(config)
+            state = state.resetAndCopyMissedMessages(config)
             sendStrategy.sendHandler = defaultStrategy.sendStrategy.sendHandler
             sendStrategy.sendPreprocessor = defaultStrategy.sendStrategy.sendPreprocessor
             receiveStrategy.receivePreprocessor = defaultStrategy.receiveStrategy.receivePreprocessor
@@ -152,7 +180,7 @@ class StatefulStrategy(
 
     fun cleanupStrategy() {
         lock.write {
-            state = StrategyState()
+            state = state.resetAndCopyMissedMessages()
             sendStrategy.sendHandler = defaultStrategy.sendStrategy.sendHandler
             sendStrategy.sendPreprocessor = defaultStrategy.sendStrategy.sendPreprocessor
             receiveStrategy.receivePreprocessor = defaultStrategy.receiveStrategy.receivePreprocessor
