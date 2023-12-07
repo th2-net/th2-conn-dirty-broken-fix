@@ -24,6 +24,13 @@ data class RuleConfiguration(
     val ruleType: RuleType = RuleType.DEFAULT,
     val duration: Duration = Duration.of(1, ChronoUnit.MINUTES),
     val cleanUpDuration: Duration = Duration.of(20, ChronoUnit.SECONDS),
+    val recoveryConfig: RecoveryConfig? = RecoveryConfig(),
+    val allowMessagesBeforeLogonReply: Boolean = false,
+    val sendResendRequestOnLogonGap: Boolean = false,
+    val allowMessagesBeforeRetransmissionFinishes: Boolean = false,
+    val sendResendRequestOnLogoutReply: Boolean = false,
+    val increaseNextExpectedSequenceNumber: Boolean = true,
+    val decreaseNextExpectedSequenceNumber: Boolean = true,
     val weight: Int? = null,
     val gracefulDisconnect: Boolean = false,
     val missIncomingMessagesConfiguration: MissMessageConfiguration? = null,
@@ -32,7 +39,8 @@ data class RuleConfiguration(
     val batchSendConfiguration: BatchSendConfiguration? = null,
     val splitSendConfiguration: SplitSendConfiguration? = null,
     val changeSequenceConfiguration: ChangeSequenceConfiguration? = null,
-    val resendRequestConfiguration: ResendRequestConfiguration? = null
+    val resendRequestConfiguration: ResendRequestConfiguration? = null,
+    val sendSequenceResetConfiguration: SendSequenceResetConfiguration? = null
 ) {
     init {
         when(ruleType) {
@@ -40,8 +48,15 @@ data class RuleConfiguration(
             RuleType.IGNORE_INCOMING_MESSAGES -> {
                 require(missIncomingMessagesConfiguration != null) { "`blockIncomingMessagesConfiguration` is required for $ruleType" }
             }
+            RuleType.SEND_SEQUENCE_RESET -> {}
             RuleType.TRANSFORM_LOGON -> {
                 require(transformMessageConfiguration != null) { "`transformMessageConfiguration` is required for $ruleType"}
+            }
+            RuleType.TRANSFORM_MESSAGE_STRATEGY -> {
+                require(transformMessageConfiguration != null) { "`transformMessageConfiguration` is required for $ruleType"}
+            }
+            RuleType.INVALID_CHECKSUM -> {
+                require(transformMessageConfiguration != null) { "`transformMessageConfiguration` is required for $ruleType" }
             }
             RuleType.BI_DIRECTIONAL_RESEND_REQUEST -> {
                 require(missIncomingMessagesConfiguration != null) { "`blockIncomingMessagesConfiguration` is required for $ruleType" }
@@ -65,6 +80,10 @@ data class RuleConfiguration(
             RuleType.SPLIT_SEND -> {
                 require(splitSendConfiguration != null) { "`splitSendConfiguration` is required for $ruleType" }
             }
+            RuleType.DEFAULT -> {}
+            RuleType.FAKE_RETRANSMISSION -> {}
+            RuleType.LOGON_AFTER_LOGON -> {}
+            RuleType.POSS_DUP_SESSION_MESSAGES -> {}
         }
     }
 
