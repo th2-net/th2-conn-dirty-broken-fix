@@ -1122,6 +1122,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     public void sendLogon() {
+        Map<String, String> props = new HashMap<>();
         if(!sessionActive.get() || !channel.isOpen()) {
             LOGGER.info("Logon is not sent to server because session is not active.");
             return;
@@ -1153,6 +1154,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         passwordManager.use((x) -> {
             if (x.getPassword() != null) {
                 if (settings.getPasswordEncryptKey() != null) {
+                    props.put("PASSWORD", x.getPassword());
                     logon.append(ENCRYPTED_PASSWORD).append(encrypt(x.getPassword(), settings.getPasswordEncryptKey(), settings.getPasswordEncryptAlgorithm(), settings.getPasswordKeyEncryptAlgorithm()));
                 } else {
                     logon.append(PASSWORD).append(x.getPassword());
@@ -1160,6 +1162,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             }
 
             if (x.getNewPassword() != null) {
+                props.put("NEW_PASSWORD", x.getNewPassword());
                 if (settings.getPasswordEncryptKey() != null) {
                     logon.append(NEW_ENCRYPTED_PASSWORD).append(encrypt(x.getNewPassword(), settings.getPasswordEncryptKey(), settings.getPasswordEncryptAlgorithm(), settings.getPasswordKeyEncryptAlgorithm()));
                 } else {
@@ -1172,7 +1175,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         setChecksumAndBodyLength(logon);
         LOGGER.info("Send logon - {}", logon);
-        channel.send(Unpooled.wrappedBuffer(logon.toString().getBytes(StandardCharsets.UTF_8)), new HashMap<String, String>(), null, SendMode.HANDLE_AND_MANGLE)
+        channel.send(Unpooled.wrappedBuffer(logon.toString().getBytes(StandardCharsets.UTF_8)), props, null, SendMode.HANDLE_AND_MANGLE)
             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
     }
 
