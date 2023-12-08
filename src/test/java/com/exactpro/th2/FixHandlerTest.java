@@ -228,6 +228,7 @@ class FixHandlerTest {
         var logon = "8=FIXT.1.1\u00019=105\u000135=A\u000134=2\u000149=client\u000156=server\u000150=trader\u000152=2014-12-22T10:15:30Z\u000198=0\u0001108=30\u00011137=9\u0001553=username\u0001554=pass\u000110=204\u0001";
         assertEquals(channel.getQueue().size(), 1);
         assertEquals(logon, new String(channel.getQueue().get(0).array()));
+        fixHandler.onClose(channel);
         channel.clearQueue();
         fixHandler.onOpen(channel);
         assertEquals(channel.getQueue().size(), 1);
