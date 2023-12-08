@@ -201,6 +201,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     private static final ObjectMapper mapper = new ObjectMapper();
 
     private final Random random = new Random();
+    private final AtomicBoolean activeLogonExchange = new AtomicBoolean(false);
     private final AtomicInteger msgSeqNum = new AtomicInteger(0);
     private final AtomicInteger serverMsgSeqNum = new AtomicInteger(0);
     private final AtomicInteger testReqID = new AtomicInteger(0);
@@ -353,6 +354,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             try {
                 disconnect(!isUngracefulDisconnect);
                 enabled.set(false);
+                activeLogonExchange.set(false);
                 sendingTimeoutHandler.getWithTimeout(channel.open());
             } catch (Exception e) {
                 context.send(CommonUtil.toErrorEvent(String.format("Error while ending session %s by user logout. Is graceful disconnect: %b", channel.getSessionAlias(), !isUngracefulDisconnect), e));
@@ -652,6 +654,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             }
 
             enabled.set(true);
+            activeLogonExchange.set(false);
 
             if (!connStarted.get()){
                 connStarted.set(true);
@@ -662,6 +665,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             resetTestRequestTask();
         } else {
             enabled.set(false);
+            activeLogonExchange.set(false);
             reconnectRequestTimer = executorService.schedule(this::sendLogon, settings.getReconnectDelay(), TimeUnit.SECONDS);
         }
         return null;
@@ -691,7 +695,11 @@ public class FixHandler implements AutoCloseable, IHandler {
                     }
                     String wrongClientNextExpectedSequence = StringUtils.substringBetween(text.getValue(), "MSN to be sent is ", " but received");
                     if(wrongClientNextExpectedSequence != null && settings.getResetStateOnServerReset()) {
-                        serverMsgSeqNum.set(Integer.parseInt(wrongClientNextExpectedSequence));
+                        int wrong = Integer.parseInt(wrongClientNextExpectedSequence);
+                        serverMsgSeqNum.set(wrong);
+                        if(wrong == 1) {
+                            msgSeqNum.set(1);
+                        }
                     }
                 }
             }
@@ -704,6 +712,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         cancelFuture(heartbeatTimer);
         cancelFuture(testRequestTimer);
         enabled.set(false);
+        activeLogonExchange.set(false);
         context.send(CommonUtil.toEvent("logout for sender - " + settings.getSenderCompID()), null);//make more useful
         try {
             disconnect(false);
@@ -1128,6 +1137,11 @@ public class FixHandler implements AutoCloseable, IHandler {
             return;
         }
 
+        if(activeLogonExchange.get()) {
+            LOGGER.info("Active logon exchange already going on.");
+            return;
+        }
+
         if(enabled.get()) {
             String message = String.format("Logon attempt while already logged in: %s - %s", channel.getSessionGroup(), channel.getSessionAlias());
             LOGGER.warn(message);
@@ -1172,6 +1186,8 @@ public class FixHandler implements AutoCloseable, IHandler {
 
             return Unit.INSTANCE;
         });
+
+        activeLogonExchange.set(true);
 
         setChecksumAndBodyLength(logon);
         LOGGER.info("Send logon - {}", logon);
@@ -1230,6 +1246,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     @Override
     public void onClose(@NotNull IChannel channel) {
         enabled.set(false);
+        activeLogonExchange.set(false);
         if(passwordManager != null) passwordManager.poll();
         strategy.getOnCloseHandler().close();
         cancelFuture(heartbeatTimer);
@@ -2249,6 +2266,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             }
         }
         enabled.set(false);
+        activeLogonExchange.set(false);
         resetHeartbeatTask();
         resetTestRequestTask();
         Thread.sleep(settings.getDisconnectCleanUpTimeoutMs());
