@@ -714,12 +714,6 @@ public class FixHandler implements AutoCloseable, IHandler {
         enabled.set(false);
         activeLogonExchange.set(false);
         context.send(CommonUtil.toEvent("logout for sender - " + settings.getSenderCompID()), null);//make more useful
-        try {
-            disconnect(false);
-            channel.open();
-        } catch (Exception e) {
-            LOGGER.error("Error while disconnecting in handle logout.");
-        }
         return metadata;
     }
 
