@@ -1145,6 +1145,8 @@ public class FixHandler implements AutoCloseable, IHandler {
             return;
         }
 
+        activeLogonExchange.set(true);
+
         if(enabled.get()) {
             String message = String.format("Logon attempt while already logged in: %s - %s", channel.getSessionGroup(), channel.getSessionAlias());
             LOGGER.warn(message);
@@ -1189,8 +1191,6 @@ public class FixHandler implements AutoCloseable, IHandler {
 
             return Unit.INSTANCE;
         });
-
-        activeLogonExchange.set(true);
 
         setChecksumAndBodyLength(logon);
         LOGGER.info("Send logon - {}", logon);
