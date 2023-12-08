@@ -712,9 +712,6 @@ public class FixHandler implements AutoCloseable, IHandler {
         cancelFuture(heartbeatTimer);
         cancelFuture(testRequestTimer);
         enabled.set(false);
-        if(activeLogonExchange.get()) {
-            msgSeqNum.incrementAndGet();
-        }
         activeLogonExchange.set(false);
         context.send(CommonUtil.toEvent("logout for sender - " + settings.getSenderCompID()), null);//make more useful
         try {
