@@ -194,6 +194,8 @@ public class FixHandler implements AutoCloseable, IHandler {
     private static final String STRING_MSG_TYPE = "MsgType";
     private static final String REJECT_REASON = "Reject reason";
     private static final String UNGRACEFUL_DISCONNECT_PROPERTY = "ungracefulDisconnect";
+    private static final String ENABLE_STRATEGIES_PROPERTY = "enableStrategy";
+    private static final String DISABLE_STRATEGIES_PROPERTY = "disableStrategy";
     private static final String STUBBING_VALUE = "XXX";
     private static final String SPLIT_SEND_TIMESTAMPS_PROPERTY = "BufferSlicesSendingTimes";
     private static final String STRATEGY_EVENT_TYPE = "StrategyState";
@@ -209,6 +211,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     private final AtomicBoolean sessionActive = new AtomicBoolean(true);
     private final AtomicBoolean enabled = new AtomicBoolean(false);
     private final AtomicBoolean connStarted = new AtomicBoolean(false);
+    private final AtomicBoolean strategiesEnabled = new AtomicBoolean(true);
     private final ScheduledExecutorService executorService = Executors.newScheduledThreadPool(1);
     private final IHandlerContext context;
     private final InetSocketAddress address;
@@ -345,6 +348,18 @@ public class FixHandler implements AutoCloseable, IHandler {
             String message = String.format("%s - %s: Logout ignored as channel is already closed.", channel.getSessionGroup(), channel.getSessionAlias());
             LOGGER.warn(message);
             context.send(CommonUtil.toEvent(message));
+            return CompletableFuture.completedFuture(null);
+        }
+
+        if(properties.containsKey(ENABLE_STRATEGIES_PROPERTY)) {
+            strategiesEnabled.set(true);
+            context.send(CommonUtil.toEvent("Enabled strategies using message property."));
+            return CompletableFuture.completedFuture(null);
+        }
+
+        if(properties.containsKey(DISABLE_STRATEGIES_PROPERTY)) {
+            strategiesEnabled.set(false);
+            context.send(CommonUtil.toEvent("Disabled strategies using message property."));
             return CompletableFuture.completedFuture(null);
         }
 
@@ -1241,7 +1256,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     public void onClose(@NotNull IChannel channel) {
         enabled.set(false);
         activeLogonExchange.set(false);
-        if(passwordManager != null) passwordManager.poll();
+        if(passwordManager != null && !strategiesEnabled.get()) passwordManager.poll();
         strategy.getOnCloseHandler().close();
         cancelFuture(heartbeatTimer);
         cancelFuture(testRequestTimer);
@@ -2038,6 +2053,12 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     // <editor-fold desc="strategies scheduling and cleanup">
     private void applyNextStrategy() {
+        if(!strategiesEnabled.get()) {
+            LOGGER.info("Strategies disabled. New strategy will not be applied. Trying again in 30 seconds.");
+            strategy.resetStrategyAndState(RuleConfiguration.Companion.defaultConfiguration());
+            executorService.schedule(this::applyNextStrategy, Duration.of(30, ChronoUnit.SECONDS).toSeconds(), TimeUnit.SECONDS);
+            return;
+        }
         LOGGER.info("Cleaning up current strategy {}", strategy.getState().getType());
         LOGGER.info("Started waiting for recovery finish.");
         while (activeRecovery.get()) {
