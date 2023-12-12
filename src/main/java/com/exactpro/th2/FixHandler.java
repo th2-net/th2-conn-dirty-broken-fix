@@ -1593,6 +1593,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         String msgType = msgTypeField.getValue();
 
+        strategy.getState().addMissedMessageToCacheIfCondition(msgSeqNum.get(), message.copy(), x -> true);
         if(msgType.equals(MSG_TYPE_HEARTBEAT)) {
             FixField testReqId = findField(message, TEST_REQ_ID_TAG);
             if(testReqId != null && testReqId.getValue() != null && !skipTestRequestReplies) {
@@ -1601,7 +1602,6 @@ public class FixHandler implements AutoCloseable, IHandler {
             message.clear();
             return null;
         } else {
-            strategy.getState().addMissedMessageToCacheIfCondition(msgSeqNum.get(), message.copy(), x -> true);
             message.clear();
         }
 
