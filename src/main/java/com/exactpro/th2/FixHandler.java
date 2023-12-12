@@ -2053,12 +2053,6 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     // <editor-fold desc="strategies scheduling and cleanup">
     private void applyNextStrategy() {
-        if(!strategiesEnabled.get()) {
-            LOGGER.info("Strategies disabled. New strategy will not be applied. Trying again in 30 seconds.");
-            strategy.resetStrategyAndState(RuleConfiguration.Companion.defaultConfiguration());
-            executorService.schedule(this::applyNextStrategy, Duration.of(30, ChronoUnit.SECONDS).toSeconds(), TimeUnit.SECONDS);
-            return;
-        }
         LOGGER.info("Cleaning up current strategy {}", strategy.getState().getType());
         LOGGER.info("Started waiting for recovery finish.");
         while (activeRecovery.get()) {
@@ -2081,6 +2075,13 @@ public class FixHandler implements AutoCloseable, IHandler {
         if(!sessionActive.get()) {
             strategy.resetStrategyAndState(RuleConfiguration.Companion.defaultConfiguration());
             executorService.schedule(this::applyNextStrategy, Duration.of(10, ChronoUnit.MINUTES).toMinutes(), TimeUnit.MINUTES);
+            return;
+        }
+
+        if(!strategiesEnabled.get()) {
+            LOGGER.info("Strategies disabled. New strategy will not be applied. Trying again in 30 seconds.");
+            strategy.resetStrategyAndState(RuleConfiguration.Companion.defaultConfiguration());
+            executorService.schedule(this::applyNextStrategy, Duration.of(30, ChronoUnit.SECONDS).toSeconds(), TimeUnit.SECONDS);
             return;
         }
 
