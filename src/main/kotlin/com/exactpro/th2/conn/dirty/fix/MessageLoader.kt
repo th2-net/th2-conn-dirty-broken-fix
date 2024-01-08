@@ -156,7 +156,7 @@ class MessageLoader(
                     val buf = Unpooled.copiedBuffer(message.bodyRaw.toByteArray())
                     val sequence = buf.findField(MSG_SEQ_NUM_TAG)?.value?.toInt() ?: continue
 
-                    if(sequence == 1 && lastProcessedSequence > 1 || sequence == 2 && lastProcessedSequence > 2) {
+                    if(sequence > 1 && lastProcessedSequence == 1 || sequence > 2 && lastProcessedSequence == 2) {
                         skipRetransmission = true
                         return@withCancellation
                     }
