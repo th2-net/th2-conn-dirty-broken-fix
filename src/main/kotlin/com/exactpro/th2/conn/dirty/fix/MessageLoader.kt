@@ -127,6 +127,7 @@ class MessageLoader(
         processMessage: (ByteBuf) -> Boolean
     ) {
         var timestamp: Timestamp? = null
+        var skipRetransmission = false
         ProviderCall.withCancellation {
             val backwardIterator = dataProvider.searchMessageGroups(
                 createSearchGroupRequest(
@@ -142,7 +143,7 @@ class MessageLoader(
             var messagesToSkip = firstValidMessage.payloadSequence - fromSequence
 
             timestamp = firstValidMessage.timestamp
-
+            var lastProcessedSequence = -1
             while (backwardIterator.hasNext() && messagesToSkip > 0) {
                 val message = backwardIterator.next().message
                 if(compare(message.messageId.timestamp, previousDaySessionStart) <= 0) {
@@ -154,6 +155,13 @@ class MessageLoader(
 
                     val buf = Unpooled.copiedBuffer(message.bodyRaw.toByteArray())
                     val sequence = buf.findField(MSG_SEQ_NUM_TAG)?.value?.toInt() ?: continue
+
+                    if(sequence == 1 && lastProcessedSequence > 1 || sequence == 2 && lastProcessedSequence > 2) {
+                        skipRetransmission = true
+                        return@withCancellation
+                    }
+
+                    lastProcessedSequence = sequence
 
                     if(checkPossDup(buf)) {
                         val validMessage = firstValidMessageDetails(backwardIterator) ?: break
@@ -176,6 +184,8 @@ class MessageLoader(
                 }
             }
         }
+
+        if(skipRetransmission) return
 
         val startSearchTimestamp = timestamp ?: return
 
