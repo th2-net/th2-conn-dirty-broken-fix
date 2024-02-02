@@ -1794,7 +1794,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         additionalDetails.put("anotherSocketSessionDisconnectedAfterLogon", sessionDisconnected);
         additionalDetails.put("isMainSessionDisconnected", isMainSessionDisconnected.get());
         additionalDetails.put("type", "logon_from_another_socket");
-        ruleEndEvent(configuration.getRuleType(), start, Collections.emptyList(), additionalDetails);
+        ruleEndEvent(configuration.getRuleType(), start, strategy.getState().getMessageIDs(), additionalDetails);
     }
 
     private void setupDisconnectStrategy(RuleConfiguration configuration) {
