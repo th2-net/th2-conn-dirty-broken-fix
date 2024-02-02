@@ -84,6 +84,7 @@ data class RuleConfiguration(
             RuleType.FAKE_RETRANSMISSION -> {}
             RuleType.LOGON_AFTER_LOGON -> {}
             RuleType.POSS_DUP_SESSION_MESSAGES -> {}
+            RuleType.LOGON_FROM_ANOTHER_CONNECTION -> {}
         }
     }
 
