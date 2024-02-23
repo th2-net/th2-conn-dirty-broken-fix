@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Exactpro (Exactpro Systems Limited)
+ * Copyright 2023-2024 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,18 @@
 package com.exactpro.th2.conn.dirty.fix.brokenconn.strategy
 
 import com.exactpro.th2.common.grpc.MessageID
+import com.exactpro.th2.common.message.toJson
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RuleConfiguration
 import com.exactpro.th2.netty.bytebuf.util.asExpandable
-import com.google.protobuf.TextFormat.shortDebugString
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.CompositeByteBuf
 import io.netty.buffer.Unpooled
+import mu.KotlinLogging
 import java.time.Instant
-import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
-import mu.KotlinLogging
 
 class StrategyState(val config: RuleConfiguration? = null,
                     private val missedMessagesCache: ConcurrentHashMap<Long, ByteBuf> = ConcurrentHashMap()
@@ -36,7 +35,7 @@ class StrategyState(val config: RuleConfiguration? = null,
     val startTime: Instant = Instant.now()
     val type = config?.ruleType ?: RuleType.DEFAULT
     private val batchMessageCache: CompositeByteBuf = Unpooled.compositeBuffer()
-    private val messageIDs: MutableList<MessageID> = ArrayList<MessageID>()
+    private val messageIDs: MutableList<MessageID> = ArrayList()
 
     private val lock = ReentrantReadWriteLock()
     private var batchMessageCacheSize = 0
@@ -102,9 +101,24 @@ class StrategyState(val config: RuleConfiguration? = null,
         }
     }
 
+    @JvmOverloads
+    fun enrichProperties(properties: MutableMap<String, String>? = null): MutableMap<String, String> {
+        if (type != RuleType.DEFAULT) {
+            return properties?.apply {
+                val previous = put(STRATEGY_PROPERTY, type.name)
+                when (previous) {
+                    null -> { /* do noting */ }
+                    type.name -> K_LOGGER.debug { "Strategy name $type is already set" }
+                    else -> K_LOGGER.warn { "Strategy name $properties has been replaced to $type" }
+                }
+            } ?: hashMapOf(STRATEGY_PROPERTY to type.name)
+        }
+        return hashMapOf()
+    }
+
     fun addMessageID(messageID: MessageID?) = lock.write {
         if (messageIDs.size + 1 >= TOO_BIG_MESSAGE_IDS_LIST) {
-            K_LOGGER.warn { "Strategy ${type} messageIDs list is too big. Skiping messageID: ${shortDebugString(messageID)}" }
+            K_LOGGER.warn { "Strategy $type messageIDs list is too big. Skipping messageID: ${messageID?.toJson()}" }
         }
         messageID?.let { messageIDs.add(it) }
     }
@@ -114,7 +128,8 @@ class StrategyState(val config: RuleConfiguration? = null,
     }
 
     companion object {
-        private const val TOO_BIG_MESSAGE_IDS_LIST = 300;
+        private const val STRATEGY_PROPERTY: String = "th2.broken.strategy"
+        private const val TOO_BIG_MESSAGE_IDS_LIST = 300
         private val K_LOGGER = KotlinLogging.logger {  }
 
         fun StrategyState.resetAndCopyMissedMessages(ruleConfiguration: RuleConfiguration? = null): StrategyState = StrategyState(ruleConfiguration, this.missedMessagesCache)

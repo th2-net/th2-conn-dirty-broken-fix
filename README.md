@@ -1,4 +1,4 @@
-# th2-conn-dirty-fix (1.2.0)
+# th2-conn-dirty-fix (1.2.1)
 
 This microservice allows sending and receiving messages via FIX protocol
 
@@ -334,7 +334,13 @@ spec:
         cpu: 20m
 ```
 
-# Changelog
+# Changelog (th2-conn-dirty-broken-fix)
+
+## 1.2.1
+
+* Property `th2.broken.strategy` is added to metadata to each message when a strategy is active
+
+# Changelog (th2-conn-dirty-fix)
 
 ## 1.5.1
 
@@ -404,18 +410,9 @@ spec:
 ## 1.0.0
 * Bump `conn-dirty-tcp-core` to `3.0.0` for books and pages support
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
 ## 0.3.0
 * Ability to recover messages from cradle.
 
->>>>>>> original/dev-version-1
-=======
-## 0.3.0
-* Ability to recover messages from cradle.
-
->>>>>>> original/dev-version-1
 ## 0.2.0
 * optional state reset on silent server reset.
 
