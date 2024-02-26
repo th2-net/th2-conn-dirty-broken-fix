@@ -40,51 +40,55 @@ data class RuleConfiguration(
     val splitSendConfiguration: SplitSendConfiguration? = null,
     val changeSequenceConfiguration: ChangeSequenceConfiguration? = null,
     val resendRequestConfiguration: ResendRequestConfiguration? = null,
-    val sendSequenceResetConfiguration: SendSequenceResetConfiguration? = null
+    val sendSequenceResetConfiguration: SendSequenceResetConfiguration? = null,
+    val setRateLimitConfiguration: SetRateLimitConfiguration? = null,
 ) {
     init {
         when(ruleType) {
             RuleType.DISCONNECT_WITH_RECONNECT -> {}
             RuleType.IGNORE_INCOMING_MESSAGES -> {
-                require(missIncomingMessagesConfiguration != null) { "`blockIncomingMessagesConfiguration` is required for $ruleType" }
+                requireNotNull(missIncomingMessagesConfiguration) { "`blockIncomingMessagesConfiguration` is required for $ruleType" }
             }
             RuleType.SEND_SEQUENCE_RESET -> {}
             RuleType.TRANSFORM_LOGON -> {
-                require(transformMessageConfiguration != null) { "`transformMessageConfiguration` is required for $ruleType"}
+                requireNotNull(transformMessageConfiguration) { "`transformMessageConfiguration` is required for $ruleType"}
             }
             RuleType.TRANSFORM_MESSAGE_STRATEGY -> {
-                require(transformMessageConfiguration != null) { "`transformMessageConfiguration` is required for $ruleType"}
+                requireNotNull(transformMessageConfiguration) { "`transformMessageConfiguration` is required for $ruleType"}
             }
             RuleType.INVALID_CHECKSUM -> {
-                require(transformMessageConfiguration != null) { "`transformMessageConfiguration` is required for $ruleType" }
+                requireNotNull(transformMessageConfiguration) { "`transformMessageConfiguration` is required for $ruleType" }
             }
             RuleType.BI_DIRECTIONAL_RESEND_REQUEST -> {
-                require(missIncomingMessagesConfiguration != null) { "`blockIncomingMessagesConfiguration` is required for $ruleType" }
-                require(missOutgoingMessagesConfiguration != null) { "`blockOutgoingMessagesConfiguration` is required for $ruleType" }
+                requireNotNull(missIncomingMessagesConfiguration) { "`blockIncomingMessagesConfiguration` is required for $ruleType" }
+                requireNotNull(missOutgoingMessagesConfiguration) { "`blockOutgoingMessagesConfiguration` is required for $ruleType" }
             }
             RuleType.CREATE_OUTGOING_GAP -> {
-                require(missOutgoingMessagesConfiguration != null) { "`blockOutgoingMessagesConfiguration` is required for $ruleType" }
+                requireNotNull(missOutgoingMessagesConfiguration) { "`blockOutgoingMessagesConfiguration` is required for $ruleType" }
             }
             RuleType.CLIENT_OUTAGE -> {}
             RuleType.PARTIAL_CLIENT_OUTAGE -> {}
             RuleType.RESEND_REQUEST -> {
-                require(resendRequestConfiguration != null) { "`resendRequestConfiguration` is required for $ruleType" }
+                requireNotNull(resendRequestConfiguration) { "`resendRequestConfiguration` is required for $ruleType" }
             }
             RuleType.SLOW_CONSUMER -> {}
             RuleType.SEQUENCE_RESET -> {
-                require(changeSequenceConfiguration != null) { "`changeSequenceConfiguration` is required for $ruleType" }
+                requireNotNull(changeSequenceConfiguration) { "`changeSequenceConfiguration` is required for $ruleType" }
             }
             RuleType.BATCH_SEND -> {
-                require(batchSendConfiguration != null) { "`batchSendConfiguration` is required for $ruleType" }
+                requireNotNull(batchSendConfiguration) { "`batchSendConfiguration` is required for $ruleType" }
             }
             RuleType.SPLIT_SEND -> {
-                require(splitSendConfiguration != null) { "`splitSendConfiguration` is required for $ruleType" }
+                requireNotNull(splitSendConfiguration) { "`splitSendConfiguration` is required for $ruleType" }
             }
             RuleType.DEFAULT -> {}
             RuleType.FAKE_RETRANSMISSION -> {}
             RuleType.LOGON_AFTER_LOGON -> {}
             RuleType.POSS_DUP_SESSION_MESSAGES -> {}
             RuleType.LOGON_FROM_ANOTHER_CONNECTION -> {}
+            RuleType.SET_RATE_LIMIT -> {
+                requireNotNull(setRateLimitConfiguration) { "`setRateLimitConfiguration` is required for $ruleType" }
+            }
         }
     }
 

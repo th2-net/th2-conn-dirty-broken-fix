@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Exactpro (Exactpro Systems Limited)
+ * Copyright 2024 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,10 @@
  */
 package com.exactpro.th2.conn.dirty.fix.brokenconn.configuration
 
-data class RecoveryConfig(
-    val outOfOrder: Boolean = false,
-    val sequenceResetForAdmin: Boolean = true
-)
+data class SetRateLimitConfiguration(val rateLimit: Int) {
+    init {
+        require(rateLimit > 0) {
+            "Rate limit '$rateLimit' must be positive"
+        }
+    }
+}
