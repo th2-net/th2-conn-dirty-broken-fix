@@ -1,4 +1,4 @@
-# th2-conn-dirty-fix (1.2.1)
+# th2-conn-dirty-fix (1.3.0)
 
 This microservice allows sending and receiving messages via FIX protocol
 
@@ -336,9 +336,16 @@ spec:
 
 # Changelog (th2-conn-dirty-broken-fix)
 
+## 1.3.0
+
+* Added `SET_RATE_LIMIT` rule.
+* Updated common: `5.8.0-dev`
+* Updated common-utils: `2.2.2-dev`
+
 ## 1.2.1
 
 * Property `th2.broken.strategy` is added to metadata to each message when a strategy is active
+* Updated conn-dirty-tcp-core: `3.4.0-dev`
 
 # Changelog (th2-conn-dirty-fix)
 
