@@ -113,7 +113,7 @@ class StrategyState(val config: RuleConfiguration? = null,
                 }
             } ?: hashMapOf(STRATEGY_PROPERTY to type.name)
         }
-        return hashMapOf()
+        return properties ?: hashMapOf()
     }
 
     fun addMessageID(messageID: MessageID?) = lock.write {
