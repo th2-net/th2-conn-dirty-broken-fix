@@ -1837,6 +1837,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             disconnect(configuration.getGracefulDisconnect());
             context.destroyChannel(channel);
             channel = context.createChannel(address, settings.getSecurity(), Map.of(), true, settings.getReconnectDelay() * 1000L, configuration.getSetRateLimitConfiguration().getRateLimit());
+            openChannelAndWaitForLogon();
         } catch (Exception e) {
             String message = String.format("Error while setting up %s", strategy.getType());
             LOGGER.error(message, e);
