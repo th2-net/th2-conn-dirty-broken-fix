@@ -1358,7 +1358,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         String slicesTimestamps = sendingTimes.stream().map(formatter::format).collect(Collectors.joining(","));
         metadata.put(SPLIT_SEND_TIMESTAMPS_PROPERTY, slicesTimestamps);
         LOGGER.info("Sent message by slices: {}", slicesTimestamps);
-        CompletableFuture<MessageID> messageID = channel.send(asExpandable(message), metadata, eventID, SendMode.DIRECT_MSTORE);
+        CompletableFuture<MessageID> messageID = channel.send(asExpandable(message), metadata, eventID, SendMode.DIRECT_MQ);
         messageID.thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
         return messageID;
     }
@@ -1739,7 +1739,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         props.put("sentUsingAnotherSocket", "True");
         ByteBuf logonBuf = Unpooled.wrappedBuffer(logon.toString().getBytes(StandardCharsets.UTF_8));
 
-        channel.send(logonBuf, props, null, SendMode.DIRECT_MSTORE)
+        channel.send(logonBuf, props, null, SendMode.DIRECT_MQ)
             .thenAcceptAsync(x -> {
                 strategy.getState().addMessageID(x);
             }, executorService);
