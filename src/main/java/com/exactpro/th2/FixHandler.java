@@ -496,7 +496,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     @NotNull
     @Override
-    public Map<String, String> onIncoming(@NotNull IChannel channel, @NotNull ByteBuf message, MessageID messageId) {
+    public Map<String, String> onIncoming(@NotNull IChannel channel, @NotNull ByteBuf message, @NotNull MessageID messageId) {
         Map<String, String> metadata = new HashMap<>();
 
         StrategyState state = strategy.getState();
@@ -1390,7 +1390,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         CompletableFuture<MessageID> messageID = channel.send(asExpandable(message),
                 strategy.getState().enrichProperties(metadata),
                 eventID,
-                SendMode.DIRECT_MSTORE);
+                SendMode.DIRECT_MQ);
         messageID.thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
         return messageID;
     }
@@ -1771,7 +1771,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         props.put("sentUsingAnotherSocket", "True");
         ByteBuf logonBuf = Unpooled.wrappedBuffer(logon.toString().getBytes(StandardCharsets.UTF_8));
 
-        channel.send(logonBuf, strategy.getState().enrichProperties(props), null, SendMode.DIRECT_MSTORE)
+        channel.send(logonBuf, strategy.getState().enrichProperties(props), null, SendMode.DIRECT_MQ)
             .thenAcceptAsync(x -> {
                 strategy.getState().addMessageID(x);
             }, executorService);
@@ -1829,9 +1829,40 @@ public class FixHandler implements AutoCloseable, IHandler {
         ruleEndEvent(configuration.getRuleType(), start, strategy.getState().getMessageIDs(), additionalDetails);
     }
 
+    private void setupSetRateLimit(RuleConfiguration configuration) {
+        strategy.resetStrategyAndState(configuration);
+        strategy.setCleanupHandler(this::cleanupSetRateLimit);
+        ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
+        try {
+            disconnect(configuration.getGracefulDisconnect());
+            context.destroyChannel(channel);
+            channel = context.createChannel(address, settings.getSecurity(), Map.of(), true, settings.getReconnectDelay() * 1000L, configuration.getSetRateLimitConfiguration().getRateLimit());
+            openChannelAndWaitForLogon();
+        } catch (Exception e) {
+            String message = String.format("Error while setting up %s", strategy.getType());
+            LOGGER.error(message, e);
+            context.send(CommonUtil.toErrorEvent(message, e), strategyRootEvent);
+        }
+    }
+
+    private void cleanupSetRateLimit() {
+        var state = strategy.getState();
+        try {
+            disconnect(strategy.getGracefulDisconnect());
+            context.destroyChannel(channel);
+            channel = context.createChannel(address, settings.getSecurity(), Map.of(), true, settings.getReconnectDelay() * 1000L, settings.getRateLimit());
+            openChannelAndWaitForLogon();
+        } catch (Exception e) {
+            String message = String.format("Error while cleaning up %s", strategy.getType());
+            LOGGER.error(message, e);
+            context.send(CommonUtil.toErrorEvent(message, e), strategyRootEvent);
+        }
+        ruleEndEvent(strategy.getType(), state.getStartTime(), strategy.getState().getMessageIDs());
+    }
+
     private void setupDisconnectStrategy(RuleConfiguration configuration) {
         strategy.resetStrategyAndState(configuration);
-        strategy.updateSendStrategy(x -> {x.setSendPreprocessor(this::blockSend); return Unit.INSTANCE; });
+        strategy.updateSendStrategy(x -> { x.setSendPreprocessor(this::blockSend); return Unit.INSTANCE; });
         strategy.setCleanupHandler(this::cleanupDisconnectStrategy);
         ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
         try {
@@ -2253,6 +2284,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             case LOGON_AFTER_LOGON: return this::runLogonAfterLogonStrategy;
             case POSS_DUP_SESSION_MESSAGES: return this::runPossDupSessionMessages;
             case LOGON_FROM_ANOTHER_CONNECTION: return this::runLogonFromAnotherConnection;
+            case SET_RATE_LIMIT: return this::setupSetRateLimit;
             case DEFAULT: return configuration -> strategy.cleanupStrategy();
             default: throw new IllegalStateException(String.format("Unknown strategy type %s.", config.getRuleType()));
         }

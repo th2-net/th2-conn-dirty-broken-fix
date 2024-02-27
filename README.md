@@ -1,4 +1,4 @@
-# th2-conn-dirty-fix (1.2.1)
+# th2-conn-dirty-fix (1.3.0)
 
 This microservice allows sending and receiving messages via FIX protocol
 
@@ -334,11 +334,62 @@ spec:
         cpu: 20m
 ```
 
+# th2-conn-dirty-broken-fix (1.3.0)
+
+## Strategies (Rules)
+
+### Set Rate Limit `SET_RATE_LIMIT`
+
+This strategy ability to temporary change `RateLimit` value for the session.
+
+#### Workflow
+1. Stops current session according to `gracefulDisconnect` option
+2. Closes and destroys the current channel. This operation is required because `RateLimit` is set on channel level.
+3. Creates new channel with rate limit is equal the `setRateLimitConfiguration.rateLimit` option in the rule configuration.
+4. Opens the new channel and waits for Logon
+5. Does nothing special operations during the strategy activity
+6. Stops the new channel and recreates channel with general rate limit
+
+#### Snipped configuration 
+```yaml
+apiVersion: th2.exactpro.com/v1
+kind: Th2Box
+metadata:
+  name: fix-client
+spec:
+  image-name: ghcr.io/th2-net/th2-conn-dirty-broken-fix
+  image-version: 1.3.0
+  type: th2-conn
+  custom-config:
+    maxBatchSize: 1000
+    maxFlushTime: 1000
+    batchByGroup: true
+    publishSentEvents: true
+    publishConnectEvents: true
+    sessions:
+      - sessionAlias: client
+        handler:
+          rateLimit: 2147483647
+          brokenConnConfiguration:
+            rules:
+              - ruleType: SET_RATE_LIMIT
+                cleanUpDuration: 20S
+                setRateLimitConfiguration:
+                  rateLimit: 10
+```
+
 # Changelog (th2-conn-dirty-broken-fix)
+
+## 1.3.0
+
+* Added `SET_RATE_LIMIT` rule.
+* Updated common: `5.8.0-dev`
+* Updated common-utils: `2.2.2-dev`
 
 ## 1.2.1
 
 * Property `th2.broken.strategy` is added to metadata to each message when a strategy is active
+* Updated conn-dirty-tcp-core: `3.4.0-dev`
 
 # Changelog (th2-conn-dirty-fix)
 

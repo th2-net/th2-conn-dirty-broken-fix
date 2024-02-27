@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Exactpro (Exactpro Systems Limited)
+ * Copyright 2023-2024 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,5 +35,6 @@ enum class RuleType {
     INVALID_CHECKSUM,
     POSS_DUP_SESSION_MESSAGES,
     LOGON_FROM_ANOTHER_CONNECTION,
+    SET_RATE_LIMIT,
     DEFAULT
 }
