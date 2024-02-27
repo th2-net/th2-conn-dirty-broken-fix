@@ -27,17 +27,13 @@ import javax.crypto.Cipher
 enum class KeyFileType {
     PEM_PUBLIC_KEY {
         override fun encrypt(
-            keyFilePath: Path,
+            key: String,
             value: String,
             keyEncryptAlgorithm: String,
             encryptAlgorithm: String,
             operationMode: OperationMode
         ): String {
-            check(Files.exists(keyFilePath)) {
-                "Encryption key file path '$keyFilePath' doesn't exist"
-            }
-
-            val privateKeyPEM = Files.readString(keyFilePath, Charset.defaultCharset())
+            val privateKeyPEM = key
                 .replace(BEGIN_PUBLIC_KEY, "")
                 .replace(System.lineSeparator(), "")
                 .replace(END_PUBLIC_KEY, "")
@@ -53,7 +49,7 @@ enum class KeyFileType {
     };
 
     abstract fun encrypt(
-        keyFilePath: Path,
+        key: String,
         value: String,
         keyEncryptAlgorithm: String,
         encryptAlgorithm: String,
