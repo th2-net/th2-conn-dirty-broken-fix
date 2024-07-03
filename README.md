@@ -1,4 +1,4 @@
-# th2-conn-dirty-fix (1.2.0)
+# th2-conn-dirty-fix (1.2.1)
 
 This microservice allows sending and receiving messages via FIX protocol
 
@@ -334,7 +334,9 @@ spec:
         cpu: 20m
 ```
 
-# Changelog
+## 1.2.1
+
+* Property `th2.broken.strategy` is added to metadata to each message when a strategy is active
 
 ## 1.2.0
 * Added support for th2 transport protocol
