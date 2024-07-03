@@ -1,5 +1,5 @@
 /*
- * Copyright 2022-2022 Exactpro (Exactpro Systems Limited)
+ * Copyright 2022-2023 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.exactpro.th2.conn.dirty.fix
 
 import com.exactpro.th2.common.event.Event
+import com.exactpro.th2.common.event.Event.Status.FAILED
 import com.exactpro.th2.common.event.Event.Status.PASSED
 import com.exactpro.th2.common.event.EventUtils.createMessageBean
 import com.exactpro.th2.common.event.bean.IRow
@@ -26,7 +27,8 @@ import com.exactpro.th2.conn.dirty.tcp.core.api.IMangler
 import com.exactpro.th2.conn.dirty.tcp.core.api.IManglerContext
 import com.exactpro.th2.conn.dirty.tcp.core.api.IManglerFactory
 import com.exactpro.th2.conn.dirty.tcp.core.api.IManglerSettings
-import com.fasterxml.jackson.dataformat.yaml.YAMLMapper
+import com.fasterxml.jackson.databind.json.JsonMapper
+import com.fasterxml.jackson.module.kotlin.KotlinFeature
 import com.fasterxml.jackson.module.kotlin.KotlinModule
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.google.auto.service.AutoService
@@ -36,12 +38,22 @@ import mu.KotlinLogging
 
 private val LOGGER = KotlinLogging.logger {}
 
-private val MAPPER = YAMLMapper.builder()
-    .addModule(KotlinModule(nullIsSameAsDefault = true))
+private val MAPPER = JsonMapper.builder()
+    .addModule(
+        KotlinModule.Builder()
+            .withReflectionCacheSize(512)
+            .configure(KotlinFeature.NullToEmptyCollection, false)
+            .configure(KotlinFeature.NullToEmptyMap, false)
+            .configure(KotlinFeature.NullIsSameAsDefault, enabled = true)
+            .configure(KotlinFeature.SingletonSupport, false)
+            .configure(KotlinFeature.StrictNullChecks, false)
+            .build()
+    )
     .build()
 
 private const val RULE_NAME_PROPERTY = "rule-name"
 private const val RULE_ACTIONS_PROPERTY = "rule-actions"
+private const val MANGLE_EVENT_TYPE = "Mangle"
 
 class FixProtocolMangler(context: IManglerContext) : IMangler {
     private val rules = (context.settings as FixProtocolManglerSettings).rules
@@ -49,22 +61,47 @@ class FixProtocolMangler(context: IManglerContext) : IMangler {
     override fun onOutgoing(channel: IChannel, message: ByteBuf, metadata: MutableMap<String, String>): Event? {
         LOGGER.trace { "Processing message: ${message.toString(Charsets.UTF_8)}" }
 
-        val (rule, unconditionally) = getRule(message, metadata) ?: return null
-        val (name, results, message) = MessageTransformer.transform(message, rule, unconditionally) ?: return null
+        val (rule, unconditionally) = try {
+            getRule(message, metadata) ?: return null
+        } catch (e: Exception) {
+            return Event.start().apply {
+                name("Message wasn't mangled. Configuration error.")
+                type(MANGLE_EVENT_TYPE)
+                status(FAILED)
+                bodyData(createMessageBean("Message metadata: $metadata"))
+                exception(e, true)
+            }
+        }
+
+        val (name, results, byteBuf) = MessageTransformer.transform(message, rule, unconditionally) ?: return null
 
         return Event.start().apply {
-            name("Message mangled")
-            type("Mangle")
-            status(PASSED)
+            type(MANGLE_EVENT_TYPE)
+            if(results.any { it.statusDesc.status == ActionStatus.FAIL }) {
+                name("Message was partially mangled.")
+                status(FAILED)
+
+                if (metadata[RULE_ACTIONS_PROPERTY] != null) {
+                    bodyData(createMessageBean("Action source is $RULE_ACTIONS_PROPERTY. " +
+                            "Data: ${metadata[RULE_ACTIONS_PROPERTY]}"))
+                } else {
+                    bodyData(createMessageBean("Action source is service configuration. " +
+                            "Data: ${MAPPER.writeValueAsString(rules)}"))
+                }
+            } else {
+                name("Message mangled.")
+                status(PASSED)
+            }
 
             bodyData(createMessageBean("Original message:"))
-            bodyData(createMessageBean(ByteBufUtil.prettyHexDump(message)))
+            bodyData(createMessageBean(ByteBufUtil.prettyHexDump(byteBuf)))
 
             TableBuilder<ActionRow>().run {
                 results.forEach { result ->
-                    row(ActionRow(name, result.tag, result.value, result.action.toString()))
+                    row(ActionRow(name, result.tag, result.value,
+                        result.action.toString(), result.statusDesc.status.name,
+                        result.statusDesc.description))
                 }
-
                 bodyData(build())
             }
         }
@@ -72,18 +109,18 @@ class FixProtocolMangler(context: IManglerContext) : IMangler {
 
     private fun getRule(message: ByteBuf, metadata: MutableMap<String, String>): Pair<Rule, Boolean>? {
         metadata[RULE_NAME_PROPERTY]?.also { name ->
-            val rule = rules.find { it.name == name } ?: throw IllegalArgumentException("No rule with name: $name")
+            val rule = rules.find { it.name == name }
+                ?: throw IllegalArgumentException("Invalid '$RULE_NAME_PROPERTY' value - $name. No rule with name found in configuration: $name. Searched in [ ${rules.joinToString(",") {it.name}} ]")
             return rule to true
         }
 
         metadata[RULE_ACTIONS_PROPERTY]?.also { yaml ->
-            val actions = try {
-                MAPPER.readValue<List<Action>>(yaml)
+            return try {
+                val actions = MAPPER.readValue<List<Action>>(yaml)
+                Rule("custom", listOf(Transform(listOf(), actions))) to true
             } catch (e: Exception) {
-                throw IllegalArgumentException("Invalid '$RULE_ACTIONS_PROPERTY' value", e)
+                throw IllegalArgumentException("Invalid '$RULE_ACTIONS_PROPERTY' value - $yaml", e)
             }
-
-            return Rule("custom", listOf(Transform(listOf(), actions))) to true
         }
 
         if (rules.isEmpty()) return null
@@ -117,4 +154,6 @@ private data class ActionRow(
     val corruptedTag: Int,
     val corruptedValue: String?,
     val corruptionDescription: String,
+    val status: String,
+    val errorDescription: String?
 ) : IRow

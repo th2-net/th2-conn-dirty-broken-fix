@@ -16,15 +16,19 @@
 
 package com.exactpro.th2;
 
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BrokenConnConfiguration;
 import com.exactpro.th2.conn.dirty.fix.KeyFileType;
 import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel.Security;
 import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerSettings;
+import com.exactpro.th2.util.DateTimeFormatterDeserializer;
 import com.exactpro.th2.util.LocalTimeDeserializer;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 
 import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 
 public class FixHandlerSettings implements IHandlerSettings {
+    private static final int DEFAULT_CONNECTION_TIMEOUT_ON_SEND = 30_000;
     private String host = null;
     private int port = 0;
     private Security security = new Security();
@@ -38,7 +42,8 @@ public class FixHandlerSettings implements IHandlerSettings {
     private String username;
     private String password;
     private String newPassword;
-    private String passwordEncryptKeyFilePath;
+    private String infraBackupUrl;
+    private String passwordEncryptKey;
     private KeyFileType passwordEncryptKeyFileType = KeyFileType.PEM_PUBLIC_KEY;
     /**
      * Value from Java Security Standard Algorithm Names
@@ -51,8 +56,10 @@ public class FixHandlerSettings implements IHandlerSettings {
     private Boolean resetSeqNumFlag = false;
     private Boolean resetOnLogon = false;
     private Boolean useNextExpectedSeqNum = false;
-    private Boolean saveAdminMessages = false;
     private Boolean loadSequencesFromCradle = false;
+    private Boolean loadMissedMessagesFromCradle = false;
+    private Boolean resetStateOnServerReset = false;
+    private Boolean logoutOnIncorrectServerSequence = false;
 
     @JsonDeserialize(using = LocalTimeDeserializer.class)
     private LocalTime sessionStartTime;
@@ -60,9 +67,34 @@ public class FixHandlerSettings implements IHandlerSettings {
     @JsonDeserialize(using = LocalTimeDeserializer.class)
     private LocalTime sessionEndTime;
 
+    private int rateLimit = Integer.MAX_VALUE;
+
     private int testRequestDelay = 60;
     private int reconnectDelay = 5;
     private int disconnectRequestDelay = 5;
+    private long disconnectCleanUpTimeoutMs = 1000;
+    private long cradleSaveTimeoutMs = 2000;
+    private long recoverySendIntervalMs = 10;
+
+    private BrokenConnConfiguration brokenConnConfiguration;
+    /**
+     * Timeout in milliseconds during which the connection should be opened and session is logged in.
+     * Otherwise, the send operation will be interrupted
+     */
+    private long connectionTimeoutOnSend = DEFAULT_CONNECTION_TIMEOUT_ON_SEND;
+
+    private long minConnectionTimeoutOnSend = 1_000;
+
+    @JsonDeserialize(using = DateTimeFormatterDeserializer.class)
+    private DateTimeFormatter sendingDateTimeFormat = DateTimeFormatter.ofPattern("yyyyMMdd-HH:mm:ss.SSSSSSSSS");
+
+    public DateTimeFormatter getSendingDateTimeFormat() {
+        return this.sendingDateTimeFormat;
+    }
+
+    public void setSendingDateTimeFormat(DateTimeFormatter sendingDateTimeFormat) {
+        this.sendingDateTimeFormat = sendingDateTimeFormat;
+    }
 
     public String getHost() {
         return host;
@@ -156,9 +188,9 @@ public class FixHandlerSettings implements IHandlerSettings {
         return newPassword;
     }
 
-    public String getPasswordEncryptKeyFilePath() {
-        return passwordEncryptKeyFilePath;
-    }
+    public String getInfraBackupUrl() {return infraBackupUrl;}
+
+    public String getPasswordEncryptKey() {return passwordEncryptKey;}
 
     public KeyFileType getPasswordEncryptKeyFileType() {
         return passwordEncryptKeyFileType;
@@ -196,9 +228,9 @@ public class FixHandlerSettings implements IHandlerSettings {
         this.newPassword = newPassword;
     }
 
-    public void setPasswordEncryptKeyFilePath(String passwordEncryptKeyFilePath) {
-        this.passwordEncryptKeyFilePath = passwordEncryptKeyFilePath;
-    }
+    public void setInfraBackupUrl(String infraBackupUrl) {this.infraBackupUrl = infraBackupUrl;}
+
+    public void setPasswordEncryptKey(String passwordEncryptKey) {this.passwordEncryptKey = passwordEncryptKey;}
 
     public void setPasswordEncryptKeyFileType(KeyFileType passwordEncryptKeyFileType) {
         this.passwordEncryptKeyFileType = passwordEncryptKeyFileType;
@@ -220,6 +252,22 @@ public class FixHandlerSettings implements IHandlerSettings {
         this.loadSequencesFromCradle = loadSequencesFromCradle;
     }
 
+    public Boolean isLoadMissedMessagesFromCradle() {
+        return loadMissedMessagesFromCradle;
+    }
+
+    public void setLoadMissedMessagesFromCradle(Boolean loadMissedMessagesFromCradle) {
+        this.loadMissedMessagesFromCradle = loadMissedMessagesFromCradle;
+    }
+
+    public Boolean getResetStateOnServerReset() {
+        return resetStateOnServerReset;
+    }
+
+    public void setResetStateOnServerReset(Boolean resetStateOnServerReset) {
+        this.resetStateOnServerReset = resetStateOnServerReset;
+    }
+
     public Boolean useNextExpectedSeqNum() {
         return useNextExpectedSeqNum;
     }
@@ -228,12 +276,12 @@ public class FixHandlerSettings implements IHandlerSettings {
         this.useNextExpectedSeqNum = useNextExpectedSeqNum;
     }
 
-    public Boolean isSaveAdminMessages() {
-        return saveAdminMessages;
+    public Boolean isLogoutOnIncorrectServerSequence() {
+        return logoutOnIncorrectServerSequence;
     }
 
-    public void setSaveAdminMessages(Boolean saveAdminMessages) {
-        this.saveAdminMessages = saveAdminMessages;
+    public void setLogoutOnIncorrectServerSequence(Boolean logoutOnIncorrectServerSequence) {
+        this.logoutOnIncorrectServerSequence = logoutOnIncorrectServerSequence;
     }
 
     public LocalTime getSessionStartTime() {
@@ -270,5 +318,61 @@ public class FixHandlerSettings implements IHandlerSettings {
 
     public void setDisconnectRequestDelay(int disconnectRequestDelay) {
         this.disconnectRequestDelay = disconnectRequestDelay;
+    }
+
+    public BrokenConnConfiguration getBrokenConnConfiguration() {
+        return brokenConnConfiguration;
+    }
+
+    public void setBrokenConnConfiguration(BrokenConnConfiguration brokenConnConfiguration) {
+        this.brokenConnConfiguration = brokenConnConfiguration;
+    }
+
+    public int getRateLimit() {
+        return rateLimit;
+    }
+
+    public void setRateLimit(int rateLimit) {
+        this.rateLimit = rateLimit;
+    }
+
+    public long getConnectionTimeoutOnSend() {
+        return connectionTimeoutOnSend;
+    }
+
+    public void setConnectionTimeoutOnSend(long connectionTimeoutOnSend) {
+        this.connectionTimeoutOnSend = connectionTimeoutOnSend;
+    }
+
+    public long getMinConnectionTimeoutOnSend() {
+        return minConnectionTimeoutOnSend;
+    }
+
+    public void setMinConnectionTimeoutOnSend(long minConnectionTimeoutOnSend) {
+        this.minConnectionTimeoutOnSend = minConnectionTimeoutOnSend;
+    }
+
+    public long getDisconnectCleanUpTimeoutMs() {
+        return disconnectCleanUpTimeoutMs;
+    }
+
+    public void setDisconnectCleanUpTimeoutMs(long disconnectCleanUpTimeoutMs) {
+        this.disconnectCleanUpTimeoutMs = disconnectCleanUpTimeoutMs;
+    }
+
+    public long getCradleSaveTimeoutMs() {
+        return cradleSaveTimeoutMs;
+    }
+
+    public void setCradleSaveTimeoutMs(long cradleSaveTimeoutMs) {
+        this.cradleSaveTimeoutMs = cradleSaveTimeoutMs;
+    }
+
+    public long getRecoverySendIntervalMs() {
+        return recoverySendIntervalMs;
+    }
+
+    public void setRecoverySendIntervalMs(long recoverySendIntervalMs) {
+        this.recoverySendIntervalMs = recoverySendIntervalMs;
     }
 }

@@ -1,4 +1,4 @@
-# th2-conn-dirty-fix (1.0.0)
+# th2-conn-dirty-fix (1.2.0)
 
 This microservice allows sending and receiving messages via FIX protocol
 
@@ -30,8 +30,9 @@ This microservice allows sending and receiving messages via FIX protocol
 + *senderSubID* - assigned value used to identify specific message originator (desk, trader, etc.)
 + *encryptMethod* - encryption method
 + *username* - user name
-+ *password* - user password. FIX client uses the Password(554) tag for unencrypted mode and the EncryptedPassword(1402) tag for encrypted. The encryption is enabled via *passwordEncryptKeyFilePath* option.
-+ *newPassword* - user new password. FIX client uses the NewPassword(925) tag for unencrypted mode and the NewEncryptedPassword(1404) tag for encrypted. The encryption is enabled via *passwordEncryptKeyFilePath* option.
++ *password* - user password. FIX client uses the Password(554) tag for unencrypted mode and the EncryptedPassword(1402) tag for encrypted. The encryption is enabled via *passwordEncryptKeyFilePath* option. It is a good practice to pass this variable as kubernetes secret. 
++ *newPassword* - user new password. FIX client uses the NewPassword(925) tag for unencrypted mode and the NewEncryptedPassword(1404) tag for encrypted. The encryption is enabled via *passwordEncryptKeyFilePath* option. It is a good practice to pass this variable as kubernetes secret.
++ *previousPasswords* - comma-separated list of passwords used for this user before.
 + *passwordEncryptKeyFilePath* - path to key file for encrypting. FIX client encrypts the *password* value via `RSA` algorithm using specified file if this option is specified.
 + *passwordEncryptKeyFileType* - type of key file content. Supported values: `[PEM_PUBLIC_KEY]`. Default value is `PEM_PUBLIC_KEY`
 + *passwordKeyEncryptAlgorithm* - encrypt algorithm for reading key from file specified in the *passwordEncryptKeyFilePath*. See the KeyFactory section in the [Java Cryptography Architecture Standard Algorithm Name](https://docs.oracle.com/javase/8/docs/technotes/guides/security/StandardNames.html#KeyFactory) for information about standard algorithm names. Default value is `RSA`
@@ -42,10 +43,20 @@ This microservice allows sending and receiving messages via FIX protocol
 + *resetSeqNumFlag* - resetting sequence number in initial Logon message (when conn started)
 + *resetOnLogon* - resetting the sequence number in Logon in other cases (e.g. disconnect)
 + *loadSequencesFromCradle* - defines if sequences will be loaded from cradle to use them in logon message.
++ *loadMissedMessagesFromCradle* - defines how retransmission will be handled. If true, then requested through `ResendRequest` messages (or messages requested on Logon with `NextExpectedSeqNum`) will be loaded from cradle.
 + *sessionStartTime* - UTC time when session starts. (`nullable`)
 + *sessionEndTime* - UTC time when session ends. required if startSessionTime is filled.
++ *sendingDateTimeFormat* - `SendingTime` field format for outgoing messages. (`nullable`, `default format` in this case is `"yyyyMMdd-HH:mm:ss.SSSSSSSSS"`) 
 + *useNextExpectedSeqNum* - session management based on next expected sequence number. (`false` by default)
 + *saveAdminMessages* - defines if admin messages will be saved to internal outgoing buffer. (`false` by default)
++ *resetStateOnServerReset* - whether to reset the server sequence after receiving logout with text `Next Expected MSN too high, MSN to be sent is x but received y`.
++ *logoutOnIncorrectServerSequence* - whether to logout session when server send message with sequence number less than expected. If `false` then internal conn sequence will be reset to sequence number from server message.
++ *connectionTimeoutOnSend* - timeout in milliseconds for sending message from queue thread
+  (please read about [acknowledgment timeout](https://www.rabbitmq.com/consumers.html#acknowledgement-timeout) to understand the problem).
+  _Default, 30000 mls._ Each failed sending attempt decreases the timeout in half (but not less than _minConnectionTimeoutOnSend_).
+  The timeout is reset to the original value after a successful sending attempt.
+  If connection is not established within the specified timeout an error will be reported.
++ *minConnectionTimeoutOnSend* - minimum value for the sending message timeout in milliseconds. _Default value is 1000 mls._
 
 ### Security settings
 
@@ -275,7 +286,7 @@ spec:
                     - remove: { tag: 110, matches: (.*) }
                   update-checksum: false
   pins:
-  - name: to_data_provider
+    - name: to_data_provider
       connection-type: grpc-client
       service-class: com.exactpro.th2.dataprovider.grpc.DataProviderService
     - name: to_send
@@ -325,10 +336,49 @@ spec:
 
 # Changelog
 
-## 1.0.0
+## 1.2.0
+* Added support for th2 transport protocol
+* Header tags are forced to update by conn
+* Merged changes from [th2-conn-dirty-fix:1.5.1](https://github.com/th2-net/th2-conn-dirty-fix)
 
+## 1.1.0
+* state reset option on server update.
+
+## 1.0.2
+* dev releases
+* apply changes from version-0
+
+## 1.0.1
+* Add bookId to lw data provider query
+
+## 1.0.0
 * Bump `conn-dirty-tcp-core` to `3.0.0` for books and pages support
 
+## 0.3.0
+* Ability to recover messages from cradle.
+
+## 0.2.0
+* optional state reset on silent server reset.
+
+## 0.1.1
+* correct sequence numbers increments.
+* update conn-dirty-tcp-core to `2.3.0`
+
+## 0.1.0
+* correct handling of sequence reset with `endSeqNo = 0`
+* Skip messages mangling on error in `demo-fix-mangler` with error event instead of throwing exception.
+* allow unconditional rule application
+
+## 0.0.10
+* disable reconnect when session is in not-active state.
+
+## 0.0.9
+* correct heartbeat and test request handling
+
+## 0.0.8
+
+* th2-common upgrade to `3.44.1`
+* th2-bom upgrade to `4.2.0`
 
 ## 0.0.7
 

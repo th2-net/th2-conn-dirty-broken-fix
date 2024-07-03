@@ -3,7 +3,7 @@ name: Build and publish Docker image to Github Container Registry ghcr.io
 on:
   push:
     branches-ignore:
-      - master
+      - main
       - version-*
       - dependabot**
     paths-ignore:
