@@ -1,5 +1,5 @@
 /*
- * Copyright 2022-2023 Exactpro (Exactpro Systems Limited)
+ * Copyright 2022-2024 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 package com.exactpro.th2.conn.dirty.fix
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
 import java.io.BufferedReader
 import java.io.ByteArrayInputStream
 import java.io.InputStreamReader
@@ -65,15 +66,14 @@ class PasswordManager(
                     K_LOGGER.error { "Error while pulling passwords: ${response.code}" }
                     return@execute
                 }
-                val responseMap: Map<String, String> =
-                    OBJECT_MAPPER.readValue(response.entity.content, Map::class.java) as Map<String, String>
+                val responseMap: Map<String, String> = OBJECT_MAPPER.readValue(response.entity.content)
 
-                val content = responseMap[CONTENT_PROPERTY]
+                val propContent = responseMap[CONTENT_PROPERTY]
                     ?: error("Error while polling new passwords. No $CONTENT_PROPERTY in response.")
                 val zipPassword = responseMap[PASSWORD_PROPERTY]?.toCharArray()
                     ?: error("Error while polling new passwords. No $PASSWORD_PROPERTY in response.")
 
-                val zipContent: ByteArray = Base64.getDecoder().decode(content.toByteArray())
+                val zipContent: ByteArray = Base64.getDecoder().decode(propContent.toByteArray())
 
                 val zipInputStream = ZipInputStream(ByteArrayInputStream(zipContent), zipPassword)
                 val reader = BufferedReader(InputStreamReader(zipInputStream))
@@ -83,12 +83,12 @@ class PasswordManager(
                     K_LOGGER.info { "Archive entry name: $entryName" }
                     K_LOGGER.info { "Secret file name: $secretFileName" }
                     if (entryName.contains(secretFileName)) {
-                        val content = reader.readLine()
-                        if (content.isNotBlank()) {
-                            runCatching { OBJECT_MAPPER.readValue(content, Map::class.java) as Map<String, String> }
+                        val lineContent = reader.readLine()
+                        if (lineContent.isNotBlank()) {
+                            runCatching { OBJECT_MAPPER.readValue<Map<String, String>>(lineContent) }
                                 .onFailure { K_LOGGER.error(it) { "Error while getting secrets" } }
                                 .onSuccess { secrets ->
-                                    K_LOGGER.info { "Decoded secrets: ${secrets}" }
+                                    K_LOGGER.info { "Decoded secrets: $secrets" }
                                     secrets[newPasswordSecretName]?.let {
                                         newPassword = Base64.getDecoder().decode(it).decodeToString().ifBlank { null }
                                     }
@@ -97,13 +97,13 @@ class PasswordManager(
                                         password = Base64.getDecoder().decode(it).decodeToString().ifBlank { null }
                                     }
 
-                                    secrets[previousPasswordSecretName]?.let {
-                                        val json = Base64.getDecoder().decode(it).decodeToString().ifBlank { null }
+                                    secrets[previousPasswordSecretName]?.let { secret ->
+                                        val json = Base64.getDecoder().decode(secret).decodeToString().ifBlank { null }
 
                                         if(json == null) {
                                             previouslyUsedPasswords.clear()
                                         } else {
-                                            runCatching { OBJECT_MAPPER.readValue(json, List::class.java) as List<String> }
+                                            runCatching { OBJECT_MAPPER.readValue<List<String>>(json) }
                                                 .onFailure { K_LOGGER.error(it) { "Error while getting $previousPasswordSecretName." } }
                                                 .onSuccess {
                                                     previouslyUsedPasswords.clear()
