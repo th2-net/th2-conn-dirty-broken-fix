@@ -334,68 +334,14 @@ spec:
         cpu: 20m
 ```
 
-# Changelog (th2-conn-dirty-broken-fix)
-
 ## 1.2.1
 
 * Property `th2.broken.strategy` is added to metadata to each message when a strategy is active
 
-# Changelog (th2-conn-dirty-fix)
-
-## 1.5.1
-
-* Property `th2.operation_timestamp` is added to metadata to each message
-* Use mutable map for metadata when sending a messages from the handler
-  * Fix error when new property with operation timestamp added to the immutable map
-
-## 1.5.0
-
-* `minConnectionTimeoutOnSend` parameter is added.
-* Sending timeout now decreases in half on each failed attempt (but not less than `minConnectionTimeoutOnSend`).
-
-## 1.4.2
-* Ungraceful session disconnect support.
-* Removed NPE when session is reset by schedule.
-* Use UTC time zone for sending time tag
-
-## 1.4.1
-* Timeout on send from queue thread
-  * Parameter `connectionTimeoutOnSend` was added
-
-## 1.4.0
-* Updated bom: `4.5.0-dev`
-* Updated common: `5.4.0-dev`
-* Updated common-utils: `2.2.0-dev`
-* Updated grpc-lw-data-provider: `2.1.0-dev`
-* Updated kotlin: `1.8.22`
-* Added support for th2 transport protocol
-
-## 1.3.2
-* Improve logging: log session group and session alias for each log message.
-
-## 1.3.1
-* fix multiple consequent SOH characters
-
-## 1.3.0
-* Added handling for incoming test request messages
-* Fixed resetSeqNum flag handling on incoming logon messages.
-* Added option to automatically reset server sequence when internal conn sequence doesn't match with sequence that server sent.
-
-## 1.2.1
-* fix multiple consequent SOH characters
-
-## 1.2.0
-* loading requested messages from cradle.
-
-## 1.1.1
-* fix scheduling: hasn't worked for some ranges.
-
-## 1.1.0
-* state reset option on server update.
-
 ## 1.2.0
 * Added support for th2 transport protocol
 * Header tags are forced to update by conn
+* Merged changes from [th2-conn-dirty-fix:1.5.1](https://github.com/th2-net/th2-conn-dirty-fix)
 
 ## 1.1.0
 * state reset option on server update.

@@ -1,14 +1,13 @@
-name: Dev build and publish Docker distributions to Github Container Registry ghcr.io
+name: Build and publish Docker image to Github Container Registry ghcr.io
 
 on:
   push:
     branches-ignore:
-      - master
+      - main
       - version-*
       - dependabot**
     paths-ignore:
       - README.md
-
 
 jobs:
   build-job:
@@ -18,3 +17,4 @@ jobs:
       docker-username: ${{ github.actor }}
     secrets:
       docker-password: ${{ secrets.GITHUB_TOKEN }}
+      nvd-api-key: ${{ secrets.NVD_APIKEY }}
