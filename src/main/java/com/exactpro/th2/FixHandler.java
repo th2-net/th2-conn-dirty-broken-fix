@@ -1,5 +1,5 @@
 /*
- * Copyright 2022-2023 Exactpro (Exactpro Systems Limited)
+ * Copyright 2022-2024 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -76,7 +76,6 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -96,12 +95,11 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
-import javax.net.SocketFactory;
+
 import kotlin.Unit;
 import kotlin.jvm.functions.Function1;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
-import org.checkerframework.checker.units.qual.A;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -501,8 +499,10 @@ public class FixHandler implements AutoCloseable, IHandler {
     public Map<String, String> onIncoming(@NotNull IChannel channel, @NotNull ByteBuf message, MessageID messageId) {
         Map<String, String> metadata = new HashMap<>();
 
+        StrategyState state = strategy.getState();
+        state.enrichProperties(metadata);
         if(strategy.getIncomingMessageStrategy(IncomingMessagesStrategy::getIncomingMessagesPreprocessor).process(message, metadata) != null) {
-            strategy.getState().addMessageID(messageId);
+            state.addMessageID(messageId);
             return metadata;
         }
 
@@ -536,7 +536,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         String msgTypeValue = requireNonNull(msgType.getValue());
         if(msgTypeValue.equals(MSG_TYPE_LOGOUT)) {
             serverMsgSeqNum.incrementAndGet();
-            strategy.getState().addMessageID(messageId);
+            state.addMessageID(messageId);
             strategy.getIncomingMessageStrategy(x -> x.getLogoutStrategy()).process(message, metadata);
             return metadata;
         }
@@ -579,7 +579,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                 handleHeartbeat(message);
                 break;
             case MSG_TYPE_LOGON:
-                strategy.getState().addMessageID(messageId);strategy.getState().addMessageID(messageId);
+                state.addMessageID(messageId);
                 Map<String, String> logonMetadata = strategy.getIncomingMessageStrategy(IncomingMessagesStrategy::getLogonStrategy).process(message, metadata);
                 if (logonMetadata != null) return logonMetadata;
                 if(serverMsgSeqNum.get() < receivedMsgSeqNum && !isDup && !enabled.get()) {
@@ -589,17 +589,17 @@ public class FixHandler implements AutoCloseable, IHandler {
                 }
                 break;
             case MSG_TYPE_RESEND_REQUEST:
-                strategy.getState().addMessageID(messageId);
+                state.addMessageID(messageId);
                 if (LOGGER.isInfoEnabled()) LOGGER.info("Resend request received - {}", message.toString(US_ASCII));
                 handleResendRequest(message);
                 break;
             case MSG_TYPE_SEQUENCE_RESET: //gap fill
-                strategy.getState().addMessageID(messageId);
+                state.addMessageID(messageId);
                 if (LOGGER.isInfoEnabled()) LOGGER.info("Sequence reset received - {}", message.toString(US_ASCII));
                 resetSequence(message);
                 break;
             case MSG_TYPE_TEST_REQUEST:
-                strategy.getState().addMessageID(messageId);
+                state.addMessageID(messageId);
                 if(LOGGER.isInfoEnabled()) LOGGER.info("Test request received - {}", message.toString(US_ASCII));
                 if(strategy.getIncomingMessageStrategy(IncomingMessagesStrategy::getTestRequestProcessor).process(message, metadata) != null) {
                     return metadata;
@@ -607,7 +607,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                 break;
             default:
                 if(isDup) {
-                    strategy.getState().addMessageID(messageId);
+                    state.addMessageID(messageId);
                 }
                 if(LOGGER.isInfoEnabled()) LOGGER.info("Received message - {}", message.toString(US_ASCII));
         }
@@ -789,7 +789,10 @@ public class FixHandler implements AutoCloseable, IHandler {
         resendRequest.append(BEGIN_SEQ_NO).append(beginSeqNo);
         resendRequest.append(END_SEQ_NO).append(endSeqNo);
         setChecksumAndBodyLength(resendRequest);
-        channel.send(Unpooled.wrappedBuffer(resendRequest.toString().getBytes(StandardCharsets.UTF_8)), new HashMap<String, String>(), null, SendMode.HANDLE_AND_MANGLE)
+        channel.send(Unpooled.wrappedBuffer(resendRequest.toString().getBytes(StandardCharsets.UTF_8)),
+                        strategy.getState().enrichProperties(),
+                        null,
+                        SendMode.HANDLE_AND_MANGLE)
             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
         resetHeartbeatTask();
     }
@@ -802,7 +805,10 @@ public class FixHandler implements AutoCloseable, IHandler {
         setChecksumAndBodyLength(resendRequest);
 
         if (enabled.get()) {
-            channel.send(Unpooled.wrappedBuffer(resendRequest.toString().getBytes(StandardCharsets.UTF_8)), new HashMap<String, String>(), null, SendMode.HANDLE_AND_MANGLE)
+            channel.send(Unpooled.wrappedBuffer(resendRequest.toString().getBytes(StandardCharsets.UTF_8)),
+                            strategy.getState().enrichProperties(),
+                            null,
+                            SendMode.HANDLE_AND_MANGLE)
                 .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
             resetHeartbeatTask();
         }
@@ -869,7 +875,10 @@ public class FixHandler implements AutoCloseable, IHandler {
                     if(sequence - 1 != lastProcessedSequence.get() ) {
                         StringBuilder sequenceReset =
                                 createSequenceReset(Math.max(beginSeqNo, lastProcessedSequence.get() + 1), sequence);
-                        channel.send(Unpooled.wrappedBuffer(sequenceReset.toString().getBytes(StandardCharsets.UTF_8)), new HashMap<String, String>(), null, SendMode.MANGLE);
+                        channel.send(Unpooled.wrappedBuffer(sequenceReset.toString().getBytes(StandardCharsets.UTF_8)),
+                                strategy.getState().enrichProperties(),
+                                null,
+                                SendMode.MANGLE);
                         resetHeartbeatTask();
                     }
 
@@ -878,7 +887,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                     updateLength(buf);
                     updateChecksum(buf);
                     if(!skip.get()) {
-                        channel.send(buf, new HashMap<String, String>(), null, SendMode.MANGLE)
+                        channel.send(buf, strategy.getState().enrichProperties(), null, SendMode.MANGLE)
                             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
                         try {
                             Thread.sleep(settings.getRecoverySendIntervalMs());
@@ -894,7 +903,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
                     if(!skip.get() && recoveryConfig.getOutOfOrder()) {
                         skip.set(true);
-                        channel.send(skipped.get(), new HashMap<String, String>(), null, SendMode.MANGLE)
+                        channel.send(skipped.get(), strategy.getState().enrichProperties(), null, SendMode.MANGLE)
                             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
                         try {
                             Thread.sleep(settings.getRecoverySendIntervalMs());
@@ -920,7 +929,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                     String seqReset = createSequenceReset(Math.max(lastProcessedSequence.get() + 1, beginSeqNo), msgSeqNum.get() + 1).toString();
                     channel.send(
                         Unpooled.wrappedBuffer(seqReset.getBytes(StandardCharsets.UTF_8)),
-                        new HashMap<String, String>(), null, SendMode.MANGLE
+                            strategy.getState().enrichProperties(), null, SendMode.MANGLE
                     ).thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
                 }
             } else {
@@ -928,7 +937,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                     createSequenceReset(beginSeqNo, msgSeqNum.get() + 1).toString();
                 channel.send(
                     Unpooled.wrappedBuffer(seqReset.getBytes(StandardCharsets.UTF_8)),
-                    new HashMap<String, String>(), null, SendMode.MANGLE
+                        strategy.getState().enrichProperties(), null, SendMode.MANGLE
                 );
             }
             resetHeartbeatTask();
@@ -938,8 +947,10 @@ public class FixHandler implements AutoCloseable, IHandler {
             String seqReset =
                 createSequenceReset(Math.max(beginSeqNo, lastProcessedSequence.get() + 1), msgSeqNum.get() + 1).toString();
             channel.send(
-                Unpooled.buffer().writeBytes(seqReset.getBytes(StandardCharsets.UTF_8)),
-                new HashMap<String, String>(), null, SendMode.MANGLE
+                    Unpooled.buffer().writeBytes(seqReset.getBytes(StandardCharsets.UTF_8)),
+                    strategy.getState().enrichProperties(),
+                    null,
+                    SendMode.MANGLE
             );
         }
     }
@@ -978,6 +989,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     @Override
     public void onOutgoing(@NotNull IChannel channel, @NotNull ByteBuf message, @NotNull Map<String, String> metadata) {
+        strategy.getState().enrichProperties(metadata);
         strategy.getOutgoingMessageStrategy(OutgoingMessagesStrategy::getOutgoingMessageProcessor).process(message, metadata);
 
         if (LOGGER.isInfoEnabled()) LOGGER.info("Outgoing message: {}", message.toString(US_ASCII));
@@ -1123,7 +1135,10 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         if (enabled.get()) {
             LOGGER.info("Send Heartbeat to server - {}", heartbeat);
-            channel.send(Unpooled.wrappedBuffer(heartbeat.toString().getBytes(StandardCharsets.UTF_8)), new HashMap<String, String>(), null, SendMode.HANDLE_AND_MANGLE);
+            channel.send(Unpooled.wrappedBuffer(heartbeat.toString().getBytes(StandardCharsets.UTF_8)),
+                    strategy.getState().enrichProperties(),
+                    null,
+                    SendMode.HANDLE_AND_MANGLE);
             resetHeartbeatTask();
 
         } else {
@@ -1141,7 +1156,10 @@ public class FixHandler implements AutoCloseable, IHandler {
         testRequest.append(TEST_REQ_ID).append(testReqID.incrementAndGet());
         setChecksumAndBodyLength(testRequest);
         if (enabled.get()) {
-            channel.send(Unpooled.wrappedBuffer(testRequest.toString().getBytes(StandardCharsets.UTF_8)), new HashMap<String, String>(), null, SendMode.HANDLE_AND_MANGLE)
+            channel.send(Unpooled.wrappedBuffer(testRequest.toString().getBytes(StandardCharsets.UTF_8)),
+                            strategy.getState().enrichProperties(),
+                            null,
+                            SendMode.HANDLE_AND_MANGLE)
                 .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
             LOGGER.info("Send TestRequest to server - {}", testRequest);
             resetTestRequestTask();
@@ -1176,7 +1194,10 @@ public class FixHandler implements AutoCloseable, IHandler {
         StringBuilder logon = buildLogon(props);
 
         LOGGER.info("Send logon - {}", logon);
-        channel.send(Unpooled.wrappedBuffer(logon.toString().getBytes(StandardCharsets.UTF_8)), props, null, SendMode.HANDLE_AND_MANGLE)
+        channel.send(Unpooled.wrappedBuffer(logon.toString().getBytes(StandardCharsets.UTF_8)),
+                        strategy.getState().enrichProperties(props),
+                        null,
+                        SendMode.HANDLE_AND_MANGLE)
             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
     }
 
@@ -1250,7 +1271,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             try {
                 MessageID messageID = channel.send(
                         Unpooled.wrappedBuffer(logout.toString().getBytes(StandardCharsets.UTF_8)),
-                        new HashMap<String, String>(),
+                        strategy.getState().enrichProperties(),
                         null,
                         SendMode.HANDLE_AND_MANGLE
                 ).get();
@@ -1302,9 +1323,11 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     // <editor-fold desc="send strategies definitions goes here."
 
-    private CompletableFuture<MessageID> defaultSend(IChannel channel, ByteBuf message, Map<String, String> properties, EventID eventID) {
-        CompletableFuture<MessageID> messageId = channel.send(message, properties, eventID, SendMode.HANDLE_AND_MANGLE);
-        return messageId;
+    private CompletableFuture<MessageID> defaultSend(IChannel channel,
+                                                     ByteBuf message,
+                                                     Map<String, String> properties,
+                                                     EventID eventID) {
+        return channel.send(message, strategy.getState().enrichProperties(properties), eventID, SendMode.HANDLE_AND_MANGLE);
     }
 
     private CompletableFuture<MessageID> bulkSend(IChannel channel, ByteBuf message, Map<String, String> properties, EventID eventID) {
@@ -1316,7 +1339,10 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategyState.updateCacheAndRunOnCondition(message, x -> x >= config.getBatchSize(), buffer -> {
             try {
                 LOGGER.info("Sending batch of size: {}", config.getBatchSize());
-                channel.send(asExpandable(buffer), properties, eventID, SendMode.DIRECT)
+                channel.send(asExpandable(buffer),
+                                strategy.getState().enrichProperties(properties),
+                                eventID,
+                                SendMode.DIRECT)
                     .thenAcceptAsync(strategyState::addMessageID, executorService);
             } catch (Exception e) {
                 LOGGER.error("Error while sending batch.", e);
@@ -1349,7 +1375,10 @@ public class FixHandler implements AutoCloseable, IHandler {
             } catch (InterruptedException e) {
                 LOGGER.error("Error while sending messages in different tcp packets.");
             }
-            channel.send(asExpandable(slice), metadata, eventID, SendMode.DIRECT_SOCKET);
+            channel.send(asExpandable(slice),
+                    strategy.getState().enrichProperties(metadata),
+                    eventID,
+                    SendMode.DIRECT_SOCKET);
             resetHeartbeatTask();
             sendingTimes.add(Instant.now());
         }
@@ -1358,7 +1387,10 @@ public class FixHandler implements AutoCloseable, IHandler {
         String slicesTimestamps = sendingTimes.stream().map(formatter::format).collect(Collectors.joining(","));
         metadata.put(SPLIT_SEND_TIMESTAMPS_PROPERTY, slicesTimestamps);
         LOGGER.info("Sent message by slices: {}", slicesTimestamps);
-        CompletableFuture<MessageID> messageID = channel.send(asExpandable(message), metadata, eventID, SendMode.DIRECT_MQ);
+        CompletableFuture<MessageID> messageID = channel.send(asExpandable(message),
+                strategy.getState().enrichProperties(metadata),
+                eventID,
+                SendMode.DIRECT_MQ);
         messageID.thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
         return messageID;
     }
@@ -1739,7 +1771,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         props.put("sentUsingAnotherSocket", "True");
         ByteBuf logonBuf = Unpooled.wrappedBuffer(logon.toString().getBytes(StandardCharsets.UTF_8));
 
-        channel.send(logonBuf, props, null, SendMode.DIRECT_MQ)
+        channel.send(logonBuf, strategy.getState().enrichProperties(props), null, SendMode.DIRECT_MQ)
             .thenAcceptAsync(x -> {
                 strategy.getState().addMessageID(x);
             }, executorService);
@@ -2099,7 +2131,10 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
         setChecksumAndBodyLength(sequenceReset);
 
-        channel.send(Unpooled.wrappedBuffer(sequenceReset.toString().getBytes(StandardCharsets.UTF_8)), new HashMap<String, String>(), null, SendMode.HANDLE_AND_MANGLE)
+        channel.send(Unpooled.wrappedBuffer(sequenceReset.toString().getBytes(StandardCharsets.UTF_8)),
+                        strategy.getState().enrichProperties(),
+                        null,
+                        SendMode.HANDLE_AND_MANGLE)
             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
         resetHeartbeatTask();
         strategy.cleanupStrategy();
@@ -2118,7 +2153,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.updateSendStrategy(x -> {
             state.executeOnBatchCacheIfCondition(size -> size > 0, message -> {
                 try {
-                    channel.send(message, new HashMap<String, String>(), null, SendMode.DIRECT)
+                    channel.send(message, strategy.getState().enrichProperties(), null, SendMode.DIRECT)
                         .thenAcceptAsync(messageID -> strategy.getState().addMessageID(messageID), executorService);
                 } catch (Exception e) {
                     LOGGER.error("Error while sending batch.", e);
@@ -2252,7 +2287,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
                     channel.send(
                         Unpooled.wrappedBuffer(seqReset.toString().getBytes(StandardCharsets.UTF_8)),
-                        new HashMap<String, String>(), null, SendMode.MANGLE
+                            strategy.getState().enrichProperties(), null, SendMode.MANGLE
                     ).thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
                 } else {
                     FixField possDup = findField(missedMessage, POSS_DUP_TAG);
@@ -2271,7 +2306,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
                     LOGGER.info("Sending recovery message from state: {}", missedMessage.toString(US_ASCII));
                     if(!skip) {
-                        channel.send(missedMessage, new HashMap<String, String>(), null, SendMode.MANGLE)
+                        channel.send(missedMessage, strategy.getState().enrichProperties(), null, SendMode.MANGLE)
                             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
                         try {
                             Thread.sleep(settings.getRecoverySendIntervalMs());
@@ -2286,7 +2321,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                     }
 
                     if(!skip && recoveryConfig.getOutOfOrder()) {
-                        channel.send(skipped, new HashMap<String, String>(), null, SendMode.MANGLE)
+                        channel.send(skipped, strategy.getState().enrichProperties(), null, SendMode.MANGLE)
                             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
                         try {
                             Thread.sleep(settings.getRecoverySendIntervalMs());
