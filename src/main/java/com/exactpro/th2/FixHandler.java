@@ -59,6 +59,15 @@ import com.exactpro.th2.dataprovider.lw.grpc.DataProviderService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import kotlin.Unit;
+import kotlin.jvm.functions.Function1;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -95,15 +104,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
-
-import kotlin.Unit;
-import kotlin.jvm.functions.Function1;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.exception.ExceptionUtils;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static com.exactpro.th2.common.event.EventUtils.createMessageBean;
 import static com.exactpro.th2.conn.dirty.fix.FixByteBufUtilKt.findField;
@@ -181,7 +181,6 @@ import static com.exactpro.th2.constants.Constants.USERNAME;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.asExpandable;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.indexOf;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.isEmpty;
-import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.startsWith;
 import static com.exactpro.th2.util.MessageUtil.findByte;
 import static com.exactpro.th2.util.MessageUtil.getBodyLength;
 import static com.exactpro.th2.util.MessageUtil.getChecksum;
@@ -2228,7 +2227,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             ruleErrorEvent(nextStrategyConfig.getRuleType(), null, e);
         }
 
-        LOGGER.info("Next strategy applied: {}", nextStrategyConfig.getRuleType());
+        LOGGER.info("Next strategy applied: {}, duration: {}", nextStrategyConfig.getRuleType(), nextStrategyConfig.getDuration());
         executorService.schedule(this::applyNextStrategy, nextStrategyConfig.getDuration().toMillis(), TimeUnit.MILLISECONDS);
     }
 

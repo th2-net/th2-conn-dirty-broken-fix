@@ -41,6 +41,7 @@ public class TestUtils {
         } else {
             fixHandlerSettings.setHeartBtInt(hbtInt);
         }
+        fixHandlerSettings.setDisconnectCleanUpTimeoutMs(100);
         fixHandlerSettings.setUseNextExpectedSeqNum(useNextExpectedSeqNumber);
         fixHandlerSettings.setSenderCompID("client");
         fixHandlerSettings.setTargetCompID("server");
