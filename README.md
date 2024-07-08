@@ -1,4 +1,4 @@
-# th2-conn-dirty-fix (1.2.1)
+# th2-conn-dirty-fix (1.3.0)
 
 This microservice allows sending and receiving messages via FIX protocol
 
@@ -335,7 +335,7 @@ spec:
 ```
 ## 1.3.0
 
-* Migrated to th2 gradle plugin `0.0.8`
+* Migrated to th2 gradle plugin `0.1.0`
 * Updated:
   * bom: `4.6.1`
   * common: `5.13.1-dev`

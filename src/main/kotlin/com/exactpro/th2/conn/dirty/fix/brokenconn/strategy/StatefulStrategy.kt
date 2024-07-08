@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Exactpro (Exactpro Systems Limited)
+ * Copyright 2023-2024 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 package com.exactpro.th2.conn.dirty.fix.brokenconn.strategy
 
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BatchSendConfiguration
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BlockMessageConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.MissMessageConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RecoveryConfig
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RuleConfiguration
@@ -24,14 +23,12 @@ import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.SplitSendConfigu
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.TransformMessageConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.StrategyState.Companion.resetAndCopyMissedMessages
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.CleanupHandler
-import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.MessageProcessor
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.OnCloseHandler
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.RecoveryHandler
+import mu.KotlinLogging
 import java.time.Instant
-import java.util.concurrent.locks.ReentrantLock
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
-import kotlin.concurrent.withLock
 import kotlin.concurrent.write
 
 class StatefulStrategy(
@@ -47,52 +44,41 @@ class StatefulStrategy(
     private val lock = ReentrantReadWriteLock()
 
     // configurations
-    var config: RuleConfiguration? = null
-        get() = state.config ?: error("Rule configuration isn't present.")
-        private set
-    var missIncomingMessagesConfig: MissMessageConfiguration? = null
-        get() = state.config?.missIncomingMessagesConfiguration ?: error("Miss incoming messages config isn't present.")
-        private set
-    var missOutgoingMessagesConfiguration: MissMessageConfiguration? = null
-        get() = state.config?.missOutgoingMessagesConfiguration ?: error("Miss outgoing messages config isn't present.")
-        private set
-    var transformMessageConfiguration: TransformMessageConfiguration? = null
-        get() = state.config?.transformMessageConfiguration ?: error("Transform message config isn't present.")
-        private set
-    var batchSendConfiguration: BatchSendConfiguration? = null
-        get() = state.config?.batchSendConfiguration ?: error("batch send config isn't present.")
-        private set
-    var splitSendConfiguration: SplitSendConfiguration? = null
-        get() = state.config?.splitSendConfiguration ?: error("split send configuration isn't present.")
-        private set
+    val config: RuleConfiguration
+        get() = lock.read { state.config ?: error("Rule configuration isn't present.") }
+    val missIncomingMessagesConfig: MissMessageConfiguration
+        get() = lock.read { state.config?.missIncomingMessagesConfiguration ?: error("Miss incoming messages config isn't present.") }
+    val missOutgoingMessagesConfiguration: MissMessageConfiguration
+        get() = lock.read { state.config?.missOutgoingMessagesConfiguration ?: error("Miss outgoing messages config isn't present.") }
+    val transformMessageConfiguration: TransformMessageConfiguration
+        get() = lock.read { state.config?.transformMessageConfiguration ?: error("Transform message config isn't present.") }
+    val batchSendConfiguration: BatchSendConfiguration
+        get() = lock.read { state.config?.batchSendConfiguration ?: error("batch send config isn't present.") }
+    val splitSendConfiguration: SplitSendConfiguration
+        get() = lock.read { state.config?.splitSendConfiguration ?: error("split send configuration isn't present.") }
 
-    var allowMessagesBeforeLogon: Boolean = false
-        get() = state.config?.allowMessagesBeforeLogonReply ?: false
-        private set
+    val allowMessagesBeforeLogon: Boolean
+        get() = lock.read { state.config?.allowMessagesBeforeLogonReply ?: false }
 
-    var sendResendRequestOnLogonGap: Boolean = false
-        get() = state.config?.sendResendRequestOnLogonGap ?: false
-        private set
+    val sendResendRequestOnLogonGap: Boolean
+        get() = lock.read { state.config?.sendResendRequestOnLogonGap ?: false }
 
-    var allowMessagesBeforeRetransmissionFinishes: Boolean = false
-        get() = state.config?.allowMessagesBeforeRetransmissionFinishes ?: false
-        private set
+    private var _allowMessagesBeforeRetransmissionFinishes: Boolean = false
+    val allowMessagesBeforeRetransmissionFinishes: Boolean
+        get() = lock.read { _allowMessagesBeforeRetransmissionFinishes }
 
-    var sendResendRequestOnLogoutReply: Boolean = false
-        get() = state.config?.sendResendRequestOnLogoutReply ?: false
-        private set
+    val sendResendRequestOnLogoutReply: Boolean
+        get() = lock.read {state.config?.sendResendRequestOnLogoutReply ?: false }
 
-    var increaseNextExpectedSequenceNumber: Boolean = false
-        get() = state.config?.increaseNextExpectedSequenceNumber ?: false
-        private set
+    val increaseNextExpectedSequenceNumber: Boolean
+        get() = lock.read {state.config?.increaseNextExpectedSequenceNumber ?: false }
 
-    var decreaseNextExpectedSequenceNumber: Boolean = false
-        get() = state.config?.decreaseNextExpectedSequenceNumber ?: false
-        private set
+    val decreaseNextExpectedSequenceNumber: Boolean
+        get() = lock.read {state.config?.decreaseNextExpectedSequenceNumber ?: false }
 
-    var recoveryConfig: RecoveryConfig = RecoveryConfig()
-        get() = state.config?.recoveryConfig ?: RecoveryConfig()
-        private set
+    val recoveryConfig: RecoveryConfig
+        get() = lock.read { state.config?.recoveryConfig ?: RecoveryConfig() }
+
     // strategies
     fun updateSendStrategy(func: SendStrategy.() -> Unit) = lock.write {
         sendStrategy.func()
@@ -120,6 +106,11 @@ class StatefulStrategy(
 
     fun updateReceiveMessageStrategy(func: ReceiveStrategy.() -> Unit) = lock.write {
         receiveStrategy.func()
+    }
+
+    fun disableAllowMessagesBeforeRetransmissionFinishes(reason: String) = lock.write {
+        _allowMessagesBeforeRetransmissionFinishes = false
+        LOGGER.info("Disabled allow messages before retransmission finishes by the '$reason' reason")
     }
 
     fun <T> getReceiveMessageStrategy(func: ReceiveStrategy.() -> T) = lock.read {
@@ -165,6 +156,7 @@ class StatefulStrategy(
     fun resetStrategyAndState(config: RuleConfiguration) {
         lock.write {
             state = state.resetAndCopyMissedMessages(config)
+            _allowMessagesBeforeRetransmissionFinishes = state.config?.allowMessagesBeforeRetransmissionFinishes ?: false
             sendStrategy.sendHandler = defaultStrategy.sendStrategy.sendHandler
             sendStrategy.sendPreprocessor = defaultStrategy.sendStrategy.sendPreprocessor
             receiveStrategy.receivePreprocessor = defaultStrategy.receiveStrategy.receivePreprocessor
@@ -181,6 +173,7 @@ class StatefulStrategy(
     fun cleanupStrategy() {
         lock.write {
             state = state.resetAndCopyMissedMessages()
+            _allowMessagesBeforeRetransmissionFinishes = state.config?.allowMessagesBeforeRetransmissionFinishes ?: false
             sendStrategy.sendHandler = defaultStrategy.sendStrategy.sendHandler
             sendStrategy.sendPreprocessor = defaultStrategy.sendStrategy.sendPreprocessor
             receiveStrategy.receivePreprocessor = defaultStrategy.receiveStrategy.receivePreprocessor
@@ -192,5 +185,9 @@ class StatefulStrategy(
             cleanupHandler = defaultStrategy.cleanupHandler
             onCloseHandler = defaultStrategy.closeHandler
         }
+    }
+
+    companion object {
+        private val LOGGER = KotlinLogging.logger {}
     }
 }

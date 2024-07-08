@@ -1,6 +1,6 @@
 plugins {
     id "application"
-    id "com.exactpro.th2.gradle.component" version "0.0.8"
+    id "com.exactpro.th2.gradle.component" version "0.1.0"
     id 'org.jetbrains.kotlin.jvm' version '1.8.22'
     id "org.jetbrains.kotlin.kapt" version "1.8.22"
 }
@@ -41,7 +41,6 @@ dependencies {
     implementation 'com.exactpro.th2:netty-bytebuf-utils:0.0.1'
     implementation 'net.lingala.zip4j:zip4j:2.11.5'
     implementation 'org.apache.httpcomponents.client5:httpclient5:5.3.1'
-//    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.15.2'
     implementation'com.exactpro.th2:conn-dirty-tcp-core:3.6.0-dev'
     implementation 'com.exactpro.th2:grpc-lw-data-provider:2.3.1-dev'
 

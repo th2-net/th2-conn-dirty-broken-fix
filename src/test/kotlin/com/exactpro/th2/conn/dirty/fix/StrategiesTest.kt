@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Exactpro (Exactpro Systems Limited)
+ * Copyright 2023-2024 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,15 @@
 package com.exactpro.th2.conn.dirty.fix
 
 import com.exactpro.th2.FixHandler
+import com.exactpro.th2.FixHandlerSettings
 import com.exactpro.th2.TestUtils.createHandlerSettings
 import com.exactpro.th2.common.event.Event
 import com.exactpro.th2.common.grpc.ConnectionID
 import com.exactpro.th2.common.grpc.Direction
 import com.exactpro.th2.common.grpc.MessageID
+import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.toByteArray
 import com.exactpro.th2.common.utils.message.toTimestamp
+import com.exactpro.th2.common.utils.shutdownGracefully
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BatchSendConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BrokenConnConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.ChangeSequenceConfiguration
@@ -38,21 +41,20 @@ import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.SchedulerType
 import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel
 import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerContext
 import com.exactpro.th2.constants.Constants
+import com.exactpro.th2.constants.Constants.MSG_SEQ_NUM_TAG
+import com.exactpro.th2.dataprovider.lw.grpc.DataProviderService
+import com.exactpro.th2.dataprovider.lw.grpc.MessageGroupsSearchRequest
+import com.exactpro.th2.dataprovider.lw.grpc.MessageSearchResponse
+import com.exactpro.th2.dataprovider.lw.grpc.TimeRelation
 import com.exactpro.th2.netty.bytebuf.util.asExpandable
 import com.exactpro.th2.netty.bytebuf.util.contains
 import com.exactpro.th2.netty.bytebuf.util.isEmpty
+import com.google.protobuf.UnsafeByteOperations
+import com.google.protobuf.util.Timestamps
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.Unpooled
 import mu.KotlinLogging
 import org.junit.jupiter.api.Disabled
-import java.time.Duration
-import java.time.Instant
-import java.util.Collections
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.regex.Pattern
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
 import org.mockito.kotlin.any
@@ -63,23 +65,38 @@ import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.clearInvocations
 import org.mockito.kotlin.description
 import org.mockito.kotlin.doAnswer
+import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.timeout
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.verifyNoMoreInteractions
 import org.mockito.kotlin.whenever
+import java.time.Duration
+import java.time.Instant
 import java.time.temporal.ChronoUnit.MILLIS
 import java.time.temporal.ChronoUnit.SECONDS
+import java.util.Collections
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.regex.Pattern
 import kotlin.test.assertContains
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 import kotlin.text.Charsets.US_ASCII
 import com.exactpro.th2.common.grpc.Event as ProtoEvent
 
 private const val TEST_BOOK = "test-book"
 private const val TEST_SCOPE = "test-scope"
+private const val TEST_SESSION_GROUP = "test-session-group"
+private const val TEST_SESSION_ALIAS = "test-session-alias"
 
-class TestStrategies {
+class StrategiesTest {
 
     private class TestContext(
         val context: IHandlerContext,
@@ -94,7 +111,7 @@ class TestStrategies {
         val defaultRuleDuration = Duration.of(2, SECONDS)
         val businessRuleDuration = Duration.of(5, SECONDS)
         val businessRuleCleanupDuration = Duration.of(2, SECONDS)
-        val testContext = createTestContext(BrokenConnConfiguration(
+        val handlerSettings: FixHandlerSettings = createHandlerSettings(BrokenConnConfiguration(
             SchedulerType.CONSECUTIVE,
             listOf(
                 RuleConfiguration(DEFAULT, duration = defaultRuleDuration, cleanUpDuration = Duration.of(0, MILLIS)),
@@ -104,7 +121,8 @@ class TestStrategies {
                     cleanUpDuration = businessRuleCleanupDuration
                 ),
             )
-        ), enableAdditionalHandling = false)
+        ))
+        val testContext = createTestContext(handlerSettings, enableAdditionalHandling = false)
         val channel = testContext.channel
         val handler = testContext.fixHandler
 
@@ -135,18 +153,21 @@ class TestStrategies {
         val businessRuleDuration = Duration.of(6, SECONDS)
         val businessRuleCleanupDuration = Duration.of(2, SECONDS)
         val messages = mutableListOf<Triple<ByteBuf, Map<String, String>, IChannel.SendMode>>()
-        val testContext = createTestContext(BrokenConnConfiguration(
-            SchedulerType.CONSECUTIVE,
-            listOf(
-                RuleConfiguration(DEFAULT, duration = Duration.of(2, SECONDS), cleanUpDuration = Duration.of(0, SECONDS)),
-                RuleConfiguration(
-                    RuleType.IGNORE_INCOMING_MESSAGES,
-                    duration = businessRuleDuration,
-                    cleanUpDuration = businessRuleCleanupDuration,
-                    missIncomingMessagesConfiguration = MissMessageConfiguration(3)
+        val handlerSettings: FixHandlerSettings = createHandlerSettings(
+            BrokenConnConfiguration(
+                SchedulerType.CONSECUTIVE,
+                listOf(
+                    RuleConfiguration(DEFAULT, duration = Duration.of(2, SECONDS), cleanUpDuration = Duration.of(0, SECONDS)),
+                    RuleConfiguration(
+                        RuleType.IGNORE_INCOMING_MESSAGES,
+                        duration = businessRuleDuration,
+                        cleanUpDuration = businessRuleCleanupDuration,
+                        missIncomingMessagesConfiguration = MissMessageConfiguration(3)
+                    ),
                 ),
-            ),
-        ), useNextExpectedSeqNum = true) { msg, mtd, mode ->
+            ), 30, true
+        )
+        val testContext = createTestContext(handlerSettings) { msg, mtd, mode ->
             messages.add(Triple(msg, mtd, mode))
         }
 
@@ -185,8 +206,7 @@ class TestStrategies {
         val businessRuleDuration = Duration.of(6, SECONDS)
         val businessRuleCleanupDuration = Duration.of(2, SECONDS)
         val messages = mutableListOf<Triple<ByteBuf, Map<String, String>, IChannel.SendMode>>()
-
-        val testContext = createTestContext(BrokenConnConfiguration(
+        val handlerSettings: FixHandlerSettings = createHandlerSettings(BrokenConnConfiguration(
             SchedulerType.CONSECUTIVE,
             listOf(
                 RuleConfiguration(DEFAULT, duration = Duration.of(2, SECONDS), cleanUpDuration = Duration.of(0, SECONDS)),
@@ -197,7 +217,8 @@ class TestStrategies {
                     missIncomingMessagesConfiguration = MissMessageConfiguration(3)
                 ),
             ),
-        )) { msg, mtd, mode ->
+        ))
+        val testContext = createTestContext(handlerSettings) { msg, mtd, mode ->
             messages.add(Triple(msg, mtd, mode))
         }
 
@@ -237,53 +258,56 @@ class TestStrategies {
         val defaultRuleDuration = Duration.of(2, SECONDS)
         val businessRuleDuration = Duration.of(6, SECONDS)
         val messages = mutableListOf<Triple<ByteBuf, Map<String, String>, IChannel.SendMode>>()
-        val testContext = createTestContext(BrokenConnConfiguration(
-            SchedulerType.CONSECUTIVE,
-            listOf(
-                RuleConfiguration(DEFAULT, duration = Duration.of(2, SECONDS), cleanUpDuration = Duration.of(0, SECONDS)),
-                RuleConfiguration(
-                    RuleType.TRANSFORM_LOGON,
-                    duration = businessRuleDuration,
-                    cleanUpDuration = Duration.of(2, SECONDS),
-                    transformMessageConfiguration = TransformMessageConfiguration(
-                        listOf(
-                            TransformationConfiguration(
-                                listOf(
-                                    Action(
-                                        replace = FieldSelector(
-                                            tag = Constants.PASSWORD_TAG,
-                                            matches = Pattern.compile("pass"),
-                                            tagOneOf = null
-                                        ),
-                                        with = FieldDefinition(
-                                            tag = Constants.PASSWORD_TAG,
-                                            value = "mangledPassword",
-                                            tagOneOf = null,
-                                            valueOneOf = null
+        val handlerSettings: FixHandlerSettings = createHandlerSettings(
+            BrokenConnConfiguration(
+                SchedulerType.CONSECUTIVE,
+                listOf(
+                    RuleConfiguration(DEFAULT, duration = Duration.of(2, SECONDS), cleanUpDuration = Duration.of(0, SECONDS)),
+                    RuleConfiguration(
+                        RuleType.TRANSFORM_LOGON,
+                        duration = businessRuleDuration,
+                        cleanUpDuration = Duration.of(2, SECONDS),
+                        transformMessageConfiguration = TransformMessageConfiguration(
+                            listOf(
+                                TransformationConfiguration(
+                                    listOf(
+                                        Action(
+                                            replace = FieldSelector(
+                                                tag = Constants.PASSWORD_TAG,
+                                                matches = Pattern.compile("pass"),
+                                                tagOneOf = null
+                                            ),
+                                            with = FieldDefinition(
+                                                tag = Constants.PASSWORD_TAG,
+                                                value = "mangledPassword",
+                                                tagOneOf = null,
+                                                valueOneOf = null
+                                            )
                                         )
-                                    )
-                            ), false, "A"),
-                            TransformationConfiguration(
-                                listOf(
-                                    Action(
-                                        replace = FieldSelector(
-                                            tag = Constants.PASSWORD_TAG,
-                                            matches = Pattern.compile("pass"),
-                                            tagOneOf = null
-                                        ),
-                                        with = FieldDefinition(
-                                            tag = Constants.PASSWORD_TAG,
-                                            value = "mangledPassword",
-                                            tagOneOf = null,
-                                            valueOneOf = null
+                                    ), false, "A"),
+                                TransformationConfiguration(
+                                    listOf(
+                                        Action(
+                                            replace = FieldSelector(
+                                                tag = Constants.PASSWORD_TAG,
+                                                matches = Pattern.compile("pass"),
+                                                tagOneOf = null
+                                            ),
+                                            with = FieldDefinition(
+                                                tag = Constants.PASSWORD_TAG,
+                                                value = "mangledPassword",
+                                                tagOneOf = null,
+                                                valueOneOf = null
+                                            )
                                         )
-                                    )
-                                ), false, "A")
-                        )
+                                    ), false, "A")
+                            )
+                        ),
                     ),
-                ),
+                )
             )
-        )) { msg, mode, mtd ->
+        )
+        val testContext = createTestContext(handlerSettings) { msg, mode, mtd ->
             messages.add(Triple(msg, mode, mtd))
         }
 
@@ -315,7 +339,7 @@ class TestStrategies {
     fun testBidirectionalResendRequest() {
         val defaultRuleDuration = Duration.of(2, SECONDS)
         val messages = mutableListOf<Triple<ByteBuf, Map<String, String>, IChannel.SendMode>>()
-        val testContext = createTestContext(BrokenConnConfiguration(
+        val handlerSettings: FixHandlerSettings = createHandlerSettings(BrokenConnConfiguration(
             SchedulerType.CONSECUTIVE,
             listOf(
                 RuleConfiguration(DEFAULT, duration = Duration.of(2, SECONDS), cleanUpDuration = Duration.of(0, SECONDS)),
@@ -327,7 +351,8 @@ class TestStrategies {
                     missOutgoingMessagesConfiguration = MissMessageConfiguration(2)
                 ),
             )
-        )) { msg, mode, mtd ->
+        ))
+        val testContext = createTestContext(handlerSettings) { msg, mode, mtd ->
             messages.add(Triple(msg, mode, mtd))
         }
 
@@ -378,23 +403,23 @@ class TestStrategies {
 
     @Test
     fun `outgoing gap strategy test`() {
-        val defaultRuleDuration = Duration.of(500, MILLIS)
-        val businessRuleDuration = Duration.of(500, MILLIS)
-        val messages = mutableListOf<Triple<ByteBuf, Map<String, String>, IChannel.SendMode>>()
-        val testContext = createTestContext(BrokenConnConfiguration(
-            SchedulerType.CONSECUTIVE,
-            listOf(
-                RuleConfiguration(DEFAULT, duration = defaultRuleDuration, cleanUpDuration = Duration.ZERO),
-                RuleConfiguration(
-                    CREATE_OUTGOING_GAP,
-                    duration = businessRuleDuration,
-                    cleanUpDuration = Duration.ZERO,
-                    missOutgoingMessagesConfiguration = MissMessageConfiguration(3)
-                ),
+        val ruleDuration = Duration.of(500, MILLIS)
+        val correction = ruleDuration.millis() / 2
+        val handlerSettings: FixHandlerSettings = createHandlerSettings(
+            BrokenConnConfiguration(
+                SchedulerType.CONSECUTIVE,
+                listOf(
+                    RuleConfiguration(DEFAULT, duration = ruleDuration, cleanUpDuration = Duration.ZERO),
+                    RuleConfiguration(
+                        CREATE_OUTGOING_GAP,
+                        duration = ruleDuration,
+                        cleanUpDuration = Duration.ZERO,
+                        missOutgoingMessagesConfiguration = MissMessageConfiguration(3)
+                    ),
+                )
             )
-        )) { msg, mode, mtd ->
-            messages.add(Triple(msg, mode, mtd))
-        }
+        )
+        val testContext = createTestContext(handlerSettings)
 
         val context = testContext.context
         val channel = testContext.channel
@@ -409,14 +434,14 @@ class TestStrategies {
                         times(2).description("Check channel state in the onStart and sendLogon methods"),
                     ).isOpen
                     verify(this, description("open channel with default strategy first")).open()
-                    verifySend(mapOf(35 to "A", 34 to "1"), 100)
+                    verifySend(mapOf(35 to "A", 34 to "1"), correction)
                 }
-                verifySendEvent("successful login", "Info", 100)
+                verifySendEvent("successful login", "Info", correction)
             }
 
-            verifyChangeStrategy(channel, defaultRuleDuration, DEFAULT, CREATE_OUTGOING_GAP, 2)
+            verifyChangeStrategy(channel, ruleDuration, DEFAULT, CREATE_OUTGOING_GAP, 2)
             context.verifyInvocationsAndClean {
-                val events = captureSendEvents(2, 100)
+                val events = captureSendEvents(2, correction)
                 assertAll(
                     { assertEquals("successful login", events[0].name) },
                     { assertContains(events[1].name, "$CREATE_OUTGOING_GAP strategy started") },
@@ -426,12 +451,11 @@ class TestStrategies {
             handler.onOutgoing(channel, businessMessage(3).asExpandable(), mutableMapOf())
             handler.onOutgoing(channel, businessMessage(4).asExpandable(), mutableMapOf())
             handler.onOutgoing(channel, businessMessage(5).asExpandable(), mutableMapOf())
-            handler.onOutgoing(channel, businessMessage(6).asExpandable(), mutableMapOf())
 
             handler.onIncoming(channel, resendRequest(3, 3, 5), getMessageId())
             channel.verifyInvocationsAndClean {
-                verify(this, timeout(100).description("check status during handleResendRequest method")).isOpen
-                val byteBufs = captureSend(3, 100)
+                verify(this, timeout(correction).description("check status during handleResendRequest method")).isOpen
+                val byteBufs = captureSend(3, correction)
                 assertAll(
                     { byteBufs[0].assertContains(mapOf(35 to "AE", 43 to "Y", 34 to "3")) },
                     { byteBufs[1].assertContains(mapOf(35 to "AE", 43 to "Y", 34 to "4")) },
@@ -439,93 +463,164 @@ class TestStrategies {
                 )
             }
 
-            verifyChangeStrategy(channel, businessRuleDuration, CREATE_OUTGOING_GAP, DEFAULT, 7)
+            verifyChangeStrategy(channel, ruleDuration, CREATE_OUTGOING_GAP, DEFAULT, 6)
             context.verifyInvocationsAndClean {
-                val events = captureSendEvents(2, 100)
+                val events = captureSendEvents(2, correction)
                 assertAll(
                     { assertEquals("successful login", events[0].name) },
                     { assertContains(events[1].name, "$CREATE_OUTGOING_GAP strategy finished") },
                 )
-
             }
         }
     }
 
     @Test
     fun `outgoing gap strategy - long recovery in case of mixing recovery message with non-recovery messages test`() {
-        val defaultRuleDuration = Duration.of(500, MILLIS)
-        val businessRuleDuration = Duration.of(500, MILLIS)
-        val messages = mutableListOf<Triple<ByteBuf, Map<String, String>, IChannel.SendMode>>()
-        val testContext = createTestContext(BrokenConnConfiguration(
-            SchedulerType.CONSECUTIVE,
-            listOf(
-                RuleConfiguration(DEFAULT, duration = defaultRuleDuration, cleanUpDuration = Duration.ZERO),
-                RuleConfiguration(
-                    CREATE_OUTGOING_GAP,
-                    duration = businessRuleDuration,
-                    cleanUpDuration = Duration.ZERO,
-                    allowMessagesBeforeRetransmissionFinishes = true,
-                    missOutgoingMessagesConfiguration = MissMessageConfiguration(3)
+        val ruleDuration = Duration.of(500, MILLIS)
+        val correction = ruleDuration.millis() / 2
+        val messages = CopyOnWriteArrayList<MessageSearchResponse>()
+        val handlerSettings: FixHandlerSettings =
+            createHandlerSettings(
+                BrokenConnConfiguration(
+                    SchedulerType.CONSECUTIVE,
+                    listOf(
+                        RuleConfiguration(DEFAULT, duration = ruleDuration, cleanUpDuration = Duration.ZERO),
+                        RuleConfiguration(
+                            CREATE_OUTGOING_GAP,
+                            duration = ruleDuration,
+                            cleanUpDuration = Duration.ZERO,
+                            allowMessagesBeforeRetransmissionFinishes = true,
+                            missOutgoingMessagesConfiguration = MissMessageConfiguration(3),
+                        ),
+                    ),
                 ),
+            ).apply {
+                isLoadMissedMessagesFromCradle = true
+                cradleSaveTimeoutMs = 500
+            }
+        val testContext =
+            createTestContext(
+                handlerSettings,
+                searchMessageGroups = { request ->
+                    val from = if (request.hasStartTimestamp()) request.startTimestamp else null
+                    val to = if (request.hasEndTimestamp()) request.endTimestamp else null
+                    when (request.searchDirection) {
+                        TimeRelation.NEXT ->
+                            messages
+                                .toMutableList()
+                                .asSequence()
+                                .filter { response ->
+                                    (from == null || Timestamps.compare(from, response.message.messageId.timestamp) <= 0) &&
+                                        (to == null || Timestamps.compare(to, response.message.messageId.timestamp) >= 0)
+                                }
+
+                        TimeRelation.PREVIOUS ->
+                            messages
+                                .reversed()
+                                .asSequence()
+                                .filter { response ->
+                                    (from == null || Timestamps.compare(from, response.message.messageId.timestamp) >= 0) &&
+                                        (to == null || Timestamps.compare(to, response.message.messageId.timestamp) <= 0)
+                                }
+
+                        else -> error("Unsupported search direction")
+                    }.iterator()
+                },
             )
-        )) { msg, mode, mtd ->
-            messages.add(Triple(msg, mode, mtd))
-        }
 
         val context = testContext.context
         val channel = testContext.channel
         val handler = testContext.fixHandler
+        val executor = Executors.newCachedThreadPool()
 
-        var outgoingSequence = 0
-        var incomingSequence = 0
-        whenever(channel.send(any(), any(), anyOrNull(), any())).doAnswer {
-            val byteBuf = it.arguments[0] as ByteBuf
-            LOGGER.info { "channel.send ${byteBuf.toString(US_ASCII)}" }
+        val activeSending = AtomicBoolean(true)
+        var msgSender: Future<*>? = null
+        try {
+            TestServerEmulator(
+                executor,
+                handler,
+                channel,
+                ::getMessageId,
+                ::logonResponse,
+                ::resendRequest,
+            ).use { server ->
+                whenever(channel.send(any(), any(), anyOrNull(), any())).doAnswer {
+                    try {
+                        val sendMode = it.arguments[3] as IChannel.SendMode
+                        val byteBuf = it.arguments[0] as ByteBuf
+                        LOGGER.info { "put $sendMode ${byteBuf.toString(US_ASCII)}" }
 
-            val seq = requireNotNull(byteBuf.findField(34)?.value?.toInt())
-            val posDup = byteBuf.findField(43)?.value == "Y"
+                        if (sendMode.handle) {
+                            handler.onOutgoing(channel, byteBuf, mutableMapOf())
+                        }
 
-            if (posDup) {
-                if (outgoingSequence + 1 == seq) {
-                    outgoingSequence = seq
-                }
-            } else {
-                if (byteBuf.findField(35)?.value == "A") {
-                    incomingSequence += 1
-                    handler.onIncoming(channel, logonResponse(incomingSequence), getMessageId())
-                }
-                if (outgoingSequence + 1 == seq) {
-                    outgoingSequence = seq
-                } else {
-                    incomingSequence += 1
-                    handler.onIncoming(channel, resendRequest(incomingSequence, outgoingSequence, 0), getMessageId())
-                }
-            }
+                        if (!byteBuf.isEmpty()) {
+                            if (sendMode.mqPublish) {
+                                messages.add(
+                                    MessageSearchResponse
+                                        .newBuilder()
+                                        .apply {
+                                            messageBuilder.apply {
+                                                messageIdBuilder.apply {
+                                                    timestamp = Timestamps.now()
+                                                    sequence = byteBuf.findField(MSG_SEQ_NUM_TAG)?.value?.toLong() ?: 0L
+                                                }
+                                                bodyRaw = UnsafeByteOperations.unsafeWrap(byteBuf.toByteArray())
+                                            }
+                                        }.build(),
+                                )
+                                LOGGER.info { "publish to mq ${byteBuf.findField(MSG_SEQ_NUM_TAG)?.value}" }
+                            }
 
-            CompletableFuture.completedFuture(getMessageId())
-        }
+                            if (sendMode.socketSend) {
+                                server.consume(byteBuf)
+                            }
+                        }
 
-        handler.use {
-            handler.onStart()
-            verify(context, timeout(defaultRuleDuration.toMillis() + 100)).send(argThat {
-                toProto(TEST_BOOK, TEST_SCOPE).name.contains("$CREATE_OUTGOING_GAP strategy started")
-            }, anyOrNull())
-
-            val future = CompletableFuture.runAsync {
-                while (!Thread.currentThread().isInterrupted) {
-                    val byteBuf = businessMessage(0).asExpandable()
-                    handler.onOutgoing(channel, byteBuf, mutableMapOf())
-                    if (!byteBuf.isEmpty()) {
-                        channel.send(byteBuf, mutableMapOf())
+                        CompletableFuture.completedFuture(getMessageId())
+                    } catch (e: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        throw e
                     }
                 }
+
+                handler.use {
+                    handler.onStart()
+                    verify(context, timeout(ruleDuration.toMillis() + correction)).send(
+                        argThat {
+                            toProto(TEST_BOOK, TEST_SCOPE).name.contains("$CREATE_OUTGOING_GAP strategy started")
+                        },
+                        anyOrNull(),
+                    )
+
+                    msgSender =
+                        executor.submit {
+                            try {
+                                var seq = 2
+                                while (activeSending.get()) {
+                                    seq += 1
+                                    handler.send(businessMessage(seq).asExpandable(), mutableMapOf(), null)
+                                    Thread.sleep(1)
+                                }
+                            } catch (e: Exception) {
+                                LOGGER.error(e) { "Send message problem" }
+                        } finally {
+                            LOGGER.info { "Stopped sending" }
+                        }
+                    }
+
+                    verify(context, timeout(ruleDuration.toMillis() * 10)).send(
+                        argThat {
+                        toProto(TEST_BOOK, TEST_SCOPE).name.contains("$CREATE_OUTGOING_GAP strategy finished")
+                    },
+                            anyOrNull())
+
+                }
             }
-
-            verify(context, timeout(businessRuleDuration.toMillis() * 10)).send(argThat {
-                toProto(TEST_BOOK, TEST_SCOPE).name.contains("$CREATE_OUTGOING_GAP strategy finished")
-            }, anyOrNull())
-
-            future.cancel(true)
+        } finally {
+            activeSending.set(false)
+            msgSender?.cancel(true)
+            executor.shutdownGracefully()
         }
     }
 
@@ -536,21 +631,22 @@ class TestStrategies {
         newRule: RuleType,
         logonSeq: Int,
     ) {
+        val correction = ruleDuration.millis() / 2
         channel.verifyInvocationsAndClean {
             verify(
                 this,
-                timeout(ruleDuration.millis() + 100)
+                timeout(ruleDuration.millis() + correction)
                     .description("close in disconnect method at the end of $oldRule strategy"),
             ).close()
             verify(
                 this,
-                timeout(100).description("open channel with $newRule strategy"),
+                timeout(correction).description("open channel with $newRule strategy"),
             ).open()
             verify(
                 this,
                 times(2).description("check status in sendLogon and openChannelAndWaitForLogon"),
             ).isOpen
-            verifySend(mapOf(35 to "A", 34 to logonSeq.toString()), 100)
+            verifySend(mapOf(35 to "A", 34 to logonSeq.toString()), correction)
         }
     }
 
@@ -561,20 +657,18 @@ class TestStrategies {
         val businessRuleDuration = Duration.of(6, SECONDS)
         val businessRuleCleanupDuration = Duration.of(2, SECONDS)
         val messages = mutableListOf<Triple<ByteBuf, Map<String, String>, IChannel.SendMode>>()
-        val testContext = createTestContext(
-            BrokenConnConfiguration(
-                SchedulerType.CONSECUTIVE,
-                listOf(
-                    RuleConfiguration(DEFAULT, duration = defaultRuleDuration, cleanUpDuration = Duration.of(0, SECONDS)),
-                    RuleConfiguration(
-                        RuleType.CLIENT_OUTAGE,
-                        duration = businessRuleDuration,
-                        cleanUpDuration = businessRuleCleanupDuration,
-                    ),
-                )
-            ),
-            1
-        ) { msg, mode, mtd ->
+        val handlerSettings: FixHandlerSettings = createHandlerSettings(BrokenConnConfiguration(
+            SchedulerType.CONSECUTIVE,
+            listOf(
+                RuleConfiguration(DEFAULT, duration = defaultRuleDuration, cleanUpDuration = Duration.of(0, SECONDS)),
+                RuleConfiguration(
+                    RuleType.CLIENT_OUTAGE,
+                    duration = businessRuleDuration,
+                    cleanUpDuration = businessRuleCleanupDuration,
+                ),
+            )
+        ), 1, false)
+        val testContext = createTestContext(handlerSettings) { msg, mode, mtd ->
             messages.add(Triple(msg, mode, mtd))
         }
 
@@ -610,7 +704,7 @@ class TestStrategies {
         val businessRuleDuration = Duration.of(6, SECONDS)
         val businessRuleCleanupDuration = Duration.of(2, SECONDS)
         val messages = mutableListOf<Triple<ByteBuf, Map<String, String>, IChannel.SendMode>>()
-        val testContext = createTestContext(
+        val handlerSettings: FixHandlerSettings = createHandlerSettings(
             BrokenConnConfiguration(
                 SchedulerType.CONSECUTIVE,
                 listOf(
@@ -621,9 +715,9 @@ class TestStrategies {
                         cleanUpDuration = businessRuleCleanupDuration,
                     ),
                 )
-            ),
-            1
-        ) { msg, mode, mtd ->
+            ), 1, false
+        )
+        val testContext = createTestContext(handlerSettings) { msg, mode, mtd ->
             messages.add(Triple(msg, mode, mtd))
         }
 
@@ -661,7 +755,7 @@ class TestStrategies {
         val businessRuleDuration = Duration.of(6, SECONDS)
         val businessRuleCleanupDuration = Duration.of(2, SECONDS)
         val messages = mutableListOf<Triple<ByteBuf, Map<String, String>, IChannel.SendMode>>()
-        val testContext = createTestContext(
+        val handlerSettings: FixHandlerSettings = createHandlerSettings(
             BrokenConnConfiguration(
                 SchedulerType.CONSECUTIVE,
                 listOf(
@@ -674,7 +768,8 @@ class TestStrategies {
                     ),
                 )
             )
-        ) { msg, mode, mtd ->
+        )
+        val testContext = createTestContext(handlerSettings) { msg, mode, mtd ->
             messages.add(Triple(msg, mode, mtd))
         }
 
@@ -705,7 +800,7 @@ class TestStrategies {
         val businessRuleDuration = Duration.of(6, SECONDS)
         val businessRuleCleanupDuration = Duration.of(2, SECONDS)
         val messages = mutableListOf<Triple<ByteBuf, Map<String, String>, IChannel.SendMode>>()
-        val testContext = createTestContext(
+        val handlerSettings: FixHandlerSettings = createHandlerSettings(
             BrokenConnConfiguration(
                 SchedulerType.CONSECUTIVE,
                 listOf(
@@ -718,7 +813,8 @@ class TestStrategies {
                     ),
                 )
             )
-        ) { msg, mode, mtd ->
+        )
+        val testContext = createTestContext(handlerSettings) { msg, mode, mtd ->
             messages.add(Triple(msg, mode, mtd))
         }
 
@@ -751,7 +847,7 @@ class TestStrategies {
         val businessRuleDuration = Duration.of(6, SECONDS)
         val businessRuleCleanupDuration = Duration.of(2, SECONDS)
         val messages = mutableListOf<Triple<ByteBuf, Map<String, String>, IChannel.SendMode>>()
-        val testContext = createTestContext(
+        val handlerSettings: FixHandlerSettings = createHandlerSettings(
             BrokenConnConfiguration(
                 SchedulerType.CONSECUTIVE,
                 listOf(
@@ -764,7 +860,8 @@ class TestStrategies {
                     ),
                 )
             )
-        ) { msg, mode, mtd ->
+        )
+        val testContext = createTestContext(handlerSettings) { msg, mode, mtd ->
             messages.add(Triple(msg, mode, mtd))
         }
 
@@ -806,7 +903,7 @@ class TestStrategies {
         val businessRuleDuration = Duration.of(6, SECONDS)
         val businessRuleCleanupDuration = Duration.of(2, SECONDS)
         val messages = mutableListOf<Triple<ByteBuf, Map<String, String>, IChannel.SendMode>>()
-        val testContext = createTestContext(
+        val handlerSettings: FixHandlerSettings = createHandlerSettings(
             BrokenConnConfiguration(
                 SchedulerType.CONSECUTIVE,
                 listOf(
@@ -819,7 +916,8 @@ class TestStrategies {
                     ),
                 )
             )
-        ) { msg, mode, mtd ->
+        )
+        val testContext = createTestContext(handlerSettings) { msg, mode, mtd ->
             messages.add(Triple(msg, mode, mtd))
         }
 
@@ -857,17 +955,27 @@ class TestStrategies {
     }
 
     private fun createTestContext(
-        strategyConfig: BrokenConnConfiguration,
-        hbtInt: Int = 30,
+        handlerSettings: FixHandlerSettings,
         enableAdditionalHandling: Boolean = true,
-        useNextExpectedSeqNum: Boolean = false,
+        searchMessageGroups: (
+            MessageGroupsSearchRequest,
+        ) -> Iterator<MessageSearchResponse> = { emptyList<MessageSearchResponse>().iterator() },
         sendHandlerExtension: (ByteBuf, Map<String, String>, IChannel.SendMode) -> Unit = {_, _, _ ->}
     ): TestContext {
-        val handlerSettings = createHandlerSettings(strategyConfig, hbtInt, useNextExpectedSeqNum)
-        val channel: IChannel = mock {}
+        val channel: IChannel = mock {
+            on { sessionGroup }.thenReturn(TEST_SESSION_GROUP)
+            on { sessionAlias }.thenReturn(TEST_SESSION_ALIAS)
+        }
+        val dataProviderService: DataProviderService = mock {
+            on { this.searchMessageGroups(any()) }.doAnswer {
+                searchMessageGroups(it.arguments.first() as MessageGroupsSearchRequest)
+            }
+        }
         val context: IHandlerContext = mock {
+            on { bookName }.thenReturn(TEST_BOOK)
             on { settings }.thenReturn(handlerSettings)
             on { createChannel(any(), any(), any(), any(), any(), any(), anyVararg()) }.thenReturn(channel)
+            on { getGrpcService(eq(DataProviderService::class.java)) }.thenReturn(dataProviderService)
         }
 
         val incomingSequence = AtomicInteger(0)
@@ -875,8 +983,13 @@ class TestStrategies {
 
         val handler = FixHandler(context)
         context.verifyInvocationsAndClean {
-            verifySendEvent("Strategy root event", "Info")
+            verifySendEvent("Strategy root event", "Info", 100)
             verify(this).settings
+            if (handlerSettings.isLoadMissedMessagesFromCradle) {
+                verify(this).bookName
+                verify(this).getGrpcService(eq(DataProviderService::class.java))
+
+            }
         }
 
         val onSendHandler: (ByteBuf, IChannel.SendMode) -> CompletableFuture<MessageID> = { msg, mode ->
@@ -891,7 +1004,7 @@ class TestStrategies {
                 sendHandlerExtension(expanded, metadata, mode)
             }
             if(msg.contains("35=A\u0001")) {
-                if(useNextExpectedSeqNum) {
+                if(handlerSettings.useNextExpectedSeqNum()) {
                     handler.onIncoming(channel, logonResponseWithNextExpectedSeq(incomingSequence.incrementAndGet(), outgoingSequence + 1), getMessageId())
                 } else {
                     handler.onIncoming(channel, logonResponse(incomingSequence.incrementAndGet()), getMessageId())
@@ -958,7 +1071,7 @@ class TestStrategies {
                 { name?.let { assertContains(event.name, name) } },
                 { type?.let { assertContains(event.type, type) } },
             )
-    }
+        }
 
     private fun IHandlerContext.captureSendEvents(
         times: Int,
