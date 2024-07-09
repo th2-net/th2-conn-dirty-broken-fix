@@ -335,7 +335,7 @@ spec:
 ```
 ## 1.3.0
 
-* Migrated to th2 gradle plugin `0.1.0`
+* Migrated to th2 gradle plugin `0.1.1`
 * Updated:
   * bom: `4.6.1`
   * common: `5.13.1-dev`
