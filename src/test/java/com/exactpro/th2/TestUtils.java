@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Exactpro (Exactpro Systems Limited)
+ * Copyright 2023-2024 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,16 +15,19 @@
  */
 package com.exactpro.th2;
 
-import com.exactpro.th2.conn.dirty.fix.FixProtocolManglerSettings;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BrokenConnConfiguration;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import org.jetbrains.annotations.NotNull;
+
+import static java.util.Objects.requireNonNullElse;
 
 public class TestUtils {
     @NotNull
     public static FixHandlerSettings createHandlerSettings() {
         return createHandlerSettings(null, null, false);
+    }
+
+    public static FixHandlerSettings createHandlerSettings(BrokenConnConfiguration brokenConfig) {
+        return createHandlerSettings(brokenConfig, 30, false);
     }
 
     public static FixHandlerSettings createHandlerSettings(
@@ -36,11 +39,8 @@ public class TestUtils {
         fixHandlerSettings.setHost("127.0.0.1");
         fixHandlerSettings.setPort(8080);
         fixHandlerSettings.setBeginString("FIXT.1.1");
-        if(hbtInt == null) {
-            fixHandlerSettings.setHeartBtInt(30);
-        } else {
-            fixHandlerSettings.setHeartBtInt(hbtInt);
-        }
+        fixHandlerSettings.setHeartBtInt(requireNonNullElse(hbtInt, 30));
+        fixHandlerSettings.setDisconnectCleanUpTimeoutMs(100);
         fixHandlerSettings.setUseNextExpectedSeqNum(useNextExpectedSeqNumber);
         fixHandlerSettings.setSenderCompID("client");
         fixHandlerSettings.setTargetCompID("server");
@@ -54,6 +54,7 @@ public class TestUtils {
         fixHandlerSettings.setResetOnLogon(false);
         fixHandlerSettings.setDefaultApplVerID("9");
         fixHandlerSettings.setSenderSubID("trader");
+        fixHandlerSettings.setCradleSaveTimeoutMs(100);
         fixHandlerSettings.setBrokenConnConfiguration(brokenConfig);
         return fixHandlerSettings;
     }

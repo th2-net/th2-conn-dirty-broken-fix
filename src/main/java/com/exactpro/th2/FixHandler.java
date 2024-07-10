@@ -59,6 +59,15 @@ import com.exactpro.th2.dataprovider.lw.grpc.DataProviderService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import kotlin.Unit;
+import kotlin.jvm.functions.Function1;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -95,15 +104,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
-
-import kotlin.Unit;
-import kotlin.jvm.functions.Function1;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.exception.ExceptionUtils;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static com.exactpro.th2.common.event.EventUtils.createMessageBean;
 import static com.exactpro.th2.conn.dirty.fix.FixByteBufUtilKt.findField;
@@ -181,7 +181,6 @@ import static com.exactpro.th2.constants.Constants.USERNAME;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.asExpandable;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.indexOf;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.isEmpty;
-import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.startsWith;
 import static com.exactpro.th2.util.MessageUtil.findByte;
 import static com.exactpro.th2.util.MessageUtil.getBodyLength;
 import static com.exactpro.th2.util.MessageUtil.getChecksum;
@@ -392,11 +391,11 @@ public class FixHandler implements AutoCloseable, IHandler {
             try {
                 sendingTimeoutHandler.getWithTimeout(channel.open());
             } catch (TimeoutException e) {
-                ExceptionUtils.rethrow(new TimeoutException(
+                ExceptionUtils.asRuntimeException(new TimeoutException(
                         String.format("could not open connection before timeout %d mls elapsed",
                                 currentTimeout)));
             } catch (Exception e) {
-                ExceptionUtils.rethrow(e);
+                ExceptionUtils.asRuntimeException(e);
             }
         }
 
@@ -411,7 +410,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                 }
                 if (System.currentTimeMillis() > deadline) {
                     // The method should have checked exception in signature...
-                    ExceptionUtils.rethrow(new TimeoutException(String.format("session was not established within %d mls",
+                    ExceptionUtils.asRuntimeException(new TimeoutException(String.format("session was not established within %d mls",
                         settings.getConnectionTimeoutOnSend())));
                 }
             }
@@ -426,7 +425,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                 }
                 if (System.currentTimeMillis() > deadline) {
                     // The method should have checked exception in signature...
-                    ExceptionUtils.rethrow(new TimeoutException(String.format("session was not established within %d mls",
+                    ExceptionUtils.asRuntimeException(new TimeoutException(String.format("session was not established within %d mls",
                         settings.getConnectionTimeoutOnSend())));
                 }
             }
@@ -496,7 +495,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     @NotNull
     @Override
-    public Map<String, String> onIncoming(@NotNull IChannel channel, @NotNull ByteBuf message, MessageID messageId) {
+    public Map<String, String> onIncoming(@NotNull IChannel channel, @NotNull ByteBuf message, @NotNull MessageID messageId) {
         Map<String, String> metadata = new HashMap<>();
 
         StrategyState state = strategy.getState();
@@ -537,7 +536,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         if(msgTypeValue.equals(MSG_TYPE_LOGOUT)) {
             serverMsgSeqNum.incrementAndGet();
             state.addMessageID(messageId);
-            strategy.getIncomingMessageStrategy(x -> x.getLogoutStrategy()).process(message, metadata);
+            strategy.getIncomingMessageStrategy(IncomingMessagesStrategy::getLogoutStrategy).process(message, metadata);
             return metadata;
         }
 
@@ -759,11 +758,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         } else {
             int newSeqNo = Integer.parseInt(requireNonNull(seqNumValue.getValue()));
             serverMsgSeqNum.updateAndGet(sequence -> {
-                if(sequence < newSeqNo - 1) {
-                    return newSeqNo - 1;
-                } else {
-                    return sequence;
-                }
+                return Math.max(sequence, newSeqNo - 1);
             });
         }
     }
@@ -850,7 +845,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             }
 
             AtomicBoolean skip = new AtomicBoolean(recoveryConfig.getOutOfOrder());
-            AtomicReference<ByteBuf> skipped = new AtomicReference(null);
+            AtomicReference<ByteBuf> skipped = new AtomicReference<>(null);
 
             int endSeq = endSeqNo;
             LOGGER.info("Loading messages from {} to {}", beginSeqNo, endSeqNo);
@@ -1596,7 +1591,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         onOutgoingUpdateTag(message, metadata);
         FixField msgType = findField(message, MSG_TYPE_TAG, US_ASCII);
 
-        if(msgType == null || !msgType.getValue().equals(MSG_TYPE_SEQUENCE_RESET)) return null;
+        if(msgType == null || !Objects.equals(msgType.getValue(), MSG_TYPE_SEQUENCE_RESET)) return null;
 
         if(resendRequestConfig.getGapFill()) return null;
 
@@ -1613,11 +1608,13 @@ public class FixHandler implements AutoCloseable, IHandler {
         int countToMiss = strategy.getMissOutgoingMessagesConfiguration().getCount();
         var strategyState = strategy.getState();
         onOutgoingUpdateTag(message, metadata);
-        if(!strategyState.addMissedMessageToCacheIfCondition(msgSeqNum.get(), message.copy(), x -> x <= countToMiss)) {
-            return null;
+        if(strategyState.addMissedMessageToCacheIfCondition(msgSeqNum.get(), message.copy(), x -> x <= countToMiss)) {
+            message.clear();
         }
-
-        message.clear();
+        if(strategy.getAllowMessagesBeforeRetransmissionFinishes()
+           && Duration.between(strategy.getStartTime(), Instant.now()).compareTo(strategy.getConfig().getDuration()) > 0 ) {
+            strategy.disableAllowMessagesBeforeRetransmissionFinishes("after " + strategy.getConfig().getDuration() + " strategy duration");
+        }
 
         return null;
     }
@@ -1772,9 +1769,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         ByteBuf logonBuf = Unpooled.wrappedBuffer(logon.toString().getBytes(StandardCharsets.UTF_8));
 
         channel.send(logonBuf, strategy.getState().enrichProperties(props), null, SendMode.DIRECT_MQ)
-            .thenAcceptAsync(x -> {
-                strategy.getState().addMessageID(x);
-            }, executorService);
+            .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
 
         boolean logonSent = false;
         boolean responseReceived = true;
@@ -1783,7 +1778,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         try(
             Socket socket = new Socket(address.getAddress(), address.getPort());
             DataOutputStream dOut = new DataOutputStream(socket.getOutputStream());
-            DataInputStream dIn = new DataInputStream(socket.getInputStream());
+            DataInputStream dIn = new DataInputStream(socket.getInputStream())
         ){
             socket.setSoTimeout(5000);
 
@@ -1817,7 +1812,8 @@ public class FixHandler implements AutoCloseable, IHandler {
             LOGGER.info("Waiting for 5 seconds to check if main session will be disconnected.");
             Thread.sleep(5000);
         } catch (InterruptedException e) {
-            e.printStackTrace();
+            LOGGER.error("Interrupted", e);
+            Thread.currentThread().interrupt();
         }
 
         HashMap<String, Object> additionalDetails = new HashMap<>();
@@ -2228,7 +2224,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             ruleErrorEvent(nextStrategyConfig.getRuleType(), null, e);
         }
 
-        LOGGER.info("Next strategy applied: {}", nextStrategyConfig.getRuleType());
+        LOGGER.info("Next strategy applied: {}, duration: {}", nextStrategyConfig.getRuleType(), nextStrategyConfig.getDuration());
         executorService.schedule(this::applyNextStrategy, nextStrategyConfig.getDuration().toMillis(), TimeUnit.MILLISECONDS);
     }
 

@@ -1,27 +1,16 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-import com.github.jk1.license.filter.LicenseBundleNormalizer
-import com.github.jk1.license.render.JsonReportRenderer
-
 plugins {
-    id 'java'
+    id "application"
+    id "com.exactpro.th2.gradle.component" version "0.1.1"
     id 'org.jetbrains.kotlin.jvm' version '1.8.22'
-    id 'com.palantir.docker' version '0.25.0'
-    id "org.owasp.dependencycheck" version "8.3.1"
-    id "com.gorylenko.gradle-git-properties" version "2.4.1"
-    id 'com.github.jk1.dependency-license-report' version '2.5'
-    id "de.undercouch.download" version "5.4.0"
+    id "org.jetbrains.kotlin.kapt" version "1.8.22"
 }
-
-apply plugin: 'application'
-apply plugin: 'com.palantir.docker'
-apply plugin: 'kotlin-kapt'
 
 group 'com.exactpro.th2'
 version release_version
 
-sourceCompatibility = 11
-targetCompatibility = 11
+kotlin {
+    jvmToolchain(11)
+}
 
 repositories {
     mavenCentral()
@@ -45,41 +34,34 @@ repositories {
 }
 
 dependencies {
-    api platform('com.exactpro.th2:bom:4.5.0')
-
-    implementation("com.exactpro.th2:common:5.4.0-dev") {
+    implementation("com.exactpro.th2:common:5.13.1-dev") {
         exclude group: 'com.exactpro.th2', module: 'task-utils'
     }
-    implementation group: 'com.exactpro.th2', name: 'common-utils', version: '2.2.1-dev'
-
+    implementation "com.exactpro.th2:common-utils:2.2.3-dev"
     implementation 'com.exactpro.th2:netty-bytebuf-utils:0.0.1'
     implementation 'net.lingala.zip4j:zip4j:2.11.5'
-    implementation 'org.apache.httpcomponents.client5:httpclient5:5.2.1'
-
-    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.15.2'
-
-    implementation 'com.exactpro.th2:conn-dirty-tcp-core:3.4.0-dev'
-    implementation 'com.exactpro.th2:grpc-lw-data-provider:2.2.0-dev'
+    implementation 'org.apache.httpcomponents.client5:httpclient5:5.3.1'
+    implementation'com.exactpro.th2:conn-dirty-tcp-core:3.6.0-dev'
+    implementation 'com.exactpro.th2:grpc-lw-data-provider:2.3.1-dev'
 
     implementation 'org.slf4j:slf4j-api'
-    implementation 'io.github.microutils:kotlin-logging:3.0.0' // The last version bases on kotlin 1.6.0
+    implementation 'io.github.microutils:kotlin-logging:3.0.5'
     implementation 'org.apache.commons:commons-lang3'
 
     implementation 'io.netty:netty-all'
-    implementation 'com.google.auto.service:auto-service:1.0.1'
+    implementation 'com.google.auto.service:auto-service:1.1.1'
 
     implementation 'com.fasterxml.jackson.core:jackson-core'
     implementation 'com.fasterxml.jackson.core:jackson-databind'
     implementation 'com.fasterxml.jackson.module:jackson-module-kotlin'
 
-    testImplementation 'org.mockito:mockito-core:5.4.0'
-    testImplementation 'org.mockito:mockito-all:1.10.19'
-    testImplementation 'org.jetbrains.kotlin:kotlin-test-junit5:1.8.10'
-    testImplementation 'org.junit.jupiter:junit-jupiter-params:5.9.3'
-    testImplementation 'org.mockito.kotlin:mockito-kotlin:4.1.0'
+    testImplementation 'org.mockito:mockito-core:5.12.0'
+    testImplementation 'org.jetbrains.kotlin:kotlin-test-junit5:1.8.22'
+    testImplementation 'org.junit.jupiter:junit-jupiter-params:5.10.3'
+    testImplementation 'org.mockito.kotlin:mockito-kotlin:5.3.1'
 
-    annotationProcessor 'com.google.auto.service:auto-service:1.0.1'
-    kapt 'com.google.auto.service:auto-service:1.0.1'
+    annotationProcessor 'com.google.auto.service:auto-service:1.1.1'
+    kapt 'com.google.auto.service:auto-service:1.1.1'
 }
 
 test {
@@ -90,70 +72,8 @@ application {
     mainClass.set('com.exactpro.th2.conn.dirty.tcp.core.Main')
 }
 
-applicationName = 'service'
-
-distTar {
-    archiveFileName.set("${applicationName}.tar")
-}
-
-dockerPrepare {
-    dependsOn distTar
-}
-
-docker {
-    copySpec.from(tarTree("$buildDir/distributions/${applicationName}.tar"))
-}
-
-tasks.withType(KotlinCompile).configureEach {
-    compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_11)
-    }
-}
-
-test {
-    testLogging {
-        events "passed", "skipped", "failed"
-        // You can adjust the logging level as needed
-        exceptionFormat "full"
-        showStandardStreams = true
-    }
-}
-
 dependencyCheck {
-    formats=['SARIF', 'JSON', 'HTML']
-    failBuildOnCVSS=5
     suppressionFile="suppressions.xml"
-
     //FIXME: we should check all used dependencies
     skipConfigurations = ['kapt', 'kaptClasspath_kaptKotlin', 'kaptTest', 'kaptTestFixtures', 'annotationProcessor']
-    analyzers {
-        assemblyEnabled = false
-        nugetconfEnabled = false
-        nodeEnabled = false
-    }
-}
-
-dependencyLocking {
-    lockAllConfigurations()
-}
-
-licenseReport {
-    def licenseNormalizerBundlePath = "$buildDir/license-normalizer-bundle.json"
-
-    if (!file(licenseNormalizerBundlePath).exists()) {
-        download.run {
-            src 'https://raw.githubusercontent.com/th2-net/.github/main/license-compliance/gradle-license-report/license-normalizer-bundle.json'
-            dest "$buildDir/license-normalizer-bundle.json"
-            overwrite false
-        }
-    }
-
-    filters = [
-            new LicenseBundleNormalizer(licenseNormalizerBundlePath, false)
-    ]
-    renderers = [
-            new JsonReportRenderer('licenses.json', false),
-    ]
-    excludeOwnGroup = false
-    allowedLicensesFile = new URL("https://raw.githubusercontent.com/th2-net/.github/main/license-compliance/gradle-license-report/allowed-licenses.json")
 }
