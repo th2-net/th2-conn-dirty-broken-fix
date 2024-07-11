@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Exactpro (Exactpro Systems Limited)
+ * Copyright 2023-2024 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 package com.exactpro.th2.conn.dirty.fix.brokenconn.strategy
 
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BatchSendConfiguration
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BlockMessageConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.MissMessageConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RecoveryConfig
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RuleConfiguration
@@ -24,14 +23,11 @@ import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.SplitSendConfigu
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.TransformMessageConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.StrategyState.Companion.resetAndCopyMissedMessages
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.CleanupHandler
-import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.MessageProcessor
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.OnCloseHandler
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.RecoveryHandler
 import java.time.Instant
-import java.util.concurrent.locks.ReentrantLock
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
-import kotlin.concurrent.withLock
 import kotlin.concurrent.write
 
 class StatefulStrategy(
@@ -55,6 +51,9 @@ class StatefulStrategy(
         private set
     var missOutgoingMessagesConfiguration: MissMessageConfiguration? = null
         get() = state.config?.missOutgoingMessagesConfiguration ?: error("Miss outgoing messages config isn't present.")
+        private set
+    var disableForMessageTypes: Set<String> = emptySet()
+        get() = state.config?.disableForMessageTypes ?: error("Disable for message types isn't present.")
         private set
     var transformMessageConfiguration: TransformMessageConfiguration? = null
         get() = state.config?.transformMessageConfiguration ?: error("Transform message config isn't present.")

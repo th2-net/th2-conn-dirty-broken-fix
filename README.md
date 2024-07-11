@@ -1,4 +1,4 @@
-# th2-conn-dirty-fix (1.2.1)
+# th2-conn-dirty-fix (1.3.0)
 
 This microservice allows sending and receiving messages via FIX protocol
 
@@ -333,6 +333,10 @@ spec:
         memory: 100Mi
         cpu: 20m
 ```
+
+## 1.3.0
+
+* Provided ability to disable transformation strategies: `TRANSFORM_MESSAGE_STRATEGY`, `INVALID_CHECKSUM`, `FAKE_RETRANSMISSION` for raw message types specified in the `disableForMessageTypes` property
 
 ## 1.2.1
 
