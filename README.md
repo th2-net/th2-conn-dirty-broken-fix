@@ -337,6 +337,16 @@ spec:
 ## 1.3.0
 
 * Provided ability to disable transformation strategies: `TRANSFORM_MESSAGE_STRATEGY`, `INVALID_CHECKSUM`, `FAKE_RETRANSMISSION` for raw message types specified in the `disableForMessageTypes` property
+* Migrated to th2 gradle plugin `0.1.1`
+* Updated:
+  * bom: `4.6.1`
+  * common: `5.13.1-dev`
+  * common-utils: `2.2.3-dev`
+  * conn-dirty-tcp-core: `3.6.0-dev`
+  * grpc-lw-data-provider: `2.3.1-dev`
+  * httpclient5: `5.3.1`
+  * auto-service: `1.1.1`
+  * kotlin-logging: `3.0.5`
 
 ## 1.2.1
 
