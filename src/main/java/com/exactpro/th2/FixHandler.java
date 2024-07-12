@@ -1401,10 +1401,13 @@ public class FixHandler implements AutoCloseable, IHandler {
         ByteBuf message,
         Map<String, String> metadata
     ) {
-        Set<String> disableForMessageTypes = strategy.getDisableForMessageTypes();
-
         FixField msgTypeField = findField(message, MSG_TYPE_TAG, US_ASCII);
-        if(msgTypeField == null || msgTypeField.getValue() == null || disableForMessageTypes.contains(msgTypeField.getValue())) {
+        if(msgTypeField == null || msgTypeField.getValue() == null) {
+            return;
+        }
+        Set<String> disableForMessageTypes = strategy.getDisableForMessageTypes();
+        if (disableForMessageTypes.contains(msgTypeField.getValue())) {
+            LOGGER.info("Strategy '{}' is disabled for {} message type", strategy.getType(), msgTypeField.getValue());
             return;
         }
 
@@ -1583,6 +1586,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         Set<String> disableForMessageTypes = strategy.getDisableForMessageTypes();
         FixField msgTypeField = findField(message, MSG_TYPE_TAG, US_ASCII);
         if(msgTypeField != null && msgTypeField.getValue() != null && disableForMessageTypes.contains(msgTypeField.getValue())) {
+            LOGGER.info("Strategy '{}' is disabled for {} message type", strategy.getType(), msgTypeField.getValue());
             return null;
         }
 
