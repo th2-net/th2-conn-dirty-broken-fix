@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Exactpro (Exactpro Systems Limited)
+ * Copyright 2023-2024 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package com.exactpro.th2;
 
 import com.exactpro.th2.common.grpc.MessageID;
-import com.exactpro.th2.conn.dirty.fix.MessageSearcher;
+import com.exactpro.th2.conn.dirty.fix.TestMessageSearcher;
 import com.exactpro.th2.dataprovider.lw.grpc.DataProviderService;
 import com.exactpro.th2.dataprovider.lw.grpc.MessageGroupResponse;
 import com.exactpro.th2.dataprovider.lw.grpc.MessageGroupsSearchRequest;
@@ -54,7 +54,7 @@ public class RecoveryTest {
         FixHandlerSettings settings = createHandlerSettings();
         settings.setLoadMissedMessagesFromCradle(true);
         DataProviderService dataProviderService = Mockito.mock(DataProviderService.class);
-        MessageSearcher ms = new MessageSearcher(
+        TestMessageSearcher ms = new TestMessageSearcher(
             List.of(
                 messageSearchResponse(2),
                 messageSearchResponse(3),
@@ -87,7 +87,7 @@ public class RecoveryTest {
         FixHandlerSettings settings = createHandlerSettings();
         settings.setLoadMissedMessagesFromCradle(true);
         DataProviderService dataProviderService = Mockito.mock(DataProviderService.class);
-        MessageSearcher ms = new MessageSearcher(
+        TestMessageSearcher ms = new TestMessageSearcher(
             List.of(
                 messageSearchResponse(4),
                 messageSearchResponse(5)
@@ -143,7 +143,7 @@ public class RecoveryTest {
         FixHandlerSettings settings = createHandlerSettings();
         settings.setLoadMissedMessagesFromCradle(true);
         DataProviderService dataProviderService = Mockito.mock(DataProviderService.class);
-        MessageSearcher ms = new MessageSearcher(
+        TestMessageSearcher ms = new TestMessageSearcher(
             List.of(
                 messageSearchResponse(1),
                 messageSearchResponse(2),
@@ -177,7 +177,7 @@ public class RecoveryTest {
         FixHandlerSettings settings = createHandlerSettings();
         settings.setLoadMissedMessagesFromCradle(true);
         DataProviderService dataProviderService = Mockito.mock(DataProviderService.class);
-        MessageSearcher ms = new MessageSearcher(
+        TestMessageSearcher ms = new TestMessageSearcher(
             List.of(
                 messageSearchResponseAdmin(2),
                 messageSearchResponse(4),
