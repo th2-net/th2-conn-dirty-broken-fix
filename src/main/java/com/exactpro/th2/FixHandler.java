@@ -91,6 +91,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
@@ -1391,13 +1392,18 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     // TODO: Add simplified configuration
-    private Map<String, String> transformProcessor(
+    private void transformProcessor(
         ByteBuf message,
         Map<String, String> metadata
     ) {
         FixField msgTypeField = findField(message, MSG_TYPE_TAG, US_ASCII);
         if(msgTypeField == null || msgTypeField.getValue() == null) {
-            return null;
+            return;
+        }
+        Set<String> disableForMessageTypes = strategy.getDisableForMessageTypes();
+        if (disableForMessageTypes.contains(msgTypeField.getValue())) {
+            LOGGER.info("Strategy '{}' is disabled for {} message type", strategy.getType(), msgTypeField.getValue());
+            return;
         }
 
         TransformMessageConfiguration config = strategy.getTransformMessageConfiguration();
@@ -1406,7 +1412,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         if(!msgTypeField.getValue().equals(transformation.getMessageType())) {
             if(!transformation.getAnyMessageType()) {
                 config.decreaseCounter();
-                return null;
+                return;
             }
         }
 
@@ -1493,7 +1499,6 @@ public class FixHandler implements AutoCloseable, IHandler {
             }
         );
 
-        return null;
     }
 
     private Map<String, String>
@@ -1572,6 +1577,13 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private Map<String, String> fakeRetransmissionOutgoingProcessor(ByteBuf message, Map<String, String> metadata) {
         onOutgoingUpdateTag(message, metadata);
+
+        Set<String> disableForMessageTypes = strategy.getDisableForMessageTypes();
+        FixField msgTypeField = findField(message, MSG_TYPE_TAG, US_ASCII);
+        if(msgTypeField != null && msgTypeField.getValue() != null && disableForMessageTypes.contains(msgTypeField.getValue())) {
+            LOGGER.info("Strategy '{}' is disabled for {} message type", strategy.getType(), msgTypeField.getValue());
+            return null;
+        }
 
         FixField sendingTime = requireNonNull(findField(message, SENDING_TIME_TAG));
         strategy.getState().addMissedMessageToCacheIfCondition(msgSeqNum.get(), message.copy(), x -> true);
@@ -2239,13 +2251,14 @@ public class FixHandler implements AutoCloseable, IHandler {
             case SEQUENCE_RESET: return this::runReconnectWithSequenceResetStrategy;
             case SEND_SEQUENCE_RESET: return this::sendSequenceReset;
             case TRANSFORM_LOGON: return this::setupTransformStrategy;
-            case TRANSFORM_MESSAGE_STRATEGY: return this::setupTransformMessageStrategy;
+            case TRANSFORM_MESSAGE_STRATEGY:
+            case INVALID_CHECKSUM:
+                return this::setupTransformMessageStrategy;
             case CREATE_OUTGOING_GAP: return this::setupOutgoingGapStrategy;
             case PARTIAL_CLIENT_OUTAGE: return this::setupPartialClientOutageStrategy;
             case IGNORE_INCOMING_MESSAGES: return this::setupIgnoreIncomingMessagesStrategy;
             case DISCONNECT_WITH_RECONNECT: return this::setupDisconnectStrategy;
             case FAKE_RETRANSMISSION: return this::setupFakeRetransmissionStrategy;
-            case INVALID_CHECKSUM: return this::setupTransformMessageStrategy;
             case LOGON_AFTER_LOGON: return this::runLogonAfterLogonStrategy;
             case POSS_DUP_SESSION_MESSAGES: return this::runPossDupSessionMessages;
             case LOGON_FROM_ANOTHER_CONNECTION: return this::runLogonFromAnotherConnection;
