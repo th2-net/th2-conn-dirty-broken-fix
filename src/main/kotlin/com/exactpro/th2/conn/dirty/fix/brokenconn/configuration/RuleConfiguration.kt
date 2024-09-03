@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Exactpro (Exactpro Systems Limited)
+ * Copyright 2023-2024 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +40,8 @@ data class RuleConfiguration(
     val splitSendConfiguration: SplitSendConfiguration? = null,
     val changeSequenceConfiguration: ChangeSequenceConfiguration? = null,
     val resendRequestConfiguration: ResendRequestConfiguration? = null,
-    val sendSequenceResetConfiguration: SendSequenceResetConfiguration? = null
+    val sendSequenceResetConfiguration: SendSequenceResetConfiguration? = null,
+    val disableForMessageTypes: Set<String> = setOf("q") // Order Mass Cansel Request (q) message shouldn't be transformed
 ) {
     init {
         when(ruleType) {

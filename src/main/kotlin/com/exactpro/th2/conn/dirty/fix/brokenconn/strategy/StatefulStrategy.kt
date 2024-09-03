@@ -50,6 +50,8 @@ class StatefulStrategy(
         get() = lock.read { state.config?.missIncomingMessagesConfiguration ?: error("Miss incoming messages config isn't present.") }
     val missOutgoingMessagesConfiguration: MissMessageConfiguration
         get() = lock.read { state.config?.missOutgoingMessagesConfiguration ?: error("Miss outgoing messages config isn't present.") }
+    val disableForMessageTypes: Set<String>
+        get() = lock.read { state.config?.disableForMessageTypes ?: emptySet() }
     val transformMessageConfiguration: TransformMessageConfiguration
         get() = lock.read { state.config?.transformMessageConfiguration ?: error("Transform message config isn't present.") }
     val batchSendConfiguration: BatchSendConfiguration
