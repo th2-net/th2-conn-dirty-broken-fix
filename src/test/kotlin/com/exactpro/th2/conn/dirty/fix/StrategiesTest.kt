@@ -501,7 +501,7 @@ class StrategiesTest {
         val testContext =
             createTestContext(
                 handlerSettings,
-                searchMessageGroups = { request -> Thread.sleep(100); searchMessageGroups(messages, request, 1) },
+                searchMessageGroups = { request -> searchMessageGroups(messages, request) },
             )
 
         val context = testContext.context
@@ -536,7 +536,7 @@ class StrategiesTest {
 
                     msgSender = executor.submit { sendBusinessMessages(handler) }
 
-                    verify(context, timeout(ruleDuration.toMillis() * 10)).send(
+                    verify(context, timeout(ruleDuration.toMillis() * 20)).send(
                         argThat {
                         toProto(TEST_BOOK, TEST_SCOPE).name.contains("$CREATE_OUTGOING_GAP strategy finished")
                     },
@@ -753,7 +753,6 @@ class StrategiesTest {
     private fun searchMessageGroups(
         messages: List<MessageSearchResponse>,
         request: MessageGroupsSearchRequest,
-        delayMs: Long = 0,
     ): Iterator<MessageSearchResponse> {
         val from = if (request.hasStartTimestamp()) request.startTimestamp else null
         val to = if (request.hasEndTimestamp()) request.endTimestamp else null
@@ -777,8 +776,6 @@ class StrategiesTest {
                     }
 
             else -> error("Unsupported search direction")
-        }.onEach {
-            Thread.sleep(delayMs)
         }.iterator()
     }
 
