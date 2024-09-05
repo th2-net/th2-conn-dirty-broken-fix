@@ -869,8 +869,9 @@ public class FixHandler implements AutoCloseable, IHandler {
                     if(possDup != null && Objects.equals(possDup.getValue(), IS_POSS_DUP)) return true;
 
                     if(sequence - 1 != lastProcessedSequence.get() ) {
-                        StringBuilder sequenceReset =
-                                createSequenceReset(Math.max(beginSeqNo, lastProcessedSequence.get() + 1), sequence);
+                        int seqNo = Math.max(beginSeqNo, lastProcessedSequence.get() + 1);
+                        LOGGER.error("Messages [{}, {}] couldn't be recovered", seqNo, sequence);
+                        StringBuilder sequenceReset = createSequenceReset(seqNo, sequence);
                         channel.send(Unpooled.wrappedBuffer(sequenceReset.toString().getBytes(StandardCharsets.UTF_8)),
                                 strategy.getState().enrichProperties(),
                                 null,
@@ -922,7 +923,10 @@ public class FixHandler implements AutoCloseable, IHandler {
                 );
 
                 if(lastProcessedSequence.get() < endSeq && msgSeqNum.get() + 1 != lastProcessedSequence.get() + 1) {
-                    String seqReset = createSequenceReset(Math.max(lastProcessedSequence.get() + 1, beginSeqNo), msgSeqNum.get() + 1).toString();
+                    int seqNo = Math.max(lastProcessedSequence.get() + 1, beginSeqNo);
+                    int newSeqNo = msgSeqNum.get() + 1;
+                    LOGGER.error("Messages [{}, {}] couldn't be recovered", seqNo, newSeqNo);
+                    String seqReset = createSequenceReset(seqNo, newSeqNo).toString();
                     channel.send(
                         Unpooled.wrappedBuffer(seqReset.getBytes(StandardCharsets.UTF_8)),
                             strategy.getState().enrichProperties(), null, SendMode.MANGLE
