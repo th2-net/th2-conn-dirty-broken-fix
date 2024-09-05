@@ -30,6 +30,7 @@ import com.exactpro.th2.dataprovider.lw.grpc.MessageStream
 import com.exactpro.th2.dataprovider.lw.grpc.TimeRelation
 import com.google.protobuf.Timestamp
 import com.google.protobuf.util.Timestamps.compare
+import io.grpc.Context
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.Unpooled
 import java.time.Instant
@@ -44,8 +45,11 @@ import java.time.ZonedDateTime
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import mu.KotlinLogging
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 
 class MessageLoader(
+    private val executor: ScheduledExecutorService,
     private val dataProvider: DataProviderService,
     private val sessionStartTime: LocalTime?,
     private val bookName: String
@@ -114,9 +118,10 @@ class MessageLoader(
         sessionAlias: String,
         direction: Direction,
         fromSequence: Long,
+        timeout: Long,
         processMessage: (ByteBuf) -> Boolean
     ) = searchLock.withLock {
-        processMessagesInRangeInternal(sessionGroup, sessionAlias, direction, fromSequence, processMessage)
+        processMessagesInRangeInternal(sessionGroup, sessionAlias, direction, fromSequence, timeout, processMessage)
     }
 
     private fun processMessagesInRangeInternal(
@@ -124,8 +129,10 @@ class MessageLoader(
         sessionAlias: String,
         direction: Direction,
         fromSequence: Long,
+        timeout: Long,
         processMessage: (ByteBuf) -> Boolean
     ) {
+        val deadline = System.currentTimeMillis() + timeout
         var timestamp: Timestamp? = null
         var skipRetransmission = false
         ProviderCall.withCancellation {
@@ -191,8 +198,7 @@ class MessageLoader(
 
         K_LOGGER.info { "Loading retransmission messages from ${startSearchTimestamp.toInstant()}" }
 
-        ProviderCall.withCancellation {
-
+        withDeadline(deadline - System.currentTimeMillis()) {
             val iterator = dataProvider.searchMessageGroups(
                 createSearchGroupRequest(
                     from = startSearchTimestamp,
@@ -201,13 +207,16 @@ class MessageLoader(
                     sessionAlias = sessionAlias,
                     direction = direction,
                     timeRelation = TimeRelation.NEXT,
-                )
+                    keepOpen = true,
+                ),
             )
 
             while (iterator.hasNext()) {
                 val message = Unpooled.buffer().writeBytes(iterator.next().message.bodyRaw.toByteArray())
                 if (!processMessage(message)) break
             }
+        }.onFailure {
+            K_LOGGER.error(it) { "Search message request is interrupted" }
         }
     }
 
@@ -267,6 +276,7 @@ class MessageLoader(
         sessionAlias: String,
         direction: Direction,
         timeRelation: TimeRelation = TimeRelation.PREVIOUS,
+        keepOpen: Boolean = false,
     ) = MessageGroupsSearchRequest.newBuilder().apply {
         startTimestamp = from
         endTimestamp = to
@@ -279,11 +289,30 @@ class MessageLoader(
         addMessageGroup(MessageGroupsSearchRequest.Group.newBuilder().setName(sessionGroup))
         bookIdBuilder.name = bookName
         searchDirection = timeRelation
+        this.keepOpen = keepOpen
     }.build()
 
     private fun checkPossDup(buf: ByteBuf): Boolean = buf.findField(POSS_DUP_TAG)?.value == IS_POSS_DUP
 
     data class MessageDetails(val payloadSequence: Int, val messageSequence: Long, val timestamp: Timestamp)
+
+    private fun withDeadline(
+        durationMs: Long,
+        code: () -> Unit
+    ): Result<Unit> {
+        return try {
+            K_LOGGER.info { "deadline $durationMs" }
+            Context.current()
+                .withCancellation()
+                .withDeadlineAfter(durationMs, TimeUnit.MILLISECONDS, executor)
+                .use { context ->
+                    context.call { code() }
+                    Result.success(Unit)
+                }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 
     companion object {
         val K_LOGGER = KotlinLogging.logger {  }

@@ -245,6 +245,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         this.settings = (FixHandlerSettings) context.getSettings();
         if(settings.isLoadSequencesFromCradle() || settings.isLoadMissedMessagesFromCradle()) {
             this.messageLoader = new MessageLoader(
+                executorService,
                 context.getGrpcService(DataProviderService.class),
                 settings.getSessionStartTime(),
                 context.getBookName()
@@ -647,20 +648,17 @@ public class FixHandler implements AutoCloseable, IHandler {
                 int nextExpectedSeqNumber = Integer.parseInt(requireNonNull(nextExpectedSeqField.getValue()));
                 int seqNum = msgSeqNum.incrementAndGet() + 1;
                 if(nextExpectedSeqNumber < seqNum) {
+                    recoveryLock.lock();
                     try {
-                        recoveryLock.lock();
                         activeRecovery.set(true);
-                        Thread.sleep(settings.getCradleSaveTimeoutMs());
                         if(!channel.isOpen()) {
                             LOGGER.warn("Recovery is interrupted.");
                         } else {
                             strategy.getRecoveryHandler().recovery(nextExpectedSeqNumber, seqNum);
                         }
-                    } catch (InterruptedException e) {
-                        LOGGER.error("Error while waiting for cradle save timeout.", e);
                     } finally {
-                        recoveryLock.unlock();
                         activeRecovery.set(false);
+                        recoveryLock.unlock();
                     }
                 } else if (nextExpectedSeqNumber > seqNum) {
                     context.send(
@@ -819,20 +817,17 @@ public class FixHandler implements AutoCloseable, IHandler {
             int beginSeqNo = Integer.parseInt(requireNonNull(strBeginSeqNo.getValue()));
             int endSeqNo = Integer.parseInt(requireNonNull(strEndSeqNo.getValue()));
 
+            recoveryLock.lock();
             try {
-                recoveryLock.lock();
                 activeRecovery.set(true);
-                Thread.sleep(settings.getCradleSaveTimeoutMs());
                 if(!channel.isOpen()) {
                     LOGGER.warn("Recovery is interrupted.");
                 } else {
                     strategy.getRecoveryHandler().recovery(beginSeqNo, endSeqNo);
                 }
-            } catch (InterruptedException e) {
-                LOGGER.error("Error while waiting for cradle save timeout.", e);
             } finally {
-                recoveryLock.unlock();
                 activeRecovery.set(false);
+                recoveryLock.unlock();
             }
         }
     }
@@ -917,8 +912,9 @@ public class FixHandler implements AutoCloseable, IHandler {
 
                 // waiting for messages to be writen in cradle
                 messageLoader.processMessagesInRange(
-                        channel.getSessionGroup(), channel.getSessionAlias(), Direction.SECOND,
-                        beginSeqNo,
+                    channel.getSessionGroup(), channel.getSessionAlias(), Direction.SECOND,
+                    beginSeqNo,
+                    settings.getCradleSaveTimeoutMs(),
                     processMessage
                 );
 
@@ -2200,14 +2196,8 @@ public class FixHandler implements AutoCloseable, IHandler {
     private void applyNextStrategy() {
         LOGGER.info("Cleaning up current strategy {}", strategy.getState().getType());
         LOGGER.info("Started waiting for recovery finish.");
-        while (activeRecovery.get()) {
-            LOGGER.debug("Waiting for recovery to finish.");
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                LOGGER.error("Error while waiting for recovery to finish", e);
-            }
-        }
+
+        awaitInactiveRecovery();
         LOGGER.info("Stopped waiting for recovery finish.");
         try {
             strategy.getCleanupHandler().cleanup();
@@ -2242,6 +2232,18 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         LOGGER.info("Next strategy applied: {}, duration: {}", nextStrategyConfig.getRuleType(), nextStrategyConfig.getDuration());
         executorService.schedule(this::applyNextStrategy, nextStrategyConfig.getDuration().toMillis(), TimeUnit.MILLISECONDS);
+    }
+
+    private void awaitInactiveRecovery() {
+        boolean active = activeRecovery.get();
+        while (active && !Thread.currentThread().isInterrupted()) {
+            recoveryLock.lock();
+            try {
+                active = activeRecovery.get();
+            } finally {
+                recoveryLock.unlock();
+            }
+        }
     }
 
     private Consumer<RuleConfiguration> getSetupFunction(RuleConfiguration config) {
@@ -2407,27 +2409,13 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private void disconnect(boolean graceful) throws ExecutionException, InterruptedException {
         LOGGER.info("Started waiting for recovery finish.");
-        while (activeRecovery.get()) {
-            LOGGER.debug("Waiting for recovery to finish.");
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                LOGGER.error("Error while waiting for recovery to finish", e);
-            }
-        }
+        awaitInactiveRecovery();
         LOGGER.info("Finished waiting for recovery finish.");
         if(graceful) {
             sendLogout();
             waitLogoutResponse();
         }
-        while (activeRecovery.get()) {
-            LOGGER.debug("Waiting for recovery to finish.");
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                LOGGER.error("Error while waiting for recovery to finish", e);
-            }
-        }
+        awaitInactiveRecovery();
         enabled.set(false);
         activeLogonExchange.set(false);
         resetHeartbeatTask();
