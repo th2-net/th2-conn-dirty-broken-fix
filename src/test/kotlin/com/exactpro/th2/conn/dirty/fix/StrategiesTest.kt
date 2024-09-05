@@ -501,7 +501,7 @@ class StrategiesTest {
         val testContext =
             createTestContext(
                 handlerSettings,
-                searchMessageGroups = { request -> searchMessageGroups(messages, request) },
+                searchMessageGroups = { request -> Thread.sleep(100); searchMessageGroups(messages, request, 1) },
             )
 
         val context = testContext.context
@@ -752,7 +752,8 @@ class StrategiesTest {
 
     private fun searchMessageGroups(
         messages: List<MessageSearchResponse>,
-        request: MessageGroupsSearchRequest
+        request: MessageGroupsSearchRequest,
+        delayMs: Long = 0,
     ): Iterator<MessageSearchResponse> {
         val from = if (request.hasStartTimestamp()) request.startTimestamp else null
         val to = if (request.hasEndTimestamp()) request.endTimestamp else null
@@ -776,6 +777,8 @@ class StrategiesTest {
                     }
 
             else -> error("Unsupported search direction")
+        }.onEach {
+            Thread.sleep(delayMs)
         }.iterator()
     }
 
