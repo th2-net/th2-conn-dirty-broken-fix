@@ -205,6 +205,8 @@ public class FixHandler implements AutoCloseable, IHandler {
     private static final String STUBBING_VALUE = "XXX";
     private static final String SPLIT_SEND_TIMESTAMPS_PROPERTY = "BufferSlicesSendingTimes";
     private static final String STRATEGY_EVENT_TYPE = "StrategyState";
+    private static final String ENCODE_MODE_PROPERTY_NAME = "encode-mode";
+    private static final String DIRTY_ENCODE_MODE_NAME = "dirty";
     private static final DateTimeFormatter formatter = DateTimeFormatter.ISO_INSTANT;
     private static final ObjectMapper mapper = new ObjectMapper();
 
@@ -1577,6 +1579,9 @@ public class FixHandler implements AutoCloseable, IHandler {
     private Map<String, String> transformOutgoingMessageStrategy(ByteBuf message, Map<String, String> metadata) {
         onOutgoingUpdateTag(message, metadata);
         transformProcessor(message, metadata);
+
+        metadata.put(ENCODE_MODE_PROPERTY_NAME, DIRTY_ENCODE_MODE_NAME);
+
         return null;
     }
 
