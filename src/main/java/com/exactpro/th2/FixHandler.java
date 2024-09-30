@@ -93,7 +93,13 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -446,21 +452,22 @@ public class FixHandler implements AutoCloseable, IHandler {
             }
         }
 
-        try {
-            communicationLock.lock();
-
-            if(strategy.getAllowMessagesBeforeRetransmissionFinishes()) {
+        if(strategy.getAllowMessagesBeforeRetransmissionFinishes()) {
+            try {
+                communicationLock.lock();
                 return strategy.getSendStrategy(SendStrategy::getSendHandler).send(channel, body, properties, eventID);
-            } else {
-                try {
-                    recoveryLock.lock();
-                    return strategy.getSendStrategy(SendStrategy::getSendHandler).send(channel, body, properties, eventID);
-                } finally {
-                    recoveryLock.unlock();
-                }
+            } finally {
+                communicationLock.unlock();
             }
-        } finally {
-            communicationLock.unlock();
+        } else {
+            try {
+                recoveryLock.lock();
+                communicationLock.lock();
+                return strategy.getSendStrategy(SendStrategy::getSendHandler).send(channel, body, properties, eventID);
+            } finally {
+                communicationLock.unlock();
+                recoveryLock.unlock();
+            }
         }
     }
 
