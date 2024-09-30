@@ -143,7 +143,9 @@ class MessageLoader(
                     sessionGroup = sessionGroup,
                     sessionAlias = sessionAlias,
                     direction = direction
-                )
+                ).also {
+                    K_LOGGER.info { "Backward iterator params: sessionAlias - $sessionAlias from - ${it.startTimestamp} to - ${it.endTimestamp}" }
+                }
             )
 
             val firstValidMessage = firstValidMessageDetails(backwardIterator)
@@ -226,7 +228,9 @@ class MessageLoader(
                     direction = direction,
                     timeRelation = TimeRelation.NEXT,
                     keepOpen = true,
-                ),
+                ).also {
+                    K_LOGGER.info { "Forward iterator params: sessionAlias - $sessionAlias from - ${it.startTimestamp} to - ${it.endTimestamp}" }
+                }
             )
 
             while (iterator.hasNext()) {
