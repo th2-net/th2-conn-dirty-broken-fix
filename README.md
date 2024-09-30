@@ -1,4 +1,4 @@
-# th2-conn-dirty-fix (1.4.1)
+# th2-conn-dirty-fix (1.4.2)
 
 This microservice allows sending and receiving messages via FIX protocol
 
@@ -333,6 +333,10 @@ spec:
         memory: 100Mi
         cpu: 20m
 ```
+## 1.4.2
+
+* Add property `encode-mode: dirty` for messages that are corrupted with transformation strategies: `TRANSFORM_MESSAGE_STRATEGY`, `INVALID_CHECKSUM` and `TRANSFORM_LOGON`
+
 ## 1.4.1
 
 * Use keep open gRPC query to recover messages for Resend Request
