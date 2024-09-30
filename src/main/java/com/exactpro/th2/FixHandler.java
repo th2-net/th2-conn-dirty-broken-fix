@@ -854,23 +854,36 @@ public class FixHandler implements AutoCloseable, IHandler {
                 Function1<ByteBuf, Boolean> processMessage = (buf) -> {
                     FixField seqNum = findField(buf, MSG_SEQ_NUM_TAG);
                     FixField msgTypeField = findField(buf, MSG_TYPE_TAG);
+
+                    LOGGER.info("Processing cradle recovery message {}", buf.toString(US_ASCII));
+
                     if(seqNum == null || seqNum.getValue() == null
                             || msgTypeField == null || msgTypeField.getValue() == null) {
+                        LOGGER.info("Dropping recovery message. Missing SeqNum tag: {}", buf.toString(US_ASCII));
                         return true;
                     }
                     int sequence = Integer.parseInt(seqNum.getValue());
                     String msgType = msgTypeField.getValue();
 
-                    if(sequence < beginSeqNo) return true;
-                    if(sequence > endSeq) return false;
+                    if(sequence < beginSeqNo) {
+                        LOGGER.info("Dropping recovery message. SeqNum is less than BeginSeqNo: {}", buf.toString(US_ASCII));
+                        return true;
+                    }
+                    if(sequence > endSeq) {
+                        LOGGER.info("Finishing recovery. SeqNum > EndSeq: {}", buf.toString(US_ASCII));
+                        return false;
+                    }
 
-                    if(recoveryConfig.getSequenceResetForAdmin() && ADMIN_MESSAGES.contains(msgType)) return true;
+                    if(recoveryConfig.getSequenceResetForAdmin() && ADMIN_MESSAGES.contains(msgType)) {
+                        LOGGER.info("Dropping recovery message. Admin message sequence reset: {}", buf.toString(US_ASCII));
+                        return true;
+                    }
                     FixField possDup = findField(buf, POSS_DUP_TAG);
                     if(possDup != null && Objects.equals(possDup.getValue(), IS_POSS_DUP)) return true;
 
                     if(sequence - 1 != lastProcessedSequence.get() ) {
                         int seqNo = Math.max(beginSeqNo, lastProcessedSequence.get() + 1);
-                        LOGGER.error("Messages [{}, {}] couldn't be recovered", seqNo, sequence);
+                        LOGGER.error("Messages [{}, {}] couldn't be recovered in the middle of recovery", seqNo, sequence);
                         StringBuilder sequenceReset = createSequenceReset(seqNo, sequence);
                         channel.send(Unpooled.wrappedBuffer(sequenceReset.toString().getBytes(StandardCharsets.UTF_8)),
                                 strategy.getState().enrichProperties(),
@@ -884,6 +897,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                     updateLength(buf);
                     updateChecksum(buf);
                     if(!skip.get()) {
+                        LOGGER.info("Sending recovery message: {}", buf.toString(US_ASCII));
                         channel.send(buf, strategy.getState().enrichProperties(), null, SendMode.MANGLE)
                             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
                         try {
@@ -894,11 +908,13 @@ public class FixHandler implements AutoCloseable, IHandler {
                     }
 
                     if(skip.get() && recoveryConfig.getOutOfOrder()) {
+                        LOGGER.info("Skipping recovery message. OutOfOrder: {}", buf.toString(US_ASCII));
                         skipped.set(buf);
                         skip.set(false);
                     }
 
                     if(!skip.get() && recoveryConfig.getOutOfOrder()) {
+                        LOGGER.info("Sending recovery message. OutOfOrder: {}", skipped.get().toString(US_ASCII));
                         skip.set(true);
                         channel.send(skipped.get(), strategy.getState().enrichProperties(), null, SendMode.MANGLE)
                             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
@@ -926,7 +942,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                 if(lastProcessedSequence.get() < endSeq && msgSeqNum.get() + 1 != lastProcessedSequence.get() + 1) {
                     int seqNo = Math.max(lastProcessedSequence.get() + 1, beginSeqNo);
                     int newSeqNo = msgSeqNum.get() + 1;
-                    LOGGER.error("Messages [{}, {}] couldn't be recovered", seqNo, newSeqNo);
+                    LOGGER.error("Messages [{}, {}] couldn't be recovered in the end of recovery", seqNo, newSeqNo);
                     String seqReset = createSequenceReset(seqNo, newSeqNo).toString();
                     channel.send(
                         Unpooled.wrappedBuffer(seqReset.getBytes(StandardCharsets.UTF_8)),
@@ -2323,8 +2339,8 @@ public class FixHandler implements AutoCloseable, IHandler {
                     updateLength(missedMessage);
                     updateChecksum(missedMessage);
 
-                    LOGGER.info("Sending recovery message from state: {}", missedMessage.toString(US_ASCII));
                     if(!skip) {
+                        LOGGER.info("Sending recovery message from state: {}", missedMessage.toString(US_ASCII));
                         channel.send(missedMessage, strategy.getState().enrichProperties(), null, SendMode.MANGLE)
                             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
                         try {
@@ -2335,11 +2351,13 @@ public class FixHandler implements AutoCloseable, IHandler {
                     }
 
                     if(skip && recoveryConfig.getOutOfOrder()) {
+                        LOGGER.info("Skip recovery message out of order: {}", missedMessage.toString(US_ASCII));
                         skip = false;
                         skipped = missedMessage;
                     }
 
-                    if(!skip && recoveryConfig.getOutOfOrder()) {
+                    if(!skip && recoveryConfig.getOutOfOrder() && skipped != null) {
+                        LOGGER.info("Sending recovery message from state out of order: {}", skipped.toString(US_ASCII));
                         channel.send(skipped, strategy.getState().enrichProperties(), null, SendMode.MANGLE)
                             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
                         try {
