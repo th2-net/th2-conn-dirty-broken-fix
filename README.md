@@ -336,6 +336,7 @@ spec:
 ## 1.4.2
 
 * Add property `encode-mode: dirty` for messages that are corrupted with transformation strategies: `TRANSFORM_MESSAGE_STRATEGY`, `INVALID_CHECKSUM` and `TRANSFORM_LOGON`
+* Added synchronization for business messages sent via rabbitmq and messages that are sent from handler.
 
 ## 1.4.1
 
