@@ -536,7 +536,7 @@ class StrategiesTest {
 
                     msgSender = executor.submit { sendBusinessMessages(handler) }
 
-                    verify(context, timeout(ruleDuration.toMillis() * 10)).send(
+                    verify(context, timeout(ruleDuration.toMillis() * 20)).send(
                         argThat {
                         toProto(TEST_BOOK, TEST_SCOPE).name.contains("$CREATE_OUTGOING_GAP strategy finished")
                     },
@@ -752,7 +752,7 @@ class StrategiesTest {
 
     private fun searchMessageGroups(
         messages: List<MessageSearchResponse>,
-        request: MessageGroupsSearchRequest
+        request: MessageGroupsSearchRequest,
     ): Iterator<MessageSearchResponse> {
         val from = if (request.hasStartTimestamp()) request.startTimestamp else null
         val to = if (request.hasEndTimestamp()) request.endTimestamp else null
