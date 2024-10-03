@@ -47,6 +47,7 @@ import kotlin.concurrent.withLock
 import mu.KotlinLogging
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
+import kotlin.text.Charsets.US_ASCII
 
 class MessageLoader(
     private val executor: ScheduledExecutorService,
@@ -142,10 +143,20 @@ class MessageLoader(
                     sessionGroup = sessionGroup,
                     sessionAlias = sessionAlias,
                     direction = direction
-                )
+                ).also {
+                    K_LOGGER.info { "Backward iterator params: sessionAlias - $sessionAlias from - ${it.startTimestamp} to - ${it.endTimestamp}" }
+                }
             )
 
-            val firstValidMessage = firstValidMessageDetails(backwardIterator) ?: return@withCancellation
+            val firstValidMessage = firstValidMessageDetails(backwardIterator)
+
+            if (firstValidMessage == null) {
+                K_LOGGER.info { "Not found valid messages to recover." }
+                return@withCancellation
+            }
+            firstValidMessage.let {
+                K_LOGGER.info { "Backward search. First valid message seq num: ${it.payloadSequence} timestamp: ${it.timestamp} cradle sequence: ${it.messageSequence}" }
+            }
 
             var messagesToSkip = firstValidMessage.payloadSequence - fromSequence
 
@@ -157,14 +168,19 @@ class MessageLoader(
                     continue
                 }
                 timestamp = message.messageId.timestamp
+                val buf = Unpooled.copiedBuffer(message.bodyRaw.toByteArray())
+                val sequence = buf.findField(MSG_SEQ_NUM_TAG)?.value?.toInt()
+
+                K_LOGGER.debug { "Backward search: Skip message with sequence - $sequence" }
+
                 messagesToSkip -= 1
                 if(messagesToSkip == 0L) {
 
-                    val buf = Unpooled.copiedBuffer(message.bodyRaw.toByteArray())
-                    val sequence = buf.findField(MSG_SEQ_NUM_TAG)?.value?.toInt() ?: continue
+                    sequence ?: continue
 
                     if(sequence > 1 && lastProcessedSequence == 1 || sequence > 2 && lastProcessedSequence == 2) {
                         skipRetransmission = true
+                        K_LOGGER.info { "Retransmission will be skipped. Not found valid message with sequence more than 1." }
                         return@withCancellation
                     }
 
@@ -175,17 +191,21 @@ class MessageLoader(
 
                         timestamp = validMessage.timestamp
                         if(validMessage.payloadSequence <= fromSequence) {
+                            K_LOGGER.info { "Found valid message with start recovery sequence: ${buf.toString(US_ASCII)}" }
                             break
                         } else {
                             messagesToSkip = validMessage.payloadSequence - fromSequence
+                            K_LOGGER.info { "Adjusted number of messages to skip: $messagesToSkip using ${validMessage.payloadSequence} - $fromSequence" }
                         }
 
                     } else {
 
                         if(sequence <= fromSequence) {
+                            K_LOGGER.info { "Found valid message with start recovery sequence: ${buf.toString(US_ASCII)}" }
                             break
                         } else {
                             messagesToSkip = sequence - fromSequence
+                            K_LOGGER.info { "Adjusted number of messages to skip: $messagesToSkip using $sequence - $fromSequence" }
                         }
                     }
                 }
@@ -208,11 +228,14 @@ class MessageLoader(
                     direction = direction,
                     timeRelation = TimeRelation.NEXT,
                     keepOpen = true,
-                ),
+                ).also {
+                    K_LOGGER.info { "Forward iterator params: sessionAlias - $sessionAlias from - ${it.startTimestamp} to - ${it.endTimestamp}" }
+                }
             )
 
             while (iterator.hasNext()) {
                 val message = Unpooled.buffer().writeBytes(iterator.next().message.bodyRaw.toByteArray())
+                K_LOGGER.info { "Sending message to recovery processor: ${message.toString(US_ASCII)}" }
                 if (!processMessage(message)) break
             }
         }.onFailure {
