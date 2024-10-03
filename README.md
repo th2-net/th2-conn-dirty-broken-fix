@@ -341,6 +341,7 @@ spec:
 ## 1.4.1
 
 * Use keep open gRPC query to recover messages for Resend Request
+* Update `com.exactpro.th2.gradle` plugin to `0.1.3`
 
 ## 1.4.0
 
