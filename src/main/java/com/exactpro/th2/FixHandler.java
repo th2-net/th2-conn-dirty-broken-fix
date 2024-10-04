@@ -41,6 +41,9 @@ import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.DefaultStrategyHolder
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.IncomingMessagesStrategy;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.OutgoingMessagesStrategy;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.ReceiveStrategy;
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.CorruptMessageStructureConfiguration;
+import com.exactpro.th2.conn.dirty.fix.FIXMessageStructureMutator;
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.AdjustSendingTimeConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.RuleType;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.SchedulerType;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.SendStrategy;
@@ -425,7 +428,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                 if (LOGGER.isWarnEnabled()) LOGGER.warn("Session is not yet logged in: {}", channel.getSessionAlias());
                 try {
                     //noinspection BusyWait
-                    Thread.sleep(10);
+                    Thread.sleep(100);
                 } catch (InterruptedException e) {
                     LOGGER.error("Error while sleeping.");
                 }
@@ -440,7 +443,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                 if (LOGGER.isWarnEnabled()) LOGGER.warn("Session is not yet logged in: {}", channel.getSessionAlias());
                 try {
                     //noinspection BusyWait
-                    Thread.sleep(10);
+                    Thread.sleep(100);
                 } catch (InterruptedException e) {
                     LOGGER.error("Error while sleeping.");
                 }
@@ -1581,7 +1584,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         long startTime = System.currentTimeMillis();
         while (System.currentTimeMillis() - startTime <= timeToBlock) {
             try {
-                Thread.sleep(10);
+                Thread.sleep(100);
             } catch (Exception e) {
                 LOGGER.error("Error while blocking send.", e);
             }
@@ -1645,6 +1648,77 @@ public class FixHandler implements AutoCloseable, IHandler {
         transformProcessor(message, metadata);
 
         metadata.put(ENCODE_MODE_PROPERTY_NAME, DIRTY_ENCODE_MODE_NAME);
+
+        return null;
+    }
+
+    private Map<String, String> corruptMessageStructureProcessor(ByteBuf message, Map<String, String> metadata) {
+        onOutgoingUpdateTag(message, metadata);
+        Set <String> disableForMessageTypes = strategy.getDisableForMessageTypes();
+
+        FixField msgTypeField = findField(message, MSG_TYPE_TAG, US_ASCII);
+        if(msgTypeField != null && msgTypeField.getValue() != null && disableForMessageTypes.contains(msgTypeField.getValue())) {
+            LOGGER.info("Strategy '{}' is disabled for {} message type", strategy.getType(), msgTypeField.getValue());
+            return null;
+        }
+        String msgType = msgTypeField.getValue();
+        if(ADMIN_MESSAGES.contains(msgType) && !Objects.equals(msgType, MSG_TYPE_HEARTBEAT)) {
+            return null;
+        }
+
+        StrategyState state = strategy.getState();
+        if(state.getMessageCorrupted().get()) {
+            return null;
+        }
+
+        CorruptMessageStructureConfiguration config = strategy.getCorruptMessageStructureConfiguration();
+        FIXMessageStructureMutator mutator = new FIXMessageStructureMutator(
+                config.getHeaderTags(),
+                config.getTrailerTags()
+        );
+        if (config.getMoveHeaderConfiguration() != null) {
+            mutator.moveHeader(config.getMoveHeaderConfiguration().getPosition(), message);
+            metadata.put("structureMutated", "Y");
+            metadata.put("structureMutationKind", "header");
+            metadata.put("structureMutationPosition", config.getMoveHeaderConfiguration().getPosition().name());
+        }
+
+        if (config.getMoveTrailerConfiguration() != null) {
+            mutator.moveTrailer(config.getMoveTrailerConfiguration().getPosition(), message);
+            metadata.put("structureMutated", "Y");
+            metadata.put("structureMutationKind", "trailer");
+            metadata.put("structureMutationPosition", config.getMoveTrailerConfiguration().getPosition().name());
+        }
+
+        state.getMessageCorrupted().set(true);
+
+        return null;
+    }
+
+    private Map<String, String> adjustSendingTimeStrategyProcessor(ByteBuf message, Map<String, String> metadata) {
+        onOutgoingUpdateTag(message, metadata);
+        Set <String> disableForMessageTypes = strategy.getDisableForMessageTypes();
+
+        FixField msgTypeField = findField(message, MSG_TYPE_TAG, US_ASCII);
+        if(msgTypeField != null && msgTypeField.getValue() != null && disableForMessageTypes.contains(msgTypeField.getValue())) {
+            LOGGER.info("Strategy '{}' is disabled for {} message type", strategy.getType(), msgTypeField.getValue());
+            return null;
+        }
+        String msgType = msgTypeField.getValue();
+        if(ADMIN_MESSAGES.contains(msgType) && !Objects.equals(msgType, MSG_TYPE_HEARTBEAT)) {
+            return null;
+        }
+
+        StrategyState state = strategy.getState();
+        if(state.getMessageCorrupted().get()) {
+            return null;
+        }
+
+        AdjustSendingTimeConfiguration config = strategy.getAdjustSendingTimeConfiguration();
+        metadata.put("sendingTimeUpdated", "Y");
+        metadata.put("sendingTimeUpdateSeconds", Long.toString(config.getAdjustDuration().toSeconds()));
+
+        updateSendingTime(message, config.getAdjustDuration(), config.getSubstract());
 
         return null;
     }
@@ -1744,7 +1818,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         long startTime = System.currentTimeMillis();
         while (System.currentTimeMillis() - startTime <= timeToBlock) {
             try {
-                Thread.sleep(10);
+                Thread.sleep(100);
             } catch (Exception e) {
                 LOGGER.error("Error while blocking receive.", e);
             }
@@ -2272,6 +2346,32 @@ public class FixHandler implements AutoCloseable, IHandler {
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
         strategy.cleanupStrategy();
     }
+
+    private void setupCorruptMessageStructureStrategy(RuleConfiguration configuration) {
+        strategy.resetStrategyAndState(configuration);
+        strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::corruptMessageStructureProcessor); return Unit.INSTANCE;});
+        strategy.setCleanupHandler(this::cleanUpCorruptMessageStructureStrategy);
+        ruleStartEvent(strategy.getType(), strategy.getStartTime());
+    }
+
+    private void cleanUpCorruptMessageStructureStrategy() {
+        strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
+        ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
+        strategy.cleanupStrategy();
+    }
+
+    private void setupAdjustSendingTimeStrategy(RuleConfiguration configuration) {
+        strategy.resetStrategyAndState(configuration);
+        strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::adjustSendingTimeStrategyProcessor); return Unit.INSTANCE;});
+        strategy.setCleanupHandler(this::cleanUpAdjustSendingTimeStrategy);
+        ruleStartEvent(strategy.getType(), strategy.getStartTime());
+    }
+
+    private void cleanUpAdjustSendingTimeStrategy() {
+        strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
+        ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
+        strategy.cleanupStrategy();
+    }
     // </editor-fold>
 
     private Map<String, String> defaultMessageProcessor(ByteBuf message, Map<String, String> metadata) {return null;}
@@ -2352,6 +2452,8 @@ public class FixHandler implements AutoCloseable, IHandler {
             case LOGON_AFTER_LOGON: return this::runLogonAfterLogonStrategy;
             case POSS_DUP_SESSION_MESSAGES: return this::runPossDupSessionMessages;
             case LOGON_FROM_ANOTHER_CONNECTION: return this::runLogonFromAnotherConnection;
+            case CORRUPT_MESSAGE_STRUCTURE: return this::setupCorruptMessageStructureStrategy;
+            case ADJUST_SENDING_TIME: return this::setupAdjustSendingTimeStrategy;
             case DEFAULT: return configuration -> strategy.cleanupStrategy();
             default: throw new IllegalStateException(String.format("Unknown strategy type %s.", config.getRuleType()));
         }
@@ -2473,6 +2575,18 @@ public class FixHandler implements AutoCloseable, IHandler {
         sendingTime.setValue(getTime());
     }
 
+    private void updateSendingTime(ByteBuf buf, Duration adjustDuration, boolean substract) {
+        FixField sendingTime = Objects.requireNonNull(findField(buf, SENDING_TIME_TAG));
+        DateTimeFormatter formatter = settings.getSendingDateTimeFormat();
+        LocalDateTime datetime = LocalDateTime.now(ZoneOffset.UTC);
+        if(substract) {
+            datetime.minus(adjustDuration);
+        } else {
+            datetime.plus(adjustDuration);
+        }
+        sendingTime.setValue(formatter.format(datetime));
+    }
+
     private void setTime(ByteBuf buf) {
         FixField sendingTime = findField(buf, SENDING_TIME_TAG);
         FixField seqNum = requireNonNull(findField(buf, MSG_SEQ_NUM_TAG), "SeqNum field was null.");
@@ -2520,7 +2634,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         while (!enabled.get() && System.currentTimeMillis() - start < 2000) {
             LOGGER.info("Waiting until session will be logged in: {}", channel.getSessionAlias());
             try {
-                Thread.sleep(10);
+                Thread.sleep(100);
             } catch (Exception e) {
                 LOGGER.error("Error while waiting session login.", e);
             }
@@ -2533,7 +2647,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             if (LOGGER.isWarnEnabled()) LOGGER.warn("Waiting session logout: {}", channel.getSessionAlias());
             try {
                 //noinspection BusyWait
-                Thread.sleep(10);
+                Thread.sleep(100);
             } catch (InterruptedException e) {
                 LOGGER.error("Error while sleeping.");
             }

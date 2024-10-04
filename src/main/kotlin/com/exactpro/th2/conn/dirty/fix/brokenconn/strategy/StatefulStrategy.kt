@@ -15,12 +15,7 @@
  */
 package com.exactpro.th2.conn.dirty.fix.brokenconn.strategy
 
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BatchSendConfiguration
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.MissMessageConfiguration
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RecoveryConfig
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RuleConfiguration
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.SplitSendConfiguration
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.TransformMessageConfiguration
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.*
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.StrategyState.Companion.resetAndCopyMissedMessages
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.CleanupHandler
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.OnCloseHandler
@@ -80,6 +75,12 @@ class StatefulStrategy(
 
     val recoveryConfig: RecoveryConfig
         get() = lock.read { state.config?.recoveryConfig ?: RecoveryConfig() }
+
+    val corruptMessageStructureConfiguration: CorruptMessageStructureConfiguration
+        get() = lock.read { state.config?.corruptMessageStructureConfiguration ?: error("corruptMessageSturctureConfiguration isn't present.") }
+
+    val adjustSendingTimeConfiguration: AdjustSendingTimeConfiguration
+        get() = lock.read { state.config?.adjustSendingTimeConfiguration ?: error("adjustSendingTimeConfiguration isn't present.") }
 
     // strategies
     fun updateSendStrategy(func: SendStrategy.() -> Unit) = lock.write {
