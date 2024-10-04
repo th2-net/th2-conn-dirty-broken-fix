@@ -41,7 +41,9 @@ data class RuleConfiguration(
     val changeSequenceConfiguration: ChangeSequenceConfiguration? = null,
     val resendRequestConfiguration: ResendRequestConfiguration? = null,
     val sendSequenceResetConfiguration: SendSequenceResetConfiguration? = null,
-    val disableForMessageTypes: Set<String> = setOf("q") // Order Mass Cansel Request (q) message shouldn't be transformed
+    val disableForMessageTypes: Set<String> = setOf("q"), // Order Mass Cansel Request (q) message shouldn't be transformed
+    val corruptMessageStructureConfiguration: CorruptMessageStructureConfiguration? = null,
+    val adjustSendingTimeConfiguration: AdjustSendingTimeConfiguration? = null
 ) {
     init {
         when(ruleType) {
@@ -86,6 +88,12 @@ data class RuleConfiguration(
             RuleType.LOGON_AFTER_LOGON -> {}
             RuleType.POSS_DUP_SESSION_MESSAGES -> {}
             RuleType.LOGON_FROM_ANOTHER_CONNECTION -> {}
+            RuleType.ADJUST_SENDING_TIME -> {
+                require(adjustSendingTimeConfiguration != null) { "`adjustSendingTimeConfiguration` is required for $ruleType" }
+            }
+            RuleType.CORRUPT_MESSAGE_STRUCTURE -> {
+                require(corruptMessageStructureConfiguration != null) { "`corruptMessageStructureConfiguration` is required for $ruleType"}
+            }
         }
     }
 

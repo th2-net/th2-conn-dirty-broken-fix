@@ -25,6 +25,7 @@ import io.netty.buffer.Unpooled
 import mu.KotlinLogging
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
@@ -77,6 +78,8 @@ class StrategyState(val config: RuleConfiguration? = null,
                 false
             }
         }
+
+    var messageCorrupted = AtomicBoolean(false)
 
     fun getMissedMessage(sequence: Long): ByteBuf? = lock.read { missedMessagesCache.remove(sequence) }
 
