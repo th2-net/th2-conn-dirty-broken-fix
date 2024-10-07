@@ -23,7 +23,7 @@ data class MoveHeaderConfiguration(val position: HeaderPosition)
 
 data class CorruptMessageStructureConfiguration(
     val trailerTags: Set<Int> = setOf(10),
-    val headerTags: Set<Int> = setOf(8, 9, 35, 1128, 49, 56, 43, 97, 52, 122),
+    val headerTags: Set<Int> = setOf(8, 9, 35, 34, 1128, 49, 56, 43, 97, 52, 122),
     val moveHeaderConfiguration: MoveHeaderConfiguration?,
     val moveTrailerConfiguration: MoveTrailerConfiguration?
 )
