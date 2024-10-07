@@ -2584,9 +2584,9 @@ public class FixHandler implements AutoCloseable, IHandler {
         DateTimeFormatter formatter = settings.getSendingDateTimeFormat();
         LocalDateTime datetime = LocalDateTime.now(ZoneOffset.UTC);
         if(substract) {
-            datetime.minus(adjustDuration);
+            datetime = datetime.minus(adjustDuration);
         } else {
-            datetime.plus(adjustDuration);
+            datetime = datetime.plus(adjustDuration);
         }
         sendingTime.setValue(formatter.format(datetime));
     }
