@@ -1722,6 +1722,8 @@ public class FixHandler implements AutoCloseable, IHandler {
         metadata.put(ENCODE_MODE_PROPERTY_NAME, DIRTY_ENCODE_MODE_NAME);
 
         updateSendingTime(message, config.getAdjustDuration(), config.getSubstract());
+        updateLength(message);
+        updateChecksum(message);
         state.getMessageCorrupted().set(true);
 
         return null;
