@@ -905,6 +905,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                         LOGGER.info("Dropping recovery message. SeqNum is less than BeginSeqNo: {}", buf.toString(US_ASCII));
                         return true;
                     }
+
                     if(sequence > endSeq) {
                         LOGGER.info("Finishing recovery. SeqNum > EndSeq: {}", buf.toString(US_ASCII));
                         return false;
@@ -912,7 +913,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
                     if(recoveryConfig.getSequenceResetForAdmin() && ADMIN_MESSAGES.contains(msgType)) {
                         LOGGER.info("Dropping recovery message. Admin message sequence reset: {}", buf.toString(US_ASCII));
-                        return true;
+                        return sequence != endSeq;
                     }
                     FixField possDup = findField(buf, POSS_DUP_TAG);
                     if(possDup != null && Objects.equals(possDup.getValue(), IS_POSS_DUP)) return true;
@@ -964,7 +965,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                     resetHeartbeatTask();
 
                     lastProcessedSequence.set(sequence);
-                    return true;
+                    return sequence != endSeq;
                 };
 
                 // waiting for messages to be writen in cradle
@@ -1673,8 +1674,8 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         CorruptMessageStructureConfiguration config = strategy.getCorruptMessageStructureConfiguration();
         FIXMessageStructureMutator mutator = new FIXMessageStructureMutator(
-                config.getHeaderTags(),
-                config.getTrailerTags()
+            config.getHeaderTags(),
+            config.getTrailerTags()
         );
         if (config.getMoveHeaderConfiguration() != null) {
             mutator.moveHeader(config.getMoveHeaderConfiguration().getPosition(), message);
