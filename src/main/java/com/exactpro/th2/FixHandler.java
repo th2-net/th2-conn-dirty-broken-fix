@@ -1496,6 +1496,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategyState.transformIfCondition(
             x -> x <= config.getNumberOfTimesToTransform(),
             () -> {
+                metadata.put("OriginalMessageType", msgTypeField.getValue());
                 messageTransformer.transformWithoutResults(message, transformation.getCombinedActions());
                 if(transformation.getNewPassword() != null) {
                     if(transformation.getEncryptKey() != null) {
@@ -1694,6 +1695,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
 
         state.getMessageCorrupted().set(true);
+        metadata.put("isCorruptedMessage", "Y");
 
         return null;
     }
@@ -1720,6 +1722,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         AdjustSendingTimeConfiguration config = strategy.getAdjustSendingTimeConfiguration();
         metadata.put("sendingTimeUpdated", "Y");
         metadata.put("sendingTimeUpdateSeconds", Long.toString(config.getAdjustDuration().toSeconds()));
+        metadata.put("sendingTimeUpdateSign", config.getSubstract() ? "-" : "+");
         metadata.put(ENCODE_MODE_PROPERTY_NAME, DIRTY_ENCODE_MODE_NAME);
 
         updateSendingTime(message, config.getAdjustDuration(), config.getSubstract());
