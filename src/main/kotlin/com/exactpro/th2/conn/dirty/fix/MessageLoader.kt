@@ -234,7 +234,11 @@ class MessageLoader(
             )
 
             while (iterator.hasNext()) {
-                val message = Unpooled.buffer().writeBytes(iterator.next().message.bodyRaw.toByteArray())
+                val next = iterator.next().message
+                if(next.messagePropertiesMap.getOrDefault("isCorruptedMessage", "N") == "Y") {
+                    continue
+                }
+                val message = Unpooled.buffer().writeBytes(next.bodyRaw.toByteArray())
                 K_LOGGER.info { "Sending message to recovery processor: ${message.toString(US_ASCII)}" }
                 if (!processMessage(message)) break
             }
