@@ -1200,8 +1200,6 @@ public class FixHandler implements AutoCloseable, IHandler {
                 communicationLock.unlock();
             }
 
-        } else {
-            sendLogon();
         }
     }
 
@@ -1229,8 +1227,6 @@ public class FixHandler implements AutoCloseable, IHandler {
             } finally {
                 communicationLock.unlock();
             }
-        } else {
-            sendLogon();
         }
         reconnectRequestTimer = executorService.schedule(this::sendLogon, settings.getReconnectDelay(), TimeUnit.SECONDS);
     }
@@ -1247,8 +1243,6 @@ public class FixHandler implements AutoCloseable, IHandler {
             return;
         }
 
-        activeLogonExchange.set(true);
-
         if(enabled.get()) {
             String message = String.format("Logon attempt while already logged in: %s - %s", channel.getSessionGroup(), channel.getSessionAlias());
             LOGGER.warn(message);
@@ -1258,12 +1252,15 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         StringBuilder logon = buildLogon(props);
 
-        LOGGER.info("Send logon - {}", logon);
-        channel.send(Unpooled.wrappedBuffer(logon.toString().getBytes(StandardCharsets.UTF_8)),
-                        strategy.getState().enrichProperties(props),
-                        null,
-                        SendMode.HANDLE_AND_MANGLE)
-            .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
+        if(!activeLogonExchange.get()) {
+            activeLogonExchange.set(true);
+            LOGGER.info("Send logon - {}", logon);
+            channel.send(Unpooled.wrappedBuffer(logon.toString().getBytes(StandardCharsets.UTF_8)),
+                            strategy.getState().enrichProperties(props),
+                            null,
+                            SendMode.HANDLE_AND_MANGLE)
+                    .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
+        }
     }
 
     private StringBuilder buildLogon(Map<String, String> props) {
