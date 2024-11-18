@@ -247,6 +247,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     private final ReentrantLock communicationLock = new ReentrantLock();
 
     private final ReentrantLock disconnectStrategyLock = new ReentrantLock();
+    private final ReentrantLock logonLock = new ReentrantLock();
 
     public FixHandler(IHandlerContext context) {
         this.context = context;
@@ -1252,14 +1253,19 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         StringBuilder logon = buildLogon(props);
 
-        if(!activeLogonExchange.get()) {
-            activeLogonExchange.set(true);
-            LOGGER.info("Send logon - {}", logon);
-            channel.send(Unpooled.wrappedBuffer(logon.toString().getBytes(StandardCharsets.UTF_8)),
-                            strategy.getState().enrichProperties(props),
-                            null,
-                            SendMode.HANDLE_AND_MANGLE)
-                    .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
+        try {
+            logonLock.lock();
+            if(!activeLogonExchange.get() && !enabled.get()) {
+                activeLogonExchange.set(true);
+                LOGGER.info("Send logon - {}", logon);
+                channel.send(Unpooled.wrappedBuffer(logon.toString().getBytes(StandardCharsets.UTF_8)),
+                                strategy.getState().enrichProperties(props),
+                                null,
+                                SendMode.HANDLE_AND_MANGLE)
+                        .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
+            }
+        } finally {
+            logonLock.unlock();
         }
     }
 
