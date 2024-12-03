@@ -2637,8 +2637,6 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         if(!graceful) {
             channel.close().get();
-        } else if(!enabled.get() && !activeLogonExchange.get()) {
-            channel.close().get();
         }
     }
 
