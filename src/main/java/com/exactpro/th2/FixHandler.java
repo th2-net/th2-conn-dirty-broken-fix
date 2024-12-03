@@ -2634,9 +2634,10 @@ public class FixHandler implements AutoCloseable, IHandler {
         resetHeartbeatTask();
         resetTestRequestTask();
         Thread.sleep(settings.getDisconnectCleanUpTimeoutMs());
+
         if(!graceful) {
             channel.close().get();
-        } else if(!enabled.get() && activeLogonExchange.get()) {
+        } else if(!enabled.get() && !activeLogonExchange.get()) {
             channel.close().get();
         }
     }
