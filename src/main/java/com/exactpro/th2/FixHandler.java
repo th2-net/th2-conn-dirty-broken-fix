@@ -412,7 +412,9 @@ public class FixHandler implements AutoCloseable, IHandler {
                 disconnect(!isUngracefulDisconnect);
                 enabled.set(false);
                 activeLogonExchange.set(false);
-                sendingTimeoutHandler.getWithTimeout(channel.open());
+                if(!disableReconnect) {
+                    sendingTimeoutHandler.getWithTimeout(channel.open());
+                }
             } catch (Exception e) {
                 context.send(CommonUtil.toErrorEvent(String.format("Error while ending session %s by user logout. Is graceful disconnect: %b", channel.getSessionAlias(), !isUngracefulDisconnect), e));
             }
