@@ -371,13 +371,26 @@ public class FixHandler implements AutoCloseable, IHandler {
             disconnectStrategyLock.unlock();
         }
 
+        FixField msgType = findField(body, MSG_TYPE_TAG);
+        boolean isLogout = msgType != null && Objects.equals(msgType.getValue(), MSG_TYPE_LOGOUT);
+        boolean isLogon = msgType != null && Objects.equals(msgType.getValue(), MSG_TYPE_LOGON);
+        boolean enableReconnect = properties.containsKey(ENABLE_RECONNECT_PROPERTY);
+
+        if(isLogon && enableReconnect) {
+            context.send(CommonUtil.toEvent(String.format("Enabling session reconnects: %b", channel.getSessionAlias())));
+            sessionActive.set(true);
+            try {
+                sendingTimeoutHandler.getWithTimeout(channel.open());
+            } catch (Exception e) {
+                context.send(CommonUtil.toErrorEvent(String.format("Error while ending session %s by user logout. Is graceful disconnect: %b", channel.getSessionAlias()), e));
+            }
+            return CompletableFuture.completedFuture(null);
+        }
+
         if (!sessionActive.get()) {
             throw new IllegalStateException("Session is not active. It is not possible to send messages.");
         }
 
-        FixField msgType = findField(body, MSG_TYPE_TAG);
-        boolean isLogout = msgType != null && Objects.equals(msgType.getValue(), MSG_TYPE_LOGOUT);
-        boolean isLogon = msgType != null && Objects.equals(msgType.getValue(), MSG_TYPE_LOGON);
         if(isLogout && !channel.isOpen()) {
             String message = String.format("%s - %s: Logout ignored as channel is already closed.", channel.getSessionGroup(), channel.getSessionAlias());
             LOGGER.warn(message);
@@ -400,7 +413,6 @@ public class FixHandler implements AutoCloseable, IHandler {
         boolean isUngracefulDisconnect = Boolean.getBoolean(properties.get(UNGRACEFUL_DISCONNECT_PROPERTY));
 
         boolean disableReconnect = properties.containsKey(DISABLE_RECONNECT_PROPERTY);
-        boolean enableReconnect = properties.containsKey(ENABLE_RECONNECT_PROPERTY);
 
         if(isLogout) {
             context.send(CommonUtil.toEvent(String.format("Closing session %s. Is graceful disconnect: %b", channel.getSessionAlias(), !isUngracefulDisconnect)));
@@ -415,17 +427,6 @@ public class FixHandler implements AutoCloseable, IHandler {
                 if(!disableReconnect) {
                     sendingTimeoutHandler.getWithTimeout(channel.open());
                 }
-            } catch (Exception e) {
-                context.send(CommonUtil.toErrorEvent(String.format("Error while ending session %s by user logout. Is graceful disconnect: %b", channel.getSessionAlias(), !isUngracefulDisconnect), e));
-            }
-            return CompletableFuture.completedFuture(null);
-        }
-
-        if(isLogon && enableReconnect) {
-            context.send(CommonUtil.toEvent(String.format("Enabling session reconnects: %b", channel.getSessionAlias())));
-            sessionActive.set(true);
-            try {
-                sendingTimeoutHandler.getWithTimeout(channel.open());
             } catch (Exception e) {
                 context.send(CommonUtil.toErrorEvent(String.format("Error while ending session %s by user logout. Is graceful disconnect: %b", channel.getSessionAlias(), !isUngracefulDisconnect), e));
             }
