@@ -358,19 +358,11 @@ public class FixHandler implements AutoCloseable, IHandler {
             msgSeqNum.set(sequences.getClientSeq());
             serverMsgSeqNum.set(sequences.getServerSeq());
         }
-        if(!channel.isOpen()) channel.open();
+        if(!channel.isOpen()) openChannel();
     }
 
     @NotNull
     public CompletableFuture<MessageID> send(@NotNull ByteBuf body, @NotNull Map<String, String> properties, @Nullable EventID eventID) {
-        try {
-            disconnectStrategyLock.lock();
-            strategy.getSendStrategy(SendStrategy::getSendPreprocessor).process(body, properties);
-        }
-        finally {
-            disconnectStrategyLock.unlock();
-        }
-
         FixField msgType = findField(body, MSG_TYPE_TAG);
         boolean isLogout = msgType != null && Objects.equals(msgType.getValue(), MSG_TYPE_LOGOUT);
         boolean isLogon = msgType != null && Objects.equals(msgType.getValue(), MSG_TYPE_LOGON);
@@ -380,7 +372,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             context.send(CommonUtil.toEvent(String.format("Enabling session reconnects: %b", channel.getSessionAlias())));
             sessionActive.set(true);
             try {
-                sendingTimeoutHandler.getWithTimeout(channel.open());
+                sendingTimeoutHandler.getWithTimeout(openChannel());
             } catch (Exception e) {
                 context.send(CommonUtil.toErrorEvent(String.format("Error while ending session %s by user logout. Is graceful disconnect: %b", channel.getSessionAlias()), e));
             }
@@ -410,7 +402,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             return CompletableFuture.completedFuture(null);
         }
 
-        boolean isUngracefulDisconnect = Boolean.getBoolean(properties.get(UNGRACEFUL_DISCONNECT_PROPERTY));
+        boolean isUngracefulDisconnect = Objects.equals(properties.getOrDefault(UNGRACEFUL_DISCONNECT_PROPERTY, "N"), "Y");
 
         boolean disableReconnect = properties.containsKey(DISABLE_RECONNECT_PROPERTY);
 
@@ -425,7 +417,9 @@ public class FixHandler implements AutoCloseable, IHandler {
                 enabled.set(false);
                 activeLogonExchange.set(false);
                 if(!disableReconnect) {
-                    sendingTimeoutHandler.getWithTimeout(channel.open());
+                    sendingTimeoutHandler.getWithTimeout(openChannel());
+                } else {
+                    channel.close().get();
                 }
             } catch (Exception e) {
                 context.send(CommonUtil.toErrorEvent(String.format("Error while ending session %s by user logout. Is graceful disconnect: %b", channel.getSessionAlias(), !isUngracefulDisconnect), e));
@@ -433,7 +427,13 @@ public class FixHandler implements AutoCloseable, IHandler {
             return CompletableFuture.completedFuture(null);
         }
 
-
+        try {
+            disconnectStrategyLock.lock();
+            strategy.getSendStrategy(SendStrategy::getSendPreprocessor).process(body, properties);
+        }
+        finally {
+            disconnectStrategyLock.unlock();
+        }
 
         // TODO: probably, this should be moved to the core part
         // But those changes will break API
@@ -443,7 +443,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         if (!channel.isOpen()) {
             try {
-                sendingTimeoutHandler.getWithTimeout(channel.open());
+                sendingTimeoutHandler.getWithTimeout(openChannel());
             } catch (TimeoutException e) {
                 ExceptionUtils.asRuntimeException(new TimeoutException(
                         String.format("could not open connection before timeout %d mls elapsed",
@@ -795,7 +795,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         context.send(CommonUtil.toEvent("logout for sender - " + settings.getSenderCompID()), null);//make more useful
         try {
             disconnect(false);
-            channel.open();
+            openChannel();
         } catch (Exception e) {
             LOGGER.error("Error while disconnecting in handle logout.");
         }
@@ -826,7 +826,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         if(messageLoader != null) {
             messageLoader.updateTime();
         }
-        if(!channel.isOpen()) channel.open();
+        if(!channel.isOpen()) openChannel();
     }
 
     public void sendResendRequest(int beginSeqNo, int endSeqNo) {
@@ -1659,7 +1659,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             handleLogon(message, metadata);
             try {
                 disconnect(strategy.getGracefulDisconnect());
-                if(!channel.isOpen()) channel.open().get();
+                if(!channel.isOpen()) openChannel().get();
             } catch (Exception e) {
                 LOGGER.error("Error while reconnecting.", e);
             }
@@ -2096,7 +2096,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.setCleanupHandler(this::cleanupTransformStrategy);
         try {
             disconnect(configuration.getGracefulDisconnect());
-            if(!channel.isOpen()) channel.open().get();
+            if(!channel.isOpen()) openChannel().get();
         } catch (Exception e) {
             String message = String.format("Error while setting up %s", strategy.getType());
             LOGGER.error(message, e);
@@ -2670,8 +2670,15 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void openChannelAndWaitForLogon() throws ExecutionException, InterruptedException {
-        if(!channel.isOpen()) channel.open().get();
+        if(!channel.isOpen()) openChannel().get();
         waitUntilLoggedIn();
+    }
+
+    private CompletableFuture<Unit> openChannel() {
+        if(channel != null && sessionActive.get()) {
+            return channel.open();
+        }
+        return CompletableFuture.completedFuture(null);
     }
 
     private void waitUntilLoggedIn() {
