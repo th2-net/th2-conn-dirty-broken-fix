@@ -2328,11 +2328,13 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         ChangeSequenceConfiguration resendRequestConfig = configuration.getChangeSequenceConfiguration();
 
-        try {
-            disconnect(configuration.getGracefulDisconnect());
-        } catch (Exception e) {
-            String message = String.format("Error while cleaning up %s strategy", strategy.getType());
-            LOGGER.error(message, e);
+        if(!resendRequestConfig.getSendLogoutAfterReset()) {
+            try {
+                disconnect(configuration.getGracefulDisconnect());
+            } catch (Exception e) {
+                String message = String.format("Error while cleaning up %s strategy", strategy.getType());
+                LOGGER.error(message, e);
+            }
         }
 
         if(resendRequestConfig.getChangeIncomingSequence()) {
@@ -2351,8 +2353,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         if(resendRequestConfig.getSendLogoutAfterReset()) {
             try {
-                openChannelAndWaitForLogon();
-                sendLogout();
+                disconnect(configuration.getGracefulDisconnect());
             } catch (Exception e) {
                 String message = String.format("Error while cleaning up %s strategy", strategy.getType());
                 LOGGER.error(message, e);
