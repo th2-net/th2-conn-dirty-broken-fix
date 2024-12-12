@@ -64,6 +64,10 @@ class StatefulStrategy(
     val allowMessagesBeforeRetransmissionFinishes: Boolean
         get() = lock.read { _allowMessagesBeforeRetransmissionFinishes }
 
+    private var _outOfOrder: Boolean = false
+    val outOfOrder: Boolean
+        get() = lock.read { _outOfOrder }
+
     val sendResendRequestOnLogoutReply: Boolean
         get() = lock.read {state.config?.sendResendRequestOnLogoutReply ?: false }
 
@@ -116,6 +120,11 @@ class StatefulStrategy(
         LOGGER.info("Disabled allow messages before retransmission finishes by the '$reason' reason")
     }
 
+    fun disableOutOfOrder(reason: String) = lock.write {
+        _outOfOrder = false
+        LOGGER.info("Disabled outOfOrder retransmission '$reason' reason")
+    }
+
     fun <T> getReceiveMessageStrategy(func: ReceiveStrategy.() -> T) = lock.read {
         receiveStrategy.func()
     }
@@ -160,6 +169,7 @@ class StatefulStrategy(
         lock.write {
             state = state.resetAndCopyMissedMessages(config)
             _allowMessagesBeforeRetransmissionFinishes = state.config?.allowMessagesBeforeRetransmissionFinishes ?: false
+            _outOfOrder = state.config?.recoveryConfig?.outOfOrder ?: false
             sendStrategy.sendHandler = defaultStrategy.sendStrategy.sendHandler
             sendStrategy.sendPreprocessor = defaultStrategy.sendStrategy.sendPreprocessor
             receiveStrategy.receivePreprocessor = defaultStrategy.receiveStrategy.receivePreprocessor
@@ -177,6 +187,7 @@ class StatefulStrategy(
         lock.write {
             state = state.resetAndCopyMissedMessages()
             _allowMessagesBeforeRetransmissionFinishes = state.config?.allowMessagesBeforeRetransmissionFinishes ?: false
+            _outOfOrder = state.config?.recoveryConfig?.outOfOrder ?: false
             sendStrategy.sendHandler = defaultStrategy.sendStrategy.sendHandler
             sendStrategy.sendPreprocessor = defaultStrategy.sendStrategy.sendPreprocessor
             receiveStrategy.receivePreprocessor = defaultStrategy.receiveStrategy.receivePreprocessor

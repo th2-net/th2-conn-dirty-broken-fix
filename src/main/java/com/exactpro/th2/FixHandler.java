@@ -920,7 +920,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                 endSeqNo = msgSeqNum.get() + 1;
             }
 
-            AtomicBoolean skip = new AtomicBoolean(recoveryConfig.getOutOfOrder());
+            AtomicBoolean skip = new AtomicBoolean(strategy.getOutOfOrder());
             AtomicReference<ByteBuf> skipped = new AtomicReference<>(null);
 
             int endSeq = endSeqNo;
@@ -983,13 +983,15 @@ public class FixHandler implements AutoCloseable, IHandler {
                         }
                     }
 
-                    if(skip.get() && recoveryConfig.getOutOfOrder()) {
+                    if(skip.get() && strategy.getOutOfOrder()) {
                         LOGGER.info("Skipping recovery message. OutOfOrder: {}", buf.toString(US_ASCII));
                         skipped.set(buf);
                         skip.set(false);
+                        lastProcessedSequence.set(sequence);
+                        return true;
                     }
 
-                    if(!skip.get() && recoveryConfig.getOutOfOrder()) {
+                    if(!skip.get() && strategy.getOutOfOrder()) {
                         LOGGER.info("Sending recovery message. OutOfOrder: {}", skipped.get().toString(US_ASCII));
                         skip.set(true);
                         channel.send(skipped.get(), strategy.getState().enrichProperties(), null, SendMode.MANGLE)
@@ -1857,6 +1859,10 @@ public class FixHandler implements AutoCloseable, IHandler {
            && Duration.between(strategy.getStartTime(), Instant.now()).compareTo(strategy.getConfig().getDuration()) > 0 ) {
             strategy.disableAllowMessagesBeforeRetransmissionFinishes("after " + strategy.getConfig().getDuration() + " strategy duration");
         }
+        if(strategy.getOutOfOrder()
+                && Duration.between(strategy.getStartTime(), Instant.now()).compareTo(strategy.getConfig().getDuration()) > 0 ) {
+            strategy.disableOutOfOrder("after " + strategy.getConfig().getDuration() + " strategy duration");
+        }
 
         return null;
     }
@@ -2624,7 +2630,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         LOGGER.info("Making recovery from state: {} - {}.", beginSeqNo, endSeqNo);
 
-        boolean skip = recoveryConfig.getOutOfOrder();
+        boolean skip = strategy.getOutOfOrder();
         ByteBuf skipped = null;
 
         for(int i = beginSeqNo; i <= endSeqNo; i++) {
@@ -2668,13 +2674,14 @@ public class FixHandler implements AutoCloseable, IHandler {
                         }
                     }
 
-                    if(skip && recoveryConfig.getOutOfOrder()) {
+                    if(skip && strategy.getOutOfOrder()) {
                         LOGGER.info("Skip recovery message out of order: {}", missedMessage.toString(US_ASCII));
                         skip = false;
                         skipped = missedMessage;
+                        continue;
                     }
 
-                    if(!skip && recoveryConfig.getOutOfOrder() && skipped != null) {
+                    if(!skip && strategy.getOutOfOrder() && skipped != null) {
                         LOGGER.info("Sending recovery message from state out of order: {}", skipped.toString(US_ASCII));
                         channel.send(skipped, strategy.getState().enrichProperties(), null, SendMode.MANGLE)
                             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
