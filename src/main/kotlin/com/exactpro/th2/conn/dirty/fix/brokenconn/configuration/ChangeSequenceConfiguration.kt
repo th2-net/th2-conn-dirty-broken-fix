@@ -19,5 +19,6 @@ data class ChangeSequenceConfiguration(
     val messageCount: Int,
     val changeIncomingSequence: Boolean = false,
     val changeUp: Boolean = true,
-    val gapFill: Boolean = true
+    val gapFill: Boolean = true,
+    val sendLogoutAfterReset: Boolean = false,
 )

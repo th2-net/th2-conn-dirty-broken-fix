@@ -94,6 +94,8 @@ data class RuleConfiguration(
             RuleType.CORRUPT_MESSAGE_STRUCTURE -> {
                 require(corruptMessageStructureConfiguration != null) { "`corruptMessageStructureConfiguration` is required for $ruleType"}
             }
+            RuleType.TRIGGER_LOGOUT, RuleType.TRIGGER_LOGOUT_WITHOUT_RESPONSE -> {}
+            RuleType.POSS_RESEND -> {}
         }
     }
 

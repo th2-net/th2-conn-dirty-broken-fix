@@ -60,6 +60,7 @@ import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerContext;
 import com.exactpro.th2.conn.dirty.tcp.core.util.CommonUtil;
 import com.exactpro.th2.dataprovider.lw.grpc.DataProviderService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectWriter;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -196,6 +197,7 @@ import static java.util.Objects.requireNonNull;
 
 public class FixHandler implements AutoCloseable, IHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(FixHandler.class);
+    private static final ObjectWriter MAPPER = new ObjectMapper().writer();
 
     private static final int DAY_SECONDS = 24 * 60 * 60;
     private static final String SOH = "\001";
@@ -794,11 +796,18 @@ public class FixHandler implements AutoCloseable, IHandler {
         activeLogonExchange.set(false);
         context.send(CommonUtil.toEvent("logout for sender - " + settings.getSenderCompID()), null);//make more useful
         try {
+            if(strategy.getSendResendRequestOnLogoutReply()) {
+                Thread.sleep(1000);
+            }
             disconnect(false);
             openChannel();
         } catch (Exception e) {
             LOGGER.error("Error while disconnecting in handle logout.");
         }
+        return metadata;
+    }
+
+    private Map<String, String> handleLogoutEmpty(@NotNull ByteBuf message, Map<String, String> metadata) {
         return metadata;
     }
 
@@ -1194,23 +1203,30 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     public void sendHeartbeatWithPossDup(boolean isPossDup) {
-        sendHeartbeatWithTestRequest(null, isPossDup);
+        sendHeartbeatWithTestRequest(null, isPossDup, false);
     }
 
     private void sendHeartbeatWithTestRequest(String testRequestID) {
-        sendHeartbeatWithTestRequest(testRequestID, false);
+        sendHeartbeatWithTestRequest(testRequestID, false, false);
     }
 
     public void sendHeartbeat() {
-        sendHeartbeatWithTestRequest(null, false);
+        sendHeartbeatWithTestRequest(null, false, false);
     }
 
-    private void sendHeartbeatWithTestRequest(String testRequestId, boolean possDup) {
+    private void sendHeartbeatWithCorruptedSequence() {
+        sendHeartbeatWithTestRequest(null, false, true);
+    }
+
+    private void sendHeartbeatWithTestRequest(String testRequestId, boolean possDup, boolean corruptSequence) {
         if (enabled.get()) {
             try {
                 communicationLock.lock();
                 StringBuilder heartbeat = new StringBuilder();
                 int seqNum = msgSeqNum.incrementAndGet();
+                if(corruptSequence) {
+                    seqNum = 1;
+                }
 
                 setHeader(heartbeat, MSG_TYPE_HEARTBEAT, seqNum, null, possDup);
 
@@ -1775,12 +1791,36 @@ public class FixHandler implements AutoCloseable, IHandler {
             return null;
         }
 
+        channel.send(Unpooled.copiedBuffer(message), metadata, null, SendMode.DIRECT);
+
         FixField sendingTime = requireNonNull(findField(message, SENDING_TIME_TAG));
         strategy.getState().addMissedMessageToCacheIfCondition(msgSeqNum.get(), message.copy(), x -> true);
 
         sendingTime
             .insertNext(ORIG_SENDING_TIME_TAG, sendingTime.getValue())
             .insertNext(POSS_DUP_TAG, IS_POSS_DUP)
+            .insertNext(POSS_RESEND_TAG, IS_POSS_DUP);
+        updateLength(message);
+        updateChecksum(message);
+
+        return null;
+    }
+
+    private Map<String, String> possDupOutgoingProcessor(ByteBuf message, Map<String, String> metadata) {
+        onOutgoingUpdateTag(message, metadata);
+
+        Set<String> disableForMessageTypes = strategy.getDisableForMessageTypes();
+        FixField msgTypeField = findField(message, MSG_TYPE_TAG, US_ASCII);
+        if(msgTypeField != null && msgTypeField.getValue() != null && disableForMessageTypes.contains(msgTypeField.getValue())) {
+            LOGGER.info("Strategy '{}' is disabled for {} message type", strategy.getType(), msgTypeField.getValue());
+            return null;
+        }
+
+        channel.send(Unpooled.copiedBuffer(message), metadata, null, SendMode.DIRECT);
+
+        FixField sendingTime = requireNonNull(findField(message, SENDING_TIME_TAG));
+
+        sendingTime
             .insertNext(POSS_RESEND_TAG, IS_POSS_DUP);
         updateLength(message);
         updateChecksum(message);
@@ -2303,6 +2343,16 @@ public class FixHandler implements AutoCloseable, IHandler {
             }
         }
 
+        if(resendRequestConfig.getSendLogoutAfterReset()) {
+            try {
+                openChannelAndWaitForLogon();
+                sendLogout();
+            } catch (Exception e) {
+                String message = String.format("Error while cleaning up %s strategy", strategy.getType());
+                LOGGER.error(message, e);
+            }
+        }
+
         try {
             Thread.sleep(strategy.getState().getConfig().getCleanUpDuration().toMillis());
             openChannelAndWaitForLogon();
@@ -2414,6 +2464,63 @@ public class FixHandler implements AutoCloseable, IHandler {
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
         strategy.cleanupStrategy();
     }
+
+    private void setupTriggerDisconnectWithoutResponse(RuleConfiguration config) {
+        strategy.resetStrategyAndState(config);
+        strategy.updateIncomingMessageStrategy(x -> {x.setLogoutStrategy(this::handleLogoutEmpty); return Unit.INSTANCE; });
+        strategy.setCleanupHandler(this::cleanUpTriggerDisconnectWithoutResponse);
+
+        sendHeartbeatWithCorruptedSequence();
+        Long startWaitingLogout = System.currentTimeMillis();
+        while(channel.isOpen() && System.currentTimeMillis() - startWaitingLogout < 65000) {
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) { }
+        }
+
+        boolean isChannelOpen = channel.isOpen();
+        if(isChannelOpen) {
+            strategy.updateIncomingMessageStrategy(x -> {x.setLogoutStrategy(this::handleLogout); return Unit.INSTANCE; });
+            try {
+                disconnect(false);
+            } catch (Exception ignored) { }
+        }
+        Long endWaitingLogout = System.currentTimeMillis();
+
+        Map<String, String> properties = new HashMap<>();
+        properties.put("isChannelOpen", isChannelOpen ? "Y" : "N");
+        properties.put("timeBeforeDisconnect", Objects.toString(endWaitingLogout - startWaitingLogout));
+
+        ruleStartEventWithBody(strategy.getType(), strategy.getStartTime(), properties);
+    }
+
+    private void cleanUpTriggerDisconnectWithoutResponse() {
+        strategy.updateIncomingMessageStrategy(x -> {x.setLogoutStrategy(this::handleLogout); return Unit.INSTANCE;});
+        ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
+        strategy.cleanupStrategy();
+    }
+
+    private void setupTriggerLogout(RuleConfiguration config) {
+        strategy.resetStrategyAndState(config);
+        strategy.setCleanupHandler(this::cleanupTriggerLogoutWithResendRequest);
+
+        sendHeartbeatWithCorruptedSequence();
+
+        ruleStartEvent(strategy.getType(), strategy.getStartTime());
+    }
+
+    private void cleanupTriggerLogoutWithResendRequest() {
+        ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
+        strategy.cleanupStrategy();
+    }
+
+    private void setupPossResendStrategy(RuleConfiguration configuration) {
+        strategy.resetStrategyAndState(configuration);
+        strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::possDupOutgoingProcessor); return Unit.INSTANCE;});
+        strategy.setCleanupHandler(this::cleanUpAdjustSendingTimeStrategy);
+        ruleStartEvent(strategy.getType(), strategy.getStartTime());
+    }
+
     // </editor-fold>
 
     private Map<String, String> defaultMessageProcessor(ByteBuf message, Map<String, String> metadata) {return null;}
@@ -2496,6 +2603,9 @@ public class FixHandler implements AutoCloseable, IHandler {
             case LOGON_FROM_ANOTHER_CONNECTION: return this::runLogonFromAnotherConnection;
             case CORRUPT_MESSAGE_STRUCTURE: return this::setupCorruptMessageStructureStrategy;
             case ADJUST_SENDING_TIME: return this::setupAdjustSendingTimeStrategy;
+            case TRIGGER_LOGOUT_WITHOUT_RESPONSE: return this::setupTriggerDisconnectWithoutResponse;
+            case TRIGGER_LOGOUT: return this::setupTriggerLogout;
+            case POSS_RESEND: return this::setupPossResendStrategy;
             case DEFAULT: return configuration -> strategy.cleanupStrategy();
             default: throw new IllegalStateException(String.format("Unknown strategy type %s.", config.getRuleType()));
         }
@@ -2788,6 +2898,29 @@ public class FixHandler implements AutoCloseable, IHandler {
             .status(Event.Status.PASSED),
             strategyRootEvent
         );
+    }
+
+    private void ruleStartEventWithBody(RuleType type, Instant start, Map<String, String> body) {
+        String message = String.format("%s strategy started: %s", type.name(), start.toString());
+        LOGGER.info(message);
+        try {
+            String content = MAPPER.writeValueAsString(body);
+            Message msg = new Message();
+            msg.setData(content);
+            context.send(
+                    Event
+                            .start()
+                            .endTimestamp()
+                            .type(STRATEGY_EVENT_TYPE)
+                            .name(message)
+                            .bodyData(msg)
+                            .status(Event.Status.PASSED),
+                    strategyRootEvent
+            );
+        } catch (Exception e) {
+            LOGGER.error("Error while creating event", e);
+            ruleStartEvent(type, start);
+        }
     }
 
     private void ruleEndEvent(RuleType type, Instant start, List<MessageID> messageIDS, Map<String, Object> additionalDetails) {
