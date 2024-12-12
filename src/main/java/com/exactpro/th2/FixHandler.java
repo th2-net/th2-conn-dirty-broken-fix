@@ -370,7 +370,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         boolean isLogon = msgType != null && Objects.equals(msgType.getValue(), MSG_TYPE_LOGON);
         boolean enableReconnect = properties.containsKey(ENABLE_RECONNECT_PROPERTY);
 
-        if(isLogon && enableReconnect) {
+        if(isLogout && enableReconnect) {
             context.send(CommonUtil.toEvent(String.format("Enabling session reconnects: %b", channel.getSessionAlias())));
             sessionActive.set(true);
             try {
