@@ -855,7 +855,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             channel.send(Unpooled.wrappedBuffer(resendRequest.toString().getBytes(StandardCharsets.UTF_8)),
                             strategy.getState().enrichProperties(),
                             null,
-                            SendMode.HANDLE_AND_MANGLE)
+                            SendMode.MANGLE)
                     .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
             resetHeartbeatTask();
 
@@ -878,7 +878,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                 channel.send(Unpooled.wrappedBuffer(resendRequest.toString().getBytes(StandardCharsets.UTF_8)),
                                 strategy.getState().enrichProperties(),
                                 null,
-                                SendMode.HANDLE_AND_MANGLE)
+                                SendMode.MANGLE)
                         .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
                 resetHeartbeatTask();
             }
@@ -1095,7 +1095,9 @@ public class FixHandler implements AutoCloseable, IHandler {
         FixField msgType = findField(message, MSG_TYPE_TAG, US_ASCII);
 
         if(msgType != null && ADMIN_MESSAGES.contains(msgType.getValue())) {
-            return;
+            if(!Objects.equals(msgType.getValue(), MSG_TYPE_RESEND_REQUEST)) {
+                return;
+            }
         }
 
         if (isEmpty(message)) {
