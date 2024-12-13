@@ -1861,10 +1861,6 @@ public class FixHandler implements AutoCloseable, IHandler {
            && Duration.between(strategy.getStartTime(), Instant.now()).compareTo(strategy.getConfig().getDuration()) > 0 ) {
             strategy.disableAllowMessagesBeforeRetransmissionFinishes("after " + strategy.getConfig().getDuration() + " strategy duration");
         }
-        if(strategy.getOutOfOrder()
-                && Duration.between(strategy.getStartTime(), Instant.now()).compareTo(strategy.getConfig().getDuration()) > 0 ) {
-            strategy.disableOutOfOrder("after " + strategy.getConfig().getDuration() + " strategy duration");
-        }
 
         return null;
     }
@@ -2632,6 +2628,11 @@ public class FixHandler implements AutoCloseable, IHandler {
         RecoveryConfig recoveryConfig = strategy.getRecoveryConfig();
 
         LOGGER.info("Making recovery from state: {} - {}.", beginSeqNo, endSeqNo);
+
+        if(strategy.getOutOfOrder()
+                && Duration.between(strategy.getStartTime(), Instant.now()).compareTo(strategy.getConfig().getDuration()) > 0 ) {
+            strategy.disableOutOfOrder("after " + strategy.getConfig().getDuration() + " strategy duration");
+        }
 
         boolean skip = strategy.getOutOfOrder();
         ByteBuf skipped = null;
