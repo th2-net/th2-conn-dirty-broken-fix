@@ -797,7 +797,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         context.send(CommonUtil.toEvent("logout for sender - " + settings.getSenderCompID()), null);//make more useful
         try {
             if(strategy.getSendResendRequestOnLogoutReply()) {
-                Thread.sleep(1000);
+                Thread.sleep(3000);
             }
             disconnect(false);
             openChannel();
@@ -1795,7 +1795,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             return null;
         }
 
-        channel.send(Unpooled.copiedBuffer(message), metadata, null, SendMode.DIRECT);
+        channel.send(asExpandable(Unpooled.copiedBuffer(message)), metadata, null, SendMode.DIRECT);
 
         FixField sendingTime = requireNonNull(findField(message, SENDING_TIME_TAG));
         strategy.getState().addMissedMessageToCacheIfCondition(msgSeqNum.get(), message.copy(), x -> true);
@@ -1820,7 +1820,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             return null;
         }
 
-        channel.send(Unpooled.copiedBuffer(message), metadata, null, SendMode.DIRECT);
+        channel.send(asExpandable(Unpooled.copiedBuffer(message)), metadata, null, SendMode.DIRECT);
 
         FixField sendingTime = requireNonNull(findField(message, SENDING_TIME_TAG));
 
