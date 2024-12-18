@@ -1811,16 +1811,20 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private Map<String, String> possDupOutgoingProcessor(ByteBuf message, Map<String, String> metadata) {
-        onOutgoingUpdateTag(message, metadata);
+
+        ByteBuf copyMessage = asExpandable(Unpooled.copiedBuffer(message));
+        onOutgoingUpdateTag(copyMessage, metadata);
 
         Set<String> disableForMessageTypes = strategy.getDisableForMessageTypes();
-        FixField msgTypeField = findField(message, MSG_TYPE_TAG, US_ASCII);
+        FixField msgTypeField = findField(copyMessage, MSG_TYPE_TAG, US_ASCII);
         if(msgTypeField != null && msgTypeField.getValue() != null && disableForMessageTypes.contains(msgTypeField.getValue())) {
             LOGGER.info("Strategy '{}' is disabled for {} message type", strategy.getType(), msgTypeField.getValue());
             return null;
         }
 
-        channel.send(asExpandable(Unpooled.copiedBuffer(message)), metadata, null, SendMode.DIRECT);
+        channel.send(copyMessage, metadata, null, SendMode.DIRECT);
+
+        onOutgoingUpdateTag(message, metadata);
 
         FixField sendingTime = requireNonNull(findField(message, SENDING_TIME_TAG));
 
