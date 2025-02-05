@@ -15,11 +15,13 @@
  */
 package com.exactpro.th2.conn.dirty.fix.brokenconn.strategy
 
+import com.exactpro.th2.conn.dirty.fix.*
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.*
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.StrategyState.Companion.resetAndCopyMissedMessages
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.CleanupHandler
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.OnCloseHandler
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.RecoveryHandler
+import io.netty.buffer.ByteBuf
 import mu.KotlinLogging
 import java.time.Instant
 import java.util.concurrent.locks.ReentrantReadWriteLock
@@ -47,6 +49,10 @@ class StatefulStrategy(
         get() = lock.read { state.config?.missOutgoingMessagesConfiguration ?: error("Miss outgoing messages config isn't present.") }
     val disableForMessageTypes: Set<String>
         get() = lock.read { state.config?.disableForMessageTypes ?: emptySet() }
+
+    val duplicateRequestConfiguration: DuplicateRequestConfiguration
+        get() = lock.read { state.config?.duplicateRequestConfiguration ?: DuplicateRequestConfiguration() }
+
     val transformMessageConfiguration: TransformMessageConfiguration
         get() = lock.read { state.config?.transformMessageConfiguration ?: error("Transform message config isn't present.") }
     val batchSendConfiguration: BatchSendConfiguration
@@ -85,6 +91,23 @@ class StatefulStrategy(
 
     val adjustSendingTimeConfiguration: AdjustSendingTimeConfiguration
         get() = lock.read { state.config?.adjustSendingTimeConfiguration ?: error("adjustSendingTimeConfiguration isn't present.") }
+
+    private var _negativeStructureCorruptions: Sequence<(ByteBuf) -> MetadataUpdate?> = emptySequence()
+
+    private var corruptionIterator: Iterator<(ByteBuf) -> MetadataUpdate?>? = null
+
+    fun getNextCorruption(): ((ByteBuf) -> MetadataUpdate?)? = lock.write {
+        if (corruptionIterator == null) {
+            corruptionIterator = _negativeStructureCorruptions.iterator()
+        }
+
+        return if (corruptionIterator?.hasNext() == true) {
+            corruptionIterator?.next()
+        } else {
+            corruptionIterator = null
+            null
+        }
+    }
 
     // strategies
     fun updateSendStrategy(func: SendStrategy.() -> Unit) = lock.write {
@@ -180,6 +203,8 @@ class StatefulStrategy(
             recoveryHandler = defaultStrategy.recoveryHandler
             cleanupHandler = defaultStrategy.cleanupHandler
             onCloseHandler = defaultStrategy.closeHandler
+            _negativeStructureCorruptions = CorruptionGenerator.createTransformationSequence(HEADER_TRAILER_TAGS, HEADER_TRAILER_TAGS_INFO)
+            corruptionIterator = null
         }
     }
 
@@ -198,6 +223,8 @@ class StatefulStrategy(
             recoveryHandler = defaultStrategy.recoveryHandler
             cleanupHandler = defaultStrategy.cleanupHandler
             onCloseHandler = defaultStrategy.closeHandler
+            _negativeStructureCorruptions = CorruptionGenerator.createTransformationSequence(HEADER_TRAILER_TAGS, HEADER_TRAILER_TAGS_INFO)
+            corruptionIterator = null
         }
     }
 

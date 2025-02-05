@@ -1,5 +1,5 @@
 /*
- * Copyright 2022-2024 Exactpro (Exactpro Systems Limited)
+ * Copyright 2022-2025 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,11 +23,7 @@ import com.exactpro.th2.common.grpc.EventID;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.utils.event.transport.EventUtilsKt;
-import com.exactpro.th2.conn.dirty.fix.FixField;
-import com.exactpro.th2.conn.dirty.fix.MessageLoader;
-import com.exactpro.th2.conn.dirty.fix.MessageTransformer;
-import com.exactpro.th2.conn.dirty.fix.PasswordManager;
-import com.exactpro.th2.conn.dirty.fix.UtilKt;
+import com.exactpro.th2.conn.dirty.fix.*;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BatchSendConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.ChangeSequenceConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RecoveryConfig;
@@ -42,7 +38,6 @@ import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.IncomingMessagesStrat
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.OutgoingMessagesStrategy;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.ReceiveStrategy;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.CorruptMessageStructureConfiguration;
-import com.exactpro.th2.conn.dirty.fix.FIXMessageStructureMutator;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.AdjustSendingTimeConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.RuleType;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.SchedulerType;
@@ -122,68 +117,7 @@ import static com.exactpro.th2.conn.dirty.fix.KeyFileType.Companion.OperationMod
 import static com.exactpro.th2.conn.dirty.tcp.core.util.CommonUtil.getEventId;
 import static com.exactpro.th2.conn.dirty.tcp.core.util.CommonUtil.toByteBuf;
 import static com.exactpro.th2.conn.dirty.tcp.core.util.CommonUtil.toErrorEvent;
-import static com.exactpro.th2.constants.Constants.ADMIN_MESSAGES;
-import static com.exactpro.th2.constants.Constants.BEGIN_SEQ_NO;
-import static com.exactpro.th2.constants.Constants.BEGIN_SEQ_NO_TAG;
-import static com.exactpro.th2.constants.Constants.BEGIN_STRING_TAG;
-import static com.exactpro.th2.constants.Constants.BODY_LENGTH;
-import static com.exactpro.th2.constants.Constants.BODY_LENGTH_TAG;
-import static com.exactpro.th2.constants.Constants.CHECKSUM;
-import static com.exactpro.th2.constants.Constants.CHECKSUM_TAG;
-import static com.exactpro.th2.constants.Constants.DEFAULT_APPL_VER_ID;
-import static com.exactpro.th2.constants.Constants.DEFAULT_APPL_VER_ID_TAG;
-import static com.exactpro.th2.constants.Constants.ENCRYPTED_PASSWORD;
-import static com.exactpro.th2.constants.Constants.ENCRYPTED_PASSWORD_TAG;
-import static com.exactpro.th2.constants.Constants.ENCRYPT_METHOD;
-import static com.exactpro.th2.constants.Constants.END_SEQ_NO;
-import static com.exactpro.th2.constants.Constants.END_SEQ_NO_TAG;
-import static com.exactpro.th2.constants.Constants.GAP_FILL_FLAG;
-import static com.exactpro.th2.constants.Constants.GAP_FILL_FLAG_TAG;
-import static com.exactpro.th2.constants.Constants.HEART_BT_INT;
-import static com.exactpro.th2.constants.Constants.IS_POSS_DUP;
-import static com.exactpro.th2.constants.Constants.IS_SEQUENCE_RESET_FLAG;
-import static com.exactpro.th2.constants.Constants.MSG_SEQ_NUM;
-import static com.exactpro.th2.constants.Constants.MSG_SEQ_NUM_TAG;
-import static com.exactpro.th2.constants.Constants.MSG_TYPE;
-import static com.exactpro.th2.constants.Constants.MSG_TYPE_HEARTBEAT;
-import static com.exactpro.th2.constants.Constants.MSG_TYPE_LOGON;
-import static com.exactpro.th2.constants.Constants.MSG_TYPE_LOGOUT;
-import static com.exactpro.th2.constants.Constants.MSG_TYPE_RESEND_REQUEST;
-import static com.exactpro.th2.constants.Constants.MSG_TYPE_SEQUENCE_RESET;
-import static com.exactpro.th2.constants.Constants.MSG_TYPE_TAG;
-import static com.exactpro.th2.constants.Constants.MSG_TYPE_TEST_REQUEST;
-import static com.exactpro.th2.constants.Constants.NEW_ENCRYPTED_PASSWORD;
-import static com.exactpro.th2.constants.Constants.NEW_ENCRYPTED_PASSWORD_TAG;
-import static com.exactpro.th2.constants.Constants.NEW_PASSWORD;
-import static com.exactpro.th2.constants.Constants.NEW_PASSWORD_TAG;
-import static com.exactpro.th2.constants.Constants.NEW_SEQ_NO;
-import static com.exactpro.th2.constants.Constants.NEW_SEQ_NO_TAG;
-import static com.exactpro.th2.constants.Constants.NEXT_EXPECTED_SEQ_NUM;
-import static com.exactpro.th2.constants.Constants.NEXT_EXPECTED_SEQ_NUMBER_TAG;
-import static com.exactpro.th2.constants.Constants.ORIG_SENDING_TIME;
-import static com.exactpro.th2.constants.Constants.ORIG_SENDING_TIME_TAG;
-import static com.exactpro.th2.constants.Constants.PASSWORD;
-import static com.exactpro.th2.constants.Constants.PASSWORD_TAG;
-import static com.exactpro.th2.constants.Constants.POSS_DUP;
-import static com.exactpro.th2.constants.Constants.POSS_DUP_TAG;
-import static com.exactpro.th2.constants.Constants.POSS_RESEND_TAG;
-import static com.exactpro.th2.constants.Constants.RESET_SEQ_NUM;
-import static com.exactpro.th2.constants.Constants.RESET_SEQ_NUM_TAG;
-import static com.exactpro.th2.constants.Constants.SENDER_COMP_ID;
-import static com.exactpro.th2.constants.Constants.SENDER_COMP_ID_TAG;
-import static com.exactpro.th2.constants.Constants.SENDER_SUB_ID;
-import static com.exactpro.th2.constants.Constants.SENDER_SUB_ID_TAG;
-import static com.exactpro.th2.constants.Constants.SENDING_TIME;
-import static com.exactpro.th2.constants.Constants.SENDING_TIME_TAG;
-import static com.exactpro.th2.constants.Constants.SESSION_STATUS_TAG;
-import static com.exactpro.th2.constants.Constants.SUCCESSFUL_LOGOUT_CODE;
-import static com.exactpro.th2.constants.Constants.TARGET_COMP_ID;
-import static com.exactpro.th2.constants.Constants.TARGET_COMP_ID_TAG;
-import static com.exactpro.th2.constants.Constants.TEST_REQ_ID;
-import static com.exactpro.th2.constants.Constants.TEST_REQ_ID_TAG;
-import static com.exactpro.th2.constants.Constants.TEXT;
-import static com.exactpro.th2.constants.Constants.TEXT_TAG;
-import static com.exactpro.th2.constants.Constants.USERNAME;
+import static com.exactpro.th2.constants.Constants.*;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.asExpandable;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.indexOf;
 import static com.exactpro.th2.netty.bytebuf.util.ByteBufUtil.isEmpty;
@@ -219,6 +153,22 @@ public class FixHandler implements AutoCloseable, IHandler {
     private static final DateTimeFormatter formatter = DateTimeFormatter.ISO_INSTANT;
     private static final ObjectMapper mapper = new ObjectMapper();
 
+    private static final Map<Integer, TagInfo> TAGS_INFO = new HashMap<>() {{
+        putAll(HeaderTrailerTags.Companion.getHEADER_TRAILER_TAGS_INFO());
+        put(98, new TagInfo(DataType.INT, 0));
+        put(108, new TagInfo(DataType.INT, 0));
+        put(789, new TagInfo(DataType.INT, 0));
+        put(1400, new TagInfo(DataType.STRING, 1000));
+        put(1404, new TagInfo(DataType.STRING, 1000));
+        put(1137, new TagInfo(DataType.STRING, 1));
+        put(112, new TagInfo(DataType.STRING, 20));
+        put(7, new TagInfo(DataType.INT, 0));
+        put(16, new TagInfo(DataType.INT, 0));
+        put(123, new TagInfo(DataType.BOOLEAN, 0));
+        put(36, new TagInfo(DataType.INT, 0));
+        put(58, new TagInfo(DataType.STRING, 50));
+    }}
+    ;
     private final Random random = new Random();
     private final AtomicBoolean activeLogonExchange = new AtomicBoolean(false);
     private final AtomicInteger msgSeqNum = new AtomicInteger(0);
@@ -838,6 +788,15 @@ public class FixHandler implements AutoCloseable, IHandler {
         if(!channel.isOpen()) openChannel();
     }
 
+    private StringBuilder buildResendRequest() {
+        StringBuilder resendRequest = new StringBuilder();
+        setHeader(resendRequest, MSG_TYPE_RESEND_REQUEST, msgSeqNum.incrementAndGet(), null);
+        resendRequest.append(BEGIN_SEQ_NO).append(msgSeqNum.get() - 5);
+        resendRequest.append(END_SEQ_NO).append(msgSeqNum.get());
+        setChecksumAndBodyLength(resendRequest);
+        return resendRequest;
+    }
+
     public void sendResendRequest(int beginSeqNo, int endSeqNo) {
         sendResendRequest(beginSeqNo, endSeqNo, false);
     }
@@ -1222,6 +1181,19 @@ public class FixHandler implements AutoCloseable, IHandler {
         sendHeartbeatWithTestRequest(null, false, true);
     }
 
+    private StringBuilder buildHeartbeat(Integer seqNum, String testRequestId, boolean posDup) {
+        StringBuilder heartbeat = new StringBuilder();
+
+        setHeader(heartbeat, MSG_TYPE_HEARTBEAT, seqNum, null, posDup);
+
+        if(testRequestId != null) {
+            heartbeat.append(TEST_REQ_ID).append(testRequestId);
+        }
+
+        setChecksumAndBodyLength(heartbeat);
+        return heartbeat;
+    }
+
     private void sendHeartbeatWithTestRequest(String testRequestId, boolean possDup, boolean corruptSequence) {
         if (enabled.get()) {
             try {
@@ -1251,6 +1223,15 @@ public class FixHandler implements AutoCloseable, IHandler {
             }
 
         }
+    }
+
+    private StringBuilder buildTestRequest() {
+        StringBuilder testRequest = new StringBuilder();
+        setHeader(testRequest, MSG_TYPE_TEST_REQUEST, msgSeqNum.incrementAndGet(), null);
+        testRequest.append(TEST_REQ_ID).append(testReqID.incrementAndGet());
+        setChecksumAndBodyLength(testRequest);
+
+        return testRequest;
     }
 
     public void sendTestRequest() { //do private
@@ -1372,6 +1353,16 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private void sendLogout() {
         sendLogout(null, false);
+    }
+
+    private StringBuilder buildLogout(String text) {
+        StringBuilder logout = new StringBuilder();
+        setHeader(logout, MSG_TYPE_LOGOUT, msgSeqNum.incrementAndGet(), null);
+        if(text != null) {
+            logout.append(TEXT).append(text);
+        }
+        setChecksumAndBodyLength(logout);
+        return logout;
     }
 
     private void sendLogout(String text, boolean isPossDup) {
@@ -1706,6 +1697,44 @@ public class FixHandler implements AutoCloseable, IHandler {
         return null;
     }
 
+    private Map<String, String> negativeStructureOtgoingProcessor(ByteBuf message, Map<String, String> metadata) {
+        onOutgoingUpdateTag(message, metadata);
+
+        Function1<ByteBuf, Map<String, String>> nextCorruption = strategy.getNextCorruption();
+
+        Set <String> disableForMessageTypes = strategy.getDisableForMessageTypes();
+
+        FixField msgTypeField = findField(message, MSG_TYPE_TAG, US_ASCII);
+        if(msgTypeField != null && msgTypeField.getValue() != null && disableForMessageTypes.contains(msgTypeField.getValue())) {
+            LOGGER.info("Strategy '{}' is disabled for {} message type", strategy.getType(), msgTypeField.getValue());
+            return null;
+        }
+        String msgType = msgTypeField.getValue();
+        if(ADMIN_MESSAGES.contains(msgType) && !Objects.equals(msgType, MSG_TYPE_HEARTBEAT)) {
+            return null;
+        }
+
+        if(nextCorruption == null) {
+            return null;
+        }
+
+        Map<String, String> metadataUpdate = nextCorruption.invoke(asExpandable(message));
+
+        if(metadataUpdate != null) {
+            metadata.putAll(metadataUpdate);
+        }
+        metadata.put(ENCODE_MODE_PROPERTY_NAME, DIRTY_ENCODE_MODE_NAME);
+
+        long start = System.currentTimeMillis();
+        while(!enabled.get() && (System.currentTimeMillis() - start) < 1000 ) {
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException ignored) { }
+        }
+
+        return null;
+    }
+
     private Map<String, String> corruptMessageStructureProcessor(ByteBuf message, Map<String, String> metadata) {
         onOutgoingUpdateTag(message, metadata);
         Set <String> disableForMessageTypes = strategy.getDisableForMessageTypes();
@@ -1830,6 +1859,40 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         sendingTime
             .insertNext(POSS_RESEND_TAG, IS_POSS_DUP);
+        updateLength(message);
+        updateChecksum(message);
+
+        return null;
+    }
+
+    private Map<String, String> uniqueIDTestProcessor(ByteBuf message, Map<String, String> metadata) {
+
+        ByteBuf copyMessage = asExpandable(Unpooled.copiedBuffer(message));
+        onOutgoingUpdateTag(copyMessage, metadata);
+
+        Set<String> disableForMessageTypes = strategy.getDisableForMessageTypes();
+        FixField msgTypeField = findField(copyMessage, MSG_TYPE_TAG, US_ASCII);
+
+        Set<String> allowedMessageTypes = strategy.getDuplicateRequestConfiguration().getAllowedMessageTypes();
+
+        if(msgTypeField != null && msgTypeField.getValue() != null && !allowedMessageTypes.contains(msgTypeField.getValue())) {
+            LOGGER.info("Strategy '{}' is disabled for {} message type", strategy.getType(), msgTypeField.getValue());
+            return null;
+        }
+
+        if(msgTypeField != null && msgTypeField.getValue() != null && disableForMessageTypes.contains(msgTypeField.getValue())) {
+            LOGGER.info("Strategy '{}' is disabled for {} message type", strategy.getType(), msgTypeField.getValue());
+            return null;
+        }
+
+        if(msgTypeField != null && msgTypeField.getValue() != null && ADMIN_MESSAGES.contains(msgTypeField.getValue())) {
+            LOGGER.info("Strategy '{}' is disabled for {} message type", strategy.getType(), msgTypeField.getValue());
+            return null;
+        }
+
+        channel.send(copyMessage, metadata, null, SendMode.DIRECT);
+
+        onOutgoingUpdateTag(message, metadata);
         updateLength(message);
         updateChecksum(message);
 
@@ -2183,6 +2246,216 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.cleanupStrategy();
     }
 
+    private void corruptAndSendMessage(ByteBuf buf, Function1<ByteBuf, Map<String, String>> corruption) {
+        long start = System.currentTimeMillis();
+        while(!enabled.get() && (System.currentTimeMillis() - start) < 500 ) {
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException ignored) { }
+        }
+
+        Map<String, String> metadata = new HashMap<>();
+
+        try {
+            Map<String, String> metadataUpdate = corruption.invoke(updateSeqNum(asExpandable(buf)));
+            if(metadataUpdate != null) {
+                System.out.println(metadataUpdate);
+                metadata.putAll(metadataUpdate);
+            }
+
+            channel.send(buf, strategy.getState().enrichProperties(metadata), null, SendMode.DIRECT);
+        } catch (Exception e) {
+            LOGGER.error("Error while applying transformation", e);
+        }
+    }
+
+    private ByteBuf updateSeqNum(ByteBuf message) {
+        FixField msgSeqNum = findField(message, MSG_SEQ_NUM_TAG, US_ASCII);
+        if(msgSeqNum != null) {
+            int msgSeqNumValue = this.msgSeqNum.incrementAndGet();
+            msgSeqNum.setValue(Integer.toString(msgSeqNumValue));
+        }
+        return message;
+    }
+
+    private void applyNewTagsStrategies(ByteBuf message, int bodyTagAnchor) {
+        corruptAndSendMessage(
+                Unpooled.copiedBuffer(message), (buf) ->
+                        CorruptionAction.TAG_THAT_IS_NOT_EXIST.transform(
+                                buf,
+                                MSG_TYPE_TAG,
+                                true,
+                                true,
+                                TAGS_INFO.get(MSG_TYPE_TAG),
+                                new CorruptionConfiguration(List.of(453), List.of(10000), false)
+                        )
+        );
+
+        corruptAndSendMessage(
+                Unpooled.copiedBuffer(message), (buf) ->
+                        CorruptionAction.TAG_THAT_NOT_BELONGS_TO_HEADER_TRAILER.transform(
+                                buf,
+                                BEGIN_STRING_TAG,
+                                true,
+                                true,
+                                TAGS_INFO.get(BEGIN_STRING_TAG),
+                                new CorruptionConfiguration(List.of(453), List.of(10000), false)
+                        )
+        );
+
+        corruptAndSendMessage(
+                Unpooled.copiedBuffer(message), (buf) ->
+                        CorruptionAction.TAG_THAT_NOT_BELONGS_TO_HEADER_TRAILER.transform(
+                                buf,
+                                bodyTagAnchor,
+                                true,
+                                true,
+                                TAGS_INFO.get(bodyTagAnchor),
+                                new CorruptionConfiguration(List.of(453), List.of(10000), false)
+                        )
+        );
+    }
+
+    private void setupNegativeStructuralTestingSessionMessagesStrategy(RuleConfiguration configuration) {
+        strategy.resetStrategyAndState(configuration);
+        strategy.setCleanupHandler(this::cleanUpNegativeStructuralSessionMessagesTestingStrategy);
+        ruleStartEvent(strategy.getType(), strategy.getStartTime());
+
+        // TODO: Update sequence number for each corruption
+
+        // Logon
+        StringBuilder logon = buildLogon(new HashMap<>());
+
+        ByteBuf logonBuf = asExpandable(Unpooled.wrappedBuffer(logon.toString().getBytes(StandardCharsets.UTF_8)));
+
+        List<Function1<ByteBuf, Map<String, String>>> logonTransformationSequence = CorruptionGenerator.INSTANCE.createTransformationSequenceJava(
+            List.of(34, 8, 10, 98, 789, 1137),
+            TAGS_INFO,
+            false
+        );
+
+        for(var transormation : logonTransformationSequence) {
+            corruptAndSendMessage(Unpooled.copiedBuffer(logonBuf), transormation);
+        }
+
+        applyNewTagsStrategies(logonBuf, 98);
+
+        // Logon End
+
+        // Heartbeat
+
+        StringBuilder heartbeat = buildHeartbeat(msgSeqNum.incrementAndGet(), "test", false);
+        ByteBuf heartBeatBuf = asExpandable(Unpooled.wrappedBuffer(heartbeat.toString().getBytes(StandardCharsets.UTF_8)));
+
+        List<Function1<ByteBuf, Map<String, String>>> heartbeatTransformation = CorruptionGenerator.INSTANCE.createTransformationSequenceJava(
+            List.of(34, 8, 10, 112),
+            TAGS_INFO,
+            false
+        );
+
+        for(var transformation: heartbeatTransformation) {
+            corruptAndSendMessage(Unpooled.copiedBuffer(heartBeatBuf), transformation);
+        }
+
+        applyNewTagsStrategies(heartBeatBuf, 112);
+
+        // Heartbeat
+
+        // ResendRequest
+
+        StringBuilder resendRequest = buildResendRequest();
+        ByteBuf resendRequestBuf = asExpandable(Unpooled.wrappedBuffer(resendRequest.toString().getBytes(StandardCharsets.UTF_8)));
+
+        List<Function1<ByteBuf, Map<String, String>>> resendRequestTransformations = CorruptionGenerator.INSTANCE.createTransformationSequenceJava(
+                List.of(34, 8, 10, 7, 16),
+                TAGS_INFO,
+                false
+        );
+
+        for(var transformation: resendRequestTransformations) {
+            corruptAndSendMessage(Unpooled.copiedBuffer(resendRequestBuf), transformation);
+        }
+
+        applyNewTagsStrategies(resendRequestBuf, 7);
+
+        // ResendRequest
+
+        // TestRequest
+
+        StringBuilder testRequest = buildTestRequest();
+        ByteBuf testRequestBuf = asExpandable(Unpooled.wrappedBuffer(testRequest.toString().getBytes(StandardCharsets.UTF_8)));
+
+        List<Function1<ByteBuf, Map<String, String>>> testRequestTransformations = CorruptionGenerator.INSTANCE.createTransformationSequenceJava(
+                List.of(34, 8, 10, 112),
+                TAGS_INFO,
+                false
+        );
+
+        for(var transformation: testRequestTransformations) {
+            corruptAndSendMessage(Unpooled.copiedBuffer(testRequestBuf), transformation);
+        }
+
+        applyNewTagsStrategies(testRequestBuf, 112);
+
+        // TestRequest
+
+        // SequenceReset
+
+        StringBuilder sequenceReset = createSequenceResetParametrized(msgSeqNum.incrementAndGet(), msgSeqNum.get() + 5, true, true, false);
+        ByteBuf sequenceResetBuf = asExpandable(Unpooled.wrappedBuffer(sequenceReset.toString().getBytes(StandardCharsets.UTF_8)));
+
+        List<Function1<ByteBuf, Map<String, String>>> sequenceResetTransformations = CorruptionGenerator.INSTANCE.createTransformationSequenceJava(
+                List.of(34, 8, 10, 123, 36),
+                TAGS_INFO,
+                false
+        );
+
+        for(var transformation : sequenceResetTransformations) {
+            corruptAndSendMessage(Unpooled.copiedBuffer(sequenceResetBuf), transformation);
+        }
+
+        applyNewTagsStrategies(sequenceResetBuf, 123);
+
+        // SequenceReset
+
+        // Logout
+
+        StringBuilder logout = buildLogout("test");
+        ByteBuf logoutBuf = asExpandable(Unpooled.wrappedBuffer(logout.toString().getBytes(StandardCharsets.UTF_8)));
+
+        List<Function1<ByteBuf, Map<String, String>>> logoutTransformations = CorruptionGenerator.INSTANCE.createTransformationSequenceJava(
+            List.of(34, 8, 10, 58),
+            TAGS_INFO,
+            false
+        );
+
+        for(var transformation : logoutTransformations) {
+            corruptAndSendMessage(Unpooled.copiedBuffer(logoutBuf), transformation);
+        }
+
+        applyNewTagsStrategies(logoutBuf, 58);
+
+        // Logout
+    }
+
+    private void cleanUpNegativeStructuralSessionMessagesTestingStrategy() {
+        ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
+        strategy.cleanupStrategy();
+    }
+
+    private void setupNegativeStructuralTestingStrategy(RuleConfiguration configuration) {
+        strategy.resetStrategyAndState(configuration);
+        strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::negativeStructureOtgoingProcessor); return Unit.INSTANCE;});
+        strategy.setCleanupHandler(this::cleanUpNegativeStructuralTestingStrategy);
+        ruleStartEvent(strategy.getType(), strategy.getStartTime());
+    }
+
+    private void cleanUpNegativeStructuralTestingStrategy() {
+        strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
+        ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
+        strategy.cleanupStrategy();
+    }
+
     private void setupBidirectionalResendRequestStrategy(RuleConfiguration configuration) {
         strategy.resetStrategyAndState(configuration);
         strategy.setCleanupHandler(this::cleanupBidirectionalResendRequestStrategy);
@@ -2530,6 +2803,19 @@ public class FixHandler implements AutoCloseable, IHandler {
         ruleStartEvent(strategy.getType(), strategy.getStartTime());
     }
 
+    private void setupIdUniqnessStrategy(RuleConfiguration configuration) {
+        strategy.resetStrategyAndState(configuration);
+        strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::uniqueIDTestProcessor); return Unit.INSTANCE;});
+        strategy.setCleanupHandler(this::cleanIdUniqnessStrategy);
+        ruleStartEvent(strategy.getType(), strategy.getStartTime());
+    }
+
+    private void cleanIdUniqnessStrategy() {
+        strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
+        ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
+        strategy.cleanupStrategy();
+    }
+
     // </editor-fold>
 
     private Map<String, String> defaultMessageProcessor(ByteBuf message, Map<String, String> metadata) {return null;}
@@ -2615,6 +2901,9 @@ public class FixHandler implements AutoCloseable, IHandler {
             case TRIGGER_LOGOUT_WITHOUT_RESPONSE: return this::setupTriggerDisconnectWithoutResponse;
             case TRIGGER_LOGOUT: return this::setupTriggerLogout;
             case POSS_RESEND: return this::setupPossResendStrategy;
+            case NEGATIVE_STRUCTURE_TESTING: return this::setupNegativeStructuralTestingStrategy;
+            case NEGATIVE_STRUCTURE_TESTING_SESSION_MESSAGES: return this::setupNegativeStructuralTestingSessionMessagesStrategy;
+            case DUPLICATE_REQUEST: return this::setupIdUniqnessStrategy;
             case DEFAULT: return configuration -> strategy.cleanupStrategy();
             default: throw new IllegalStateException(String.format("Unknown strategy type %s.", config.getRuleType()));
         }
@@ -2718,6 +3007,27 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.setOnCloseHandler(this::defaultOnCloseHandler);
         strategy.setCleanupHandler(this::defaultCleanupHandler);
         cleanup.cleanup();
+    }
+
+    private StringBuilder createSequenceResetParametrized(int seqNo, int newSeqNo, boolean gapFill, boolean possDup, boolean origSendingTime) {
+        StringBuilder sequenceReset = new StringBuilder();
+
+        String time = getTime();
+        setHeader(sequenceReset, MSG_TYPE_SEQUENCE_RESET, seqNo, null);
+        if(origSendingTime) {
+            sequenceReset.append(ORIG_SENDING_TIME).append(time);
+        }
+        if(possDup) {
+            sequenceReset.append(POSS_DUP).append(IS_POSS_DUP);
+        }
+        if(gapFill) {
+            sequenceReset.append(GAP_FILL_FLAG).append("Y");
+        } else {
+            sequenceReset.append(GAP_FILL_FLAG).append("N");
+        }
+        sequenceReset.append(NEW_SEQ_NO).append(newSeqNo);
+        setChecksumAndBodyLength(sequenceReset);
+        return sequenceReset;
     }
 
     private StringBuilder createSequenceReset(int seqNo, int newSeqNo) {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 Exactpro (Exactpro Systems Limited)
+ * Copyright 2023-2025 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,7 +43,8 @@ data class RuleConfiguration(
     val sendSequenceResetConfiguration: SendSequenceResetConfiguration? = null,
     val disableForMessageTypes: Set<String> = setOf("q"), // Order Mass Cansel Request (q) message shouldn't be transformed
     val corruptMessageStructureConfiguration: CorruptMessageStructureConfiguration? = null,
-    val adjustSendingTimeConfiguration: AdjustSendingTimeConfiguration? = null
+    val adjustSendingTimeConfiguration: AdjustSendingTimeConfiguration? = null,
+    val duplicateRequestConfiguration: DuplicateRequestConfiguration? = null
 ) {
     init {
         when(ruleType) {
@@ -96,6 +97,11 @@ data class RuleConfiguration(
             }
             RuleType.TRIGGER_LOGOUT, RuleType.TRIGGER_LOGOUT_WITHOUT_RESPONSE -> {}
             RuleType.POSS_RESEND -> {}
+            RuleType.DUPLICATE_REQUEST -> {
+                require(duplicateRequestConfiguration != null) { "`duplicateRequestConfiguration` is requiered for $ruleType"}
+            }
+            RuleType.NEGATIVE_STRUCTURE_TESTING -> {}
+            RuleType.NEGATIVE_STRUCTURE_TESTING_SESSION_MESSAGES -> {}
         }
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2022-2022 Exactpro (Exactpro Systems Limited)
+ * Copyright 2022-2025 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.exactpro.th2.conn.dirty.fix
 
+import com.exactpro.th2.conn.dirty.fix.FixField.FixGroup
 import com.exactpro.th2.netty.bytebuf.util.EMPTY_STRING
 import com.exactpro.th2.netty.bytebuf.util.endsWith
 import com.exactpro.th2.netty.bytebuf.util.get
@@ -42,6 +43,9 @@ fun ByteBuf.firstField(charset: Charset = UTF_8): FixField? = FixField.atOffset(
 
 @JvmOverloads
 fun ByteBuf.lastField(charset: Charset = UTF_8): FixField? = FixField.atOffset(this, writerIndex() - 1, charset)
+
+val ByteBuf.fields: Iterable<FixField>
+    get() = Iterable { iterator { forEachField { yield(it) } } }
 
 @JvmOverloads
 inline fun ByteBuf.forEachField(
@@ -271,12 +275,30 @@ fun ByteBuf.updateLength(): ByteBuf {
     return replace(valueIndex, sohIndex, (endIndex - startIndex).toString())
 }
 
+fun Iterable<FixField>.findGroup(counter: Int, delimiter: Int, tags: Iterable<Int>): FixGroup? {
+    val counter = find { it.tag == counter } ?: return null
+    val delimiter = counter.next()?.takeIf { it.tag == delimiter } ?: return null
+    return FixGroup(counter, delimiter, tags)
+}
+
+fun Iterable<FixField>.findGroups(counter: Int, delimiter: Int, tags: Iterable<Int>) = sequence {
+    for(counter in filter { it.tag == counter }) {
+        val delimiter = counter.next()?.takeIf { it.tag == delimiter } ?: continue
+        yield(FixGroup(counter, delimiter, tags))
+    }
+}
+
+interface FixElement {
+    fun previous(): FixElement?
+    fun next(): FixElement?
+}
+
 class FixField private constructor(
     private val buffer: ByteBuf,
     private var startIndex: Int,
     private var endIndex: Int,
     private val charset: Charset = UTF_8,
-) {
+) : FixElement {
     private var previous: FixField? = null
     private var next: FixField? = null
 
@@ -412,7 +434,7 @@ class FixField private constructor(
         return "${tag ?: EMPTY_STRING}$SEP_CHAR${value ?: EMPTY_STRING}${SOH_CHAR}"
     }
 
-    fun next(): FixField? = next ?: when (endIndex) {
+    override fun next(): FixField? = next ?: when (endIndex) {
         buffer.writerIndex() -> null
         else -> atOffset(
             buffer,
@@ -426,7 +448,7 @@ class FixField private constructor(
         }
     }
 
-    fun previous(): FixField? = previous ?: when (startIndex) {
+    override fun previous(): FixField? = previous ?: when (startIndex) {
         buffer.readerIndex() -> null
         else -> atOffset(
             buffer,
@@ -491,6 +513,55 @@ class FixField private constructor(
                 startIndex != endIndex -> FixField(buffer, startIndex, endIndex, charset)
                 else -> null
             }
+        }
+    }
+
+    class FixGroup(
+        val counter: FixField,
+        val delimiter: FixField,
+        val tags: Iterable<Int>,
+    ) : Iterable<FixField>, FixElement {
+        fun decrement() {
+            counter.value?.let {
+                val value = it.toInt()
+                counter.value = (value - 1).toString()
+                if(value - 1 == 0) {
+                    counter.clear()
+                }
+            }
+        }
+
+        fun increment() {
+            counter.value?.let {
+                counter.value = (it.toInt() + 1).toString()
+            }
+        }
+
+        override fun iterator(): Iterator<FixField> = iterator {
+            var field: FixField? = delimiter
+
+            while (field != null) {
+                if (field === delimiter || field.tag in tags) yield(field) else break
+                field = field.next()
+            }
+        }
+
+        override fun next(): FixGroup? = find(delimiter.next()) { next() }
+
+        override fun previous(): FixGroup? = find(delimiter.previous()) { previous() }
+
+        private inline fun find(start: FixField?, next: FixField.() -> FixField?): FixGroup? {
+            val delimiter = delimiter.tag
+            var field = start
+
+            while (field != null) {
+                val tag = field.tag
+                if (tag == delimiter) return FixGroup(counter, field, tags)
+                if (tag !in tags) break
+                field = field.next()
+            }
+
+            return null
         }
     }
 }
