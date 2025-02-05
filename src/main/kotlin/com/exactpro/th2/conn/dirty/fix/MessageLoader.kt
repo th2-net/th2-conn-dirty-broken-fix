@@ -238,6 +238,9 @@ class MessageLoader(
                 if(next.messagePropertiesMap.getOrDefault("isCorruptedMessage", "N") == "Y") {
                     continue
                 }
+                if(next.containsMessageProperties("encode-mode")) {
+                    continue
+                }
                 val message = Unpooled.buffer().writeBytes(next.bodyRaw.toByteArray())
                 K_LOGGER.info { "Sending message to recovery processor: ${message.toString(US_ASCII)}" }
                 if (!processMessage(message)) break

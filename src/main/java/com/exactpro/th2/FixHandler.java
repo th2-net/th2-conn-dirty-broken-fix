@@ -2255,6 +2255,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
 
         Map<String, String> metadata = new HashMap<>();
+        metadata.put(ENCODE_MODE_PROPERTY_NAME, DIRTY_ENCODE_MODE_NAME);
 
         try {
             Map<String, String> metadataUpdate = corruption.invoke(updateSeqNum(asExpandable(buf)));
