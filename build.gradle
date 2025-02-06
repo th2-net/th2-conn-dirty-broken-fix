@@ -76,4 +76,5 @@ dependencyCheck {
     suppressionFile="suppressions.xml"
     //FIXME: we should check all used dependencies
     skipConfigurations = ['kapt', 'kaptClasspath_kaptKotlin', 'kaptTest', 'kaptTestFixtures', 'annotationProcessor']
+    downloadDisabled = true
 }
