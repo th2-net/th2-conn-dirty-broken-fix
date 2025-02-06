@@ -189,6 +189,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private final MessageLoader messageLoader;
     private final ReentrantLock recoveryLock = new ReentrantLock();
+    private final ReentrantLock blockSendLock = new ReentrantLock();
 
     private final AtomicReference<Future<?>> heartbeatTimer = new AtomicReference<>(CompletableFuture.completedFuture(null));
     private final AtomicReference<Future<?>> testRequestTimer = new AtomicReference<>(CompletableFuture.completedFuture(null));
@@ -1444,6 +1445,31 @@ public class FixHandler implements AutoCloseable, IHandler {
         return channel.send(message, strategy.getState().enrichProperties(properties), eventID, SendMode.HANDLE_AND_MANGLE);
     }
 
+    private CompletableFuture<MessageID> negativeStructureTestSend(IChannel channel,
+                                                                   ByteBuf message,
+                                                                   Map<String, String> properties,
+                                                                   EventID eventID) {
+        try {
+            MessageID messageID = channel.send(message, strategy.getState().enrichProperties(properties), eventID, SendMode.HANDLE_AND_MANGLE).get(1, TimeUnit.SECONDS);
+            Thread.sleep(10);
+            return CompletableFuture.completedFuture(messageID);
+        } catch (Exception e) {
+            return CompletableFuture.failedFuture(e);
+        }
+    }
+
+    private CompletableFuture<MessageID> negativeSessionMessagesStructureTestSend(IChannel channel,
+                                                                   ByteBuf message,
+                                                                   Map<String, String> properties,
+                                                                   EventID eventID) {
+        try {
+            blockSendLock.lock();
+            return channel.send(message, strategy.getState().enrichProperties(properties), eventID, SendMode.HANDLE_AND_MANGLE);
+        } finally {
+            blockSendLock.unlock();
+        }
+    }
+
     private CompletableFuture<MessageID> bulkSend(IChannel channel, ByteBuf message, Map<String, String> properties, EventID eventID) {
         resetHeartbeatTask();
         BatchSendConfiguration config = strategy.getBatchSendConfiguration();
@@ -1720,8 +1746,6 @@ public class FixHandler implements AutoCloseable, IHandler {
     private Map<String, String> negativeStructureOtgoingProcessor(ByteBuf message, Map<String, String> metadata) {
         onOutgoingUpdateTag(message, metadata);
 
-        Function1<ByteBuf, Map<String, String>> nextCorruption = strategy.getNextCorruption();
-
         Set <String> disableForMessageTypes = strategy.getDisableForMessageTypes();
 
         FixField msgTypeField = findField(message, MSG_TYPE_TAG, US_ASCII);
@@ -1734,11 +1758,11 @@ public class FixHandler implements AutoCloseable, IHandler {
             return null;
         }
 
+        Function1<ByteBuf, Map<String, String>> nextCorruption = strategy.getNextCorruption();
+
         if(nextCorruption == null) {
             return null;
         }
-
-
 
         Map<String, String> metadataUpdate = nextCorruption.invoke(asExpandable(addPossFlags(message)));
 
@@ -2280,15 +2304,18 @@ public class FixHandler implements AutoCloseable, IHandler {
         metadata.put(ENCODE_MODE_PROPERTY_NAME, DIRTY_ENCODE_MODE_NAME);
 
         try {
+            blockSendLock.lock();
             Map<String, String> metadataUpdate = corruption.invoke(updateSeqNum(asExpandable(buf)));
             if(metadataUpdate != null) {
                 System.out.println(metadataUpdate);
                 metadata.putAll(metadataUpdate);
             }
-
-            channel.send(buf, strategy.getState().enrichProperties(metadata), null, SendMode.DIRECT);
+            channel.send(buf, strategy.getState().enrichProperties(metadata), null, SendMode.DIRECT).get(1, TimeUnit.SECONDS);
+            Thread.sleep(10);
         } catch (Exception e) {
             LOGGER.error("Error while applying transformation", e);
+        } finally {
+            blockSendLock.unlock();
         }
     }
 
@@ -2343,8 +2370,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.resetStrategyAndState(configuration);
         strategy.setCleanupHandler(this::cleanUpNegativeStructuralSessionMessagesTestingStrategy);
         ruleStartEvent(strategy.getType(), strategy.getStartTime());
-
-        // TODO: Update sequence number for each corruption
+        strategy.updateSendStrategy(x -> {x.setSendHandler(this::negativeSessionMessagesStructureTestSend); return Unit.INSTANCE;});
 
         // Logon
         StringBuilder logon = buildLogon(new HashMap<>());
@@ -2463,18 +2489,21 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private void cleanUpNegativeStructuralSessionMessagesTestingStrategy() {
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
+        strategy.updateSendStrategy(x -> {x.setSendHandler(this::defaultSend); return Unit.INSTANCE;});
         strategy.cleanupStrategy();
     }
 
     private void setupNegativeStructuralTestingStrategy(RuleConfiguration configuration) {
         strategy.resetStrategyAndState(configuration);
         strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::negativeStructureOtgoingProcessor); return Unit.INSTANCE;});
+        strategy.updateSendStrategy(x -> {x.setSendHandler(this::negativeStructureTestSend); return Unit.INSTANCE;});
         strategy.setCleanupHandler(this::cleanUpNegativeStructuralTestingStrategy);
         ruleStartEvent(strategy.getType(), strategy.getStartTime());
     }
 
     private void cleanUpNegativeStructuralTestingStrategy() {
         strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::defaultOutgoingStrategy); return Unit.INSTANCE;});
+        strategy.updateSendStrategy(x -> {x.setSendHandler(this::defaultSend); return Unit.INSTANCE;});
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
         strategy.cleanupStrategy();
     }
