@@ -1772,7 +1772,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         metadata.put(ENCODE_MODE_PROPERTY_NAME, DIRTY_ENCODE_MODE_NAME);
 
         long start = System.currentTimeMillis();
-        while(!enabled.get() && (System.currentTimeMillis() - start) < 1000 ) {
+        while(!enabled.get() && (System.currentTimeMillis() - start) < 1100 ) {
             try {
                 Thread.sleep(10);
             } catch (InterruptedException ignored) { }
@@ -2294,7 +2294,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private void corruptAndSendMessage(ByteBuf buf, Function1<ByteBuf, Map<String, String>> corruption) {
         long start = System.currentTimeMillis();
-        while(!enabled.get() && (System.currentTimeMillis() - start) < 500 ) {
+        while(!enabled.get() && (System.currentTimeMillis() - start) < 1100 ) {
             try {
                 Thread.sleep(10);
             } catch (InterruptedException ignored) { }
