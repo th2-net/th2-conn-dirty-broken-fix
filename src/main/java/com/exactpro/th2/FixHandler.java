@@ -1697,6 +1697,26 @@ public class FixHandler implements AutoCloseable, IHandler {
         return null;
     }
 
+    private ByteBuf addPossFlags(ByteBuf msg) {
+        FixField possDup = findField(msg, POSS_DUP_TAG);
+        if(possDup == null) {
+            FixField msgSeqNum = findField(msg, MSG_SEQ_NUM_TAG);
+            if(msgSeqNum != null) {
+                msgSeqNum.insertNext(43, "N");
+            }
+        }
+
+        FixField posResend = findField(msg, POSS_RESEND_TAG);
+        if(posResend == null) {
+            possDup = findField(msg, POSS_DUP_TAG);
+            if(possDup != null) {
+                possDup.insertNext(97, "N");
+            }
+        }
+
+        return msg;
+    }
+
     private Map<String, String> negativeStructureOtgoingProcessor(ByteBuf message, Map<String, String> metadata) {
         onOutgoingUpdateTag(message, metadata);
 
@@ -1718,7 +1738,9 @@ public class FixHandler implements AutoCloseable, IHandler {
             return null;
         }
 
-        Map<String, String> metadataUpdate = nextCorruption.invoke(asExpandable(message));
+
+
+        Map<String, String> metadataUpdate = nextCorruption.invoke(asExpandable(addPossFlags(message)));
 
         if(metadataUpdate != null) {
             metadata.putAll(metadataUpdate);
@@ -2327,7 +2349,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         // Logon
         StringBuilder logon = buildLogon(new HashMap<>());
 
-        ByteBuf logonBuf = asExpandable(Unpooled.wrappedBuffer(logon.toString().getBytes(StandardCharsets.UTF_8)));
+        ByteBuf logonBuf = addPossFlags(asExpandable(Unpooled.wrappedBuffer(logon.toString().getBytes(StandardCharsets.UTF_8))));
 
         List<Function1<ByteBuf, Map<String, String>>> logonTransformationSequence = CorruptionGenerator.INSTANCE.createTransformationSequenceJava(
             List.of(34, 8, 10, 98, 789, 1137),
@@ -2346,7 +2368,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         // Heartbeat
 
         StringBuilder heartbeat = buildHeartbeat(msgSeqNum.incrementAndGet(), "test", false);
-        ByteBuf heartBeatBuf = asExpandable(Unpooled.wrappedBuffer(heartbeat.toString().getBytes(StandardCharsets.UTF_8)));
+        ByteBuf heartBeatBuf = addPossFlags(asExpandable(Unpooled.wrappedBuffer(heartbeat.toString().getBytes(StandardCharsets.UTF_8))));
 
         List<Function1<ByteBuf, Map<String, String>>> heartbeatTransformation = CorruptionGenerator.INSTANCE.createTransformationSequenceJava(
             List.of(34, 8, 10, 112),
@@ -2365,7 +2387,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         // ResendRequest
 
         StringBuilder resendRequest = buildResendRequest();
-        ByteBuf resendRequestBuf = asExpandable(Unpooled.wrappedBuffer(resendRequest.toString().getBytes(StandardCharsets.UTF_8)));
+        ByteBuf resendRequestBuf = addPossFlags(asExpandable(Unpooled.wrappedBuffer(resendRequest.toString().getBytes(StandardCharsets.UTF_8))));
 
         List<Function1<ByteBuf, Map<String, String>>> resendRequestTransformations = CorruptionGenerator.INSTANCE.createTransformationSequenceJava(
                 List.of(34, 8, 10, 7, 16),
@@ -2384,7 +2406,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         // TestRequest
 
         StringBuilder testRequest = buildTestRequest();
-        ByteBuf testRequestBuf = asExpandable(Unpooled.wrappedBuffer(testRequest.toString().getBytes(StandardCharsets.UTF_8)));
+        ByteBuf testRequestBuf = addPossFlags(asExpandable(Unpooled.wrappedBuffer(testRequest.toString().getBytes(StandardCharsets.UTF_8))));
 
         List<Function1<ByteBuf, Map<String, String>>> testRequestTransformations = CorruptionGenerator.INSTANCE.createTransformationSequenceJava(
                 List.of(34, 8, 10, 112),
@@ -2403,7 +2425,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         // SequenceReset
 
         StringBuilder sequenceReset = createSequenceResetParametrized(msgSeqNum.incrementAndGet(), msgSeqNum.get() + 5, true, true, false);
-        ByteBuf sequenceResetBuf = asExpandable(Unpooled.wrappedBuffer(sequenceReset.toString().getBytes(StandardCharsets.UTF_8)));
+        ByteBuf sequenceResetBuf = addPossFlags(asExpandable(Unpooled.wrappedBuffer(sequenceReset.toString().getBytes(StandardCharsets.UTF_8))));
 
         List<Function1<ByteBuf, Map<String, String>>> sequenceResetTransformations = CorruptionGenerator.INSTANCE.createTransformationSequenceJava(
                 List.of(34, 8, 10, 123, 36),
@@ -2422,7 +2444,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         // Logout
 
         StringBuilder logout = buildLogout("test");
-        ByteBuf logoutBuf = asExpandable(Unpooled.wrappedBuffer(logout.toString().getBytes(StandardCharsets.UTF_8)));
+        ByteBuf logoutBuf = addPossFlags(asExpandable(Unpooled.wrappedBuffer(logout.toString().getBytes(StandardCharsets.UTF_8))));
 
         List<Function1<ByteBuf, Map<String, String>>> logoutTransformations = CorruptionGenerator.INSTANCE.createTransformationSequenceJava(
             List.of(34, 8, 10, 58),
