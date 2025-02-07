@@ -53,6 +53,9 @@ class StatefulStrategy(
     val duplicateRequestConfiguration: DuplicateRequestConfiguration
         get() = lock.read { state.config?.duplicateRequestConfiguration ?: DuplicateRequestConfiguration() }
 
+    val negativeStructureConfiguration: NegativeStructureConfiguration
+        get() = lock.read { state.config?.negativeStructureConfiguration ?: NegativeStructureConfiguration() }
+
     val transformMessageConfiguration: TransformMessageConfiguration
         get() = lock.read { state.config?.transformMessageConfiguration ?: error("Transform message config isn't present.") }
     val batchSendConfiguration: BatchSendConfiguration

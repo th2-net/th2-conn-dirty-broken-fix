@@ -1451,7 +1451,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                                                                    EventID eventID) {
         try {
             MessageID messageID = channel.send(message, strategy.getState().enrichProperties(properties), eventID, SendMode.HANDLE_AND_MANGLE).get(1, TimeUnit.SECONDS);
-            Thread.sleep(10);
+            Thread.sleep(strategy.getNegativeStructureConfiguration().getAfterSendTimeoutMs());
             return CompletableFuture.completedFuture(messageID);
         } catch (Exception e) {
             return CompletableFuture.failedFuture(e);
@@ -2311,7 +2311,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                 metadata.putAll(metadataUpdate);
             }
             channel.send(buf, strategy.getState().enrichProperties(metadata), null, SendMode.DIRECT).get(1, TimeUnit.SECONDS);
-            Thread.sleep(10);
+            Thread.sleep(strategy.getNegativeStructureConfiguration().getAfterSendTimeoutMs());
         } catch (Exception e) {
             LOGGER.error("Error while applying transformation", e);
         } finally {

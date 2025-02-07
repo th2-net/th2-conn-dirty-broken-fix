@@ -44,7 +44,8 @@ data class RuleConfiguration(
     val disableForMessageTypes: Set<String> = setOf("q"), // Order Mass Cansel Request (q) message shouldn't be transformed
     val corruptMessageStructureConfiguration: CorruptMessageStructureConfiguration? = null,
     val adjustSendingTimeConfiguration: AdjustSendingTimeConfiguration? = null,
-    val duplicateRequestConfiguration: DuplicateRequestConfiguration? = null
+    val duplicateRequestConfiguration: DuplicateRequestConfiguration? = null,
+    val negativeStructureConfiguration: NegativeStructureConfiguration = NegativeStructureConfiguration()
 ) {
     init {
         when(ruleType) {
@@ -100,7 +101,7 @@ data class RuleConfiguration(
             RuleType.DUPLICATE_REQUEST -> {
                 require(duplicateRequestConfiguration != null) { "`duplicateRequestConfiguration` is requiered for $ruleType"}
             }
-            RuleType.NEGATIVE_STRUCTURE_TESTING -> {}
+            RuleType.NEGATIVE_STRUCTURE_TESTING -> {  }
             RuleType.NEGATIVE_STRUCTURE_TESTING_SESSION_MESSAGES -> {}
         }
     }
