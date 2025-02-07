@@ -1574,7 +1574,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             x -> x <= config.getNumberOfTimesToTransform(),
             () -> {
                 metadata.put("OriginalMessageType", msgTypeField.getValue());
-                messageTransformer.transformWithoutResults(message, transformation.getCombinedActions());
+                messageTransformer.transformWithoutResults(message, transformation.getCombinedActions(), config.getContext());
                 if(transformation.getNewPassword() != null) {
                     if(transformation.getEncryptKey() != null) {
                         FixField encryptedPassword = findField(message, ENCRYPTED_PASSWORD_TAG);

@@ -34,8 +34,11 @@ typealias Tag = Int
 object MessageTransformer {
     private val logger = KotlinLogging.logger {}
 
-    fun transformWithoutResults(message: ByteBuf, actions: List<Action>) {
+    fun transformWithoutResults(message: ByteBuf, actions: List<Action>, context: Context) {
         logger.debug { "Applying rule directly from handler: ${actions}." }
+        for(action in actions) {
+            action.init(context)
+        }
         transform(message, actions).forEach { _ -> }
     }
 
@@ -484,6 +487,7 @@ data class Action(
         before?.init(context)
         after?.init(context)
         groupScope?.init(context)
+        removeGroup?.init(context)
     }
 
     override fun toString() = buildString {

@@ -16,11 +16,13 @@
 package com.exactpro.th2.conn.dirty.fix.brokenconn.configuration
 
 import com.exactpro.th2.conn.dirty.fix.Action
+import com.exactpro.th2.conn.dirty.fix.Context
 import com.exactpro.th2.conn.dirty.fix.FieldDefinition
 import com.exactpro.th2.constants.Constants
 
 data class TransformMessageConfiguration(
-   val transformations: List<TransformationConfiguration>
+    val transformations: List<TransformationConfiguration>,
+    val context: Context = Context(),
 ) {
     private var transformationsIdx = 0
     val numberOfTimesToTransform: Int = transformations.size

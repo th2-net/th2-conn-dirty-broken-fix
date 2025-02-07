@@ -37,6 +37,7 @@ data class CorruptionConfiguration(val tagsThatAreNotRelatedToHeaderTrailer: Lis
 
 typealias MetadataUpdate = Map<String, String>
 
+val DEFAULT_CONTEXT = Context()
 enum class CorruptionAction {
     REMOVE_TAG {
         override fun transform(
@@ -52,7 +53,7 @@ enum class CorruptionAction {
                     remove = FieldSelector(tag)
                 )
             )
-            MessageTransformer.transformWithoutResults(buf, actions)
+            MessageTransformer.transformWithoutResults(buf, actions, DEFAULT_CONTEXT)
 
             if(updateLength) {
                 buf.updateLength()
@@ -85,7 +86,7 @@ enum class CorruptionAction {
                     )
                 )
             )
-            MessageTransformer.transformWithoutResults(buf, actions)
+            MessageTransformer.transformWithoutResults(buf, actions, DEFAULT_CONTEXT)
 
             if(updateLength) {
                 buf.updateLength()
@@ -118,7 +119,7 @@ enum class CorruptionAction {
                     )
                 )
             )
-            MessageTransformer.transformWithoutResults(buf, actions)
+            MessageTransformer.transformWithoutResults(buf, actions, DEFAULT_CONTEXT)
 
             if(updateLength) {
                 buf.updateLength()
@@ -154,7 +155,7 @@ enum class CorruptionAction {
                     )
                 )
             )
-            MessageTransformer.transformWithoutResults(buf, actions)
+            MessageTransformer.transformWithoutResults(buf, actions, DEFAULT_CONTEXT)
 
             if(updateLength) {
                 buf.updateLength()
@@ -198,7 +199,7 @@ enum class CorruptionAction {
                     return null
                 }
             }
-            MessageTransformer.transformWithoutResults(buf, actions)
+            MessageTransformer.transformWithoutResults(buf, actions, DEFAULT_CONTEXT)
 
             if(updateLength) {
                 buf.updateLength()
@@ -239,7 +240,7 @@ enum class CorruptionAction {
                     return null
                 }
             }
-            MessageTransformer.transformWithoutResults(buf, actions)
+            MessageTransformer.transformWithoutResults(buf, actions, DEFAULT_CONTEXT)
 
             if (updateLength) {
                 buf.updateLength()
@@ -289,7 +290,7 @@ enum class CorruptionAction {
                     )
                 }
             }
-            MessageTransformer.transformWithoutResults(buf, actions)
+            MessageTransformer.transformWithoutResults(buf, actions, DEFAULT_CONTEXT)
 
             if (updateLength) {
                 buf.updateLength()
@@ -341,7 +342,7 @@ enum class CorruptionAction {
                 return null
             }
 
-            MessageTransformer.transformWithoutResults(buf, actions)
+            MessageTransformer.transformWithoutResults(buf, actions, DEFAULT_CONTEXT)
 
             if (updateLength) {
                 buf.updateLength()
@@ -382,7 +383,7 @@ enum class CorruptionAction {
                 )
             }
 
-            MessageTransformer.transformWithoutResults(buf, actions)
+            MessageTransformer.transformWithoutResults(buf, actions, DEFAULT_CONTEXT)
 
             if (updateLength) {
                 buf.updateLength()
@@ -423,7 +424,7 @@ enum class CorruptionAction {
                 )
             }
 
-            MessageTransformer.transformWithoutResults(buf, actions)
+            MessageTransformer.transformWithoutResults(buf, actions, DEFAULT_CONTEXT)
 
             if (updateLength) {
                 buf.updateLength()
