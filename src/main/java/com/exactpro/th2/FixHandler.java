@@ -1450,9 +1450,13 @@ public class FixHandler implements AutoCloseable, IHandler {
                                                                    Map<String, String> properties,
                                                                    EventID eventID) {
         try {
-            MessageID messageID = channel.send(message, strategy.getState().enrichProperties(properties), eventID, SendMode.HANDLE_AND_MANGLE).get(1, TimeUnit.SECONDS);
-            Thread.sleep(strategy.getNegativeStructureConfiguration().getAfterSendTimeoutMs());
-            return CompletableFuture.completedFuture(messageID);
+            if(strategiesEnabled.get()) {
+                MessageID messageID = channel.send(message, strategy.getState().enrichProperties(properties), eventID, SendMode.HANDLE_AND_MANGLE).get(1, TimeUnit.SECONDS);
+                Thread.sleep(strategy.getNegativeStructureConfiguration().getAfterSendTimeoutMs());
+                return CompletableFuture.completedFuture(messageID);
+            } else {
+                return channel.send(message, strategy.getState().enrichProperties(properties), eventID, SendMode.HANDLE_AND_MANGLE);
+            }
         } catch (Exception e) {
             return CompletableFuture.failedFuture(e);
         }
@@ -1462,11 +1466,15 @@ public class FixHandler implements AutoCloseable, IHandler {
                                                                    ByteBuf message,
                                                                    Map<String, String> properties,
                                                                    EventID eventID) {
-        try {
-            blockSendLock.lock();
+        if(strategiesEnabled.get()) {
+            try {
+                blockSendLock.lock();
+                return channel.send(message, strategy.getState().enrichProperties(properties), eventID, SendMode.HANDLE_AND_MANGLE);
+            } finally {
+                blockSendLock.unlock();
+            }
+        } else {
             return channel.send(message, strategy.getState().enrichProperties(properties), eventID, SendMode.HANDLE_AND_MANGLE);
-        } finally {
-            blockSendLock.unlock();
         }
     }
 
@@ -1745,6 +1753,10 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private Map<String, String> negativeStructureOtgoingProcessor(ByteBuf message, Map<String, String> metadata) {
         onOutgoingUpdateTag(message, metadata);
+
+        if(!strategiesEnabled.get()) {
+            return metadata;
+        }
 
         Set <String> disableForMessageTypes = strategy.getDisableForMessageTypes();
 
@@ -2293,6 +2305,8 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void corruptAndSendMessage(ByteBuf buf, Function1<ByteBuf, Map<String, String>> corruption) {
+        if(!strategiesEnabled.get()) return;
+
         long start = System.currentTimeMillis();
         while(!enabled.get() && (System.currentTimeMillis() - start) < 1100 ) {
             try {
