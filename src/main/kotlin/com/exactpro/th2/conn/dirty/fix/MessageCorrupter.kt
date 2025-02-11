@@ -439,6 +439,76 @@ enum class CorruptionAction {
                 "tag" to "$tag"
             )
         }
+    },
+    INVALID_LENGTH_UP {
+        override fun transform(
+            buf: ByteBuf,
+            tag: Tag,
+            updateChecksum: Boolean,
+            updateLength: Boolean,
+            tagInfo: TagInfo,
+            corruptionConfiguration: CorruptionConfiguration
+        ): MetadataUpdate? {
+
+            val field = buf.findField(BODY_LENGTH_TAG) ?: return null
+
+            val actions = listOf(
+                Action(
+                    replace = FieldSelector(BODY_LENGTH_TAG),
+                    with = FieldDefinition(BODY_LENGTH_TAG, ((field.value?.toIntOrNull() ?: buf.writerIndex()) + 1).toString())
+                )
+            )
+
+            MessageTransformer.transformWithoutResults(buf, actions, DEFAULT_CONTEXT)
+
+            if (updateLength) {
+                buf.updateLength()
+            }
+
+            if (updateChecksum) {
+                buf.updateChecksum()
+            }
+
+            return mapOf(
+                "corruptionType" to "TAG_THAT_NOT_BELONGS_TO_HEADER_TRAILER",
+                "tag" to "$tag"
+            )
+        }
+    },
+    INVALID_LENGTH_DOWN {
+        override fun transform(
+            buf: ByteBuf,
+            tag: Tag,
+            updateChecksum: Boolean,
+            updateLength: Boolean,
+            tagInfo: TagInfo,
+            corruptionConfiguration: CorruptionConfiguration
+        ): MetadataUpdate? {
+
+            val field = buf.findField(BODY_LENGTH_TAG) ?: return null
+
+            val actions = listOf(
+                Action(
+                    replace = FieldSelector(BODY_LENGTH_TAG),
+                    with = FieldDefinition(BODY_LENGTH_TAG, ((field.value?.toIntOrNull() ?: buf.writerIndex()) - 1).toString())
+                )
+            )
+
+            MessageTransformer.transformWithoutResults(buf, actions, DEFAULT_CONTEXT)
+
+            if (updateLength) {
+                buf.updateLength()
+            }
+
+            if (updateChecksum) {
+                buf.updateChecksum()
+            }
+
+            return mapOf(
+                "corruptionType" to "TAG_THAT_NOT_BELONGS_TO_HEADER_TRAILER",
+                "tag" to "$tag"
+            )
+        }
     };
 
     abstract fun transform(
@@ -523,7 +593,29 @@ object CorruptionGenerator {
                         CorruptionAction.MOVE_TAG_OUT_OF_ORDER -> {}
                         CorruptionAction.TAG_THAT_IS_NOT_EXIST -> {}
                         CorruptionAction.TAG_THAT_NOT_BELONGS_TO_HEADER_TRAILER -> {}
+                        CorruptionAction.INVALID_LENGTH_UP -> { updateLength = false }
+                        CorruptionAction.INVALID_LENGTH_DOWN -> {updateLength = false}
                     }
+                }
+
+                if(tagInfos[tag]!!.dataType == DataType.STRING && corruption == CorruptionAction.NEGATIVE_NUMBER) {
+                    continue
+                }
+
+                if(tagInfos[tag]!!.dataType == DataType.BOOLEAN && corruption == CorruptionAction.NEGATIVE_NUMBER) {
+                    continue
+                }
+
+                if(tagInfos[tag]!!.dataType == DataType.BOOLEAN && corruption == CorruptionAction.OUT_OF_RANGE) {
+                    continue
+                }
+
+                if(tag != BODY_LENGTH_TAG && corruption == CorruptionAction.INVALID_LENGTH_UP) {
+                    continue
+                }
+
+                if(tag != BODY_LENGTH_TAG && corruption == CorruptionAction.INVALID_LENGTH_DOWN) {
+                    continue
                 }
 
                 val corruptionFunction = {

@@ -1055,7 +1055,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         FixField msgType = findField(message, MSG_TYPE_TAG, US_ASCII);
 
         if(msgType != null && ADMIN_MESSAGES.contains(msgType.getValue())) {
-            if(!Objects.equals(msgType.getValue(), MSG_TYPE_RESEND_REQUEST)) {
+            if(!Objects.equals(msgType.getValue(), MSG_TYPE_RESEND_REQUEST) && !Objects.equals(msgType.getValue(), MSG_TYPE_SEQUENCE_RESET)) {
                 return;
             }
         }
@@ -1765,9 +1765,11 @@ public class FixHandler implements AutoCloseable, IHandler {
             LOGGER.info("Strategy '{}' is disabled for {} message type", strategy.getType(), msgTypeField.getValue());
             return null;
         }
-        String msgType = msgTypeField.getValue();
-        if(ADMIN_MESSAGES.contains(msgType) && !Objects.equals(msgType, MSG_TYPE_HEARTBEAT)) {
-            return null;
+        if(msgTypeField != null) {
+            String msgType = msgTypeField.getValue();
+            if(ADMIN_MESSAGES.contains(msgType) && !Objects.equals(msgType, MSG_TYPE_HEARTBEAT)) {
+                return null;
+            }
         }
 
         Function1<ByteBuf, Map<String, String>> nextCorruption = strategy.getNextCorruption();
