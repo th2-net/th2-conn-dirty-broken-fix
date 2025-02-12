@@ -1,4 +1,4 @@
-# th2-conn-dirty-fix (1.4.0)
+# th2-conn-dirty-fix (1.4.1)
 
 This microservice allows sending and receiving messages via FIX protocol
 
@@ -333,6 +333,11 @@ spec:
         memory: 100Mi
         cpu: 20m
 ```
+## 1.4.1
+
+* Use keep open gRPC query to recover messages for Resend Request
+* Update `com.exactpro.th2.gradle` plugin to `0.1.3`
+
 ## 1.4.0
 
 * Provided ability to disable transformation strategies: `TRANSFORM_MESSAGE_STRATEGY`, `INVALID_CHECKSUM`, `FAKE_RETRANSMISSION` for raw message types specified in the `disableForMessageTypes` property

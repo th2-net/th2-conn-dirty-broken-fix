@@ -57,6 +57,7 @@ import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerContext;
 import com.exactpro.th2.conn.dirty.tcp.core.util.CommonUtil;
 import com.exactpro.th2.dataprovider.lw.grpc.DataProviderService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import kotlin.Unit;
@@ -217,7 +218,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     private final AtomicBoolean enabled = new AtomicBoolean(false);
     private final AtomicBoolean connStarted = new AtomicBoolean(false);
     private final AtomicBoolean strategiesEnabled = new AtomicBoolean(true);
-    private final ScheduledExecutorService executorService = Executors.newScheduledThreadPool(1);
+    private final ScheduledExecutorService executorService;
     private final IHandlerContext context;
     private final InetSocketAddress address;
 
@@ -243,8 +244,15 @@ public class FixHandler implements AutoCloseable, IHandler {
         this.context = context;
         strategyRootEvent = context.send(CommonUtil.toEvent("Strategy root event"), null);
         this.settings = (FixHandlerSettings) context.getSettings();
+
+        executorService = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
+                .setNameFormat(settings.getSenderCompID() + '/' +
+                        settings.getSenderSubID() + '>' +
+                        settings.getTargetCompID() + "-%d").build());
+
         if(settings.isLoadSequencesFromCradle() || settings.isLoadMissedMessagesFromCradle()) {
             this.messageLoader = new MessageLoader(
+                executorService,
                 context.getGrpcService(DataProviderService.class),
                 settings.getSessionStartTime(),
                 context.getBookName()
@@ -647,20 +655,17 @@ public class FixHandler implements AutoCloseable, IHandler {
                 int nextExpectedSeqNumber = Integer.parseInt(requireNonNull(nextExpectedSeqField.getValue()));
                 int seqNum = msgSeqNum.incrementAndGet() + 1;
                 if(nextExpectedSeqNumber < seqNum) {
+                    recoveryLock.lock();
                     try {
-                        recoveryLock.lock();
                         activeRecovery.set(true);
-                        Thread.sleep(settings.getCradleSaveTimeoutMs());
                         if(!channel.isOpen()) {
                             LOGGER.warn("Recovery is interrupted.");
                         } else {
                             strategy.getRecoveryHandler().recovery(nextExpectedSeqNumber, seqNum);
                         }
-                    } catch (InterruptedException e) {
-                        LOGGER.error("Error while waiting for cradle save timeout.", e);
                     } finally {
-                        recoveryLock.unlock();
                         activeRecovery.set(false);
+                        recoveryLock.unlock();
                     }
                 } else if (nextExpectedSeqNumber > seqNum) {
                     context.send(
@@ -758,9 +763,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             serverMsgSeqNum.set(Integer.parseInt(requireNonNull(seqNumValue.getValue())));
         } else {
             int newSeqNo = Integer.parseInt(requireNonNull(seqNumValue.getValue()));
-            serverMsgSeqNum.updateAndGet(sequence -> {
-                return Math.max(sequence, newSeqNo - 1);
-            });
+            serverMsgSeqNum.updateAndGet(sequence -> Math.max(sequence, newSeqNo - 1));
         }
     }
 
@@ -819,20 +822,17 @@ public class FixHandler implements AutoCloseable, IHandler {
             int beginSeqNo = Integer.parseInt(requireNonNull(strBeginSeqNo.getValue()));
             int endSeqNo = Integer.parseInt(requireNonNull(strEndSeqNo.getValue()));
 
+            recoveryLock.lock();
             try {
-                recoveryLock.lock();
                 activeRecovery.set(true);
-                Thread.sleep(settings.getCradleSaveTimeoutMs());
                 if(!channel.isOpen()) {
                     LOGGER.warn("Recovery is interrupted.");
                 } else {
                     strategy.getRecoveryHandler().recovery(beginSeqNo, endSeqNo);
                 }
-            } catch (InterruptedException e) {
-                LOGGER.error("Error while waiting for cradle save timeout.", e);
             } finally {
-                recoveryLock.unlock();
                 activeRecovery.set(false);
+                recoveryLock.unlock();
             }
         }
     }
@@ -854,23 +854,37 @@ public class FixHandler implements AutoCloseable, IHandler {
                 Function1<ByteBuf, Boolean> processMessage = (buf) -> {
                     FixField seqNum = findField(buf, MSG_SEQ_NUM_TAG);
                     FixField msgTypeField = findField(buf, MSG_TYPE_TAG);
+
+                    LOGGER.info("Processing cradle recovery message {}", buf.toString(US_ASCII));
+
                     if(seqNum == null || seqNum.getValue() == null
                             || msgTypeField == null || msgTypeField.getValue() == null) {
+                        LOGGER.info("Dropping recovery message. Missing SeqNum tag: {}", buf.toString(US_ASCII));
                         return true;
                     }
                     int sequence = Integer.parseInt(seqNum.getValue());
                     String msgType = msgTypeField.getValue();
 
-                    if(sequence < beginSeqNo) return true;
-                    if(sequence > endSeq) return false;
+                    if(sequence < beginSeqNo) {
+                        LOGGER.info("Dropping recovery message. SeqNum is less than BeginSeqNo: {}", buf.toString(US_ASCII));
+                        return true;
+                    }
+                    if(sequence > endSeq) {
+                        LOGGER.info("Finishing recovery. SeqNum > EndSeq: {}", buf.toString(US_ASCII));
+                        return false;
+                    }
 
-                    if(recoveryConfig.getSequenceResetForAdmin() && ADMIN_MESSAGES.contains(msgType)) return true;
+                    if(recoveryConfig.getSequenceResetForAdmin() && ADMIN_MESSAGES.contains(msgType)) {
+                        LOGGER.info("Dropping recovery message. Admin message sequence reset: {}", buf.toString(US_ASCII));
+                        return true;
+                    }
                     FixField possDup = findField(buf, POSS_DUP_TAG);
                     if(possDup != null && Objects.equals(possDup.getValue(), IS_POSS_DUP)) return true;
 
                     if(sequence - 1 != lastProcessedSequence.get() ) {
-                        StringBuilder sequenceReset =
-                                createSequenceReset(Math.max(beginSeqNo, lastProcessedSequence.get() + 1), sequence);
+                        int seqNo = Math.max(beginSeqNo, lastProcessedSequence.get() + 1);
+                        LOGGER.error("Messages [{}, {}] couldn't be recovered in the middle of recovery", seqNo, sequence);
+                        StringBuilder sequenceReset = createSequenceReset(seqNo, sequence);
                         channel.send(Unpooled.wrappedBuffer(sequenceReset.toString().getBytes(StandardCharsets.UTF_8)),
                                 strategy.getState().enrichProperties(),
                                 null,
@@ -883,6 +897,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                     updateLength(buf);
                     updateChecksum(buf);
                     if(!skip.get()) {
+                        LOGGER.info("Sending recovery message: {}", buf.toString(US_ASCII));
                         channel.send(buf, strategy.getState().enrichProperties(), null, SendMode.MANGLE)
                             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
                         try {
@@ -893,11 +908,13 @@ public class FixHandler implements AutoCloseable, IHandler {
                     }
 
                     if(skip.get() && recoveryConfig.getOutOfOrder()) {
+                        LOGGER.info("Skipping recovery message. OutOfOrder: {}", buf.toString(US_ASCII));
                         skipped.set(buf);
                         skip.set(false);
                     }
 
                     if(!skip.get() && recoveryConfig.getOutOfOrder()) {
+                        LOGGER.info("Sending recovery message. OutOfOrder: {}", skipped.get().toString(US_ASCII));
                         skip.set(true);
                         channel.send(skipped.get(), strategy.getState().enrichProperties(), null, SendMode.MANGLE)
                             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
@@ -916,13 +933,17 @@ public class FixHandler implements AutoCloseable, IHandler {
 
                 // waiting for messages to be writen in cradle
                 messageLoader.processMessagesInRange(
-                        channel.getSessionGroup(), channel.getSessionAlias(), Direction.SECOND,
-                        beginSeqNo,
+                    channel.getSessionGroup(), channel.getSessionAlias(), Direction.SECOND,
+                    beginSeqNo,
+                    settings.getCradleSaveTimeoutMs(),
                     processMessage
                 );
 
                 if(lastProcessedSequence.get() < endSeq && msgSeqNum.get() + 1 != lastProcessedSequence.get() + 1) {
-                    String seqReset = createSequenceReset(Math.max(lastProcessedSequence.get() + 1, beginSeqNo), msgSeqNum.get() + 1).toString();
+                    int seqNo = Math.max(lastProcessedSequence.get() + 1, beginSeqNo);
+                    int newSeqNo = msgSeqNum.get() + 1;
+                    LOGGER.error("Messages [{}, {}] couldn't be recovered in the end of recovery", seqNo, newSeqNo);
+                    String seqReset = createSequenceReset(seqNo, newSeqNo).toString();
                     channel.send(
                         Unpooled.wrappedBuffer(seqReset.getBytes(StandardCharsets.UTF_8)),
                             strategy.getState().enrichProperties(), null, SendMode.MANGLE
@@ -1029,7 +1050,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         FixField checksum = findLastField(message, CHECKSUM_TAG);
 
         if (checksum == null) { // Length is updated at the of the current method
-            checksum = lastField(message).insertNext(CHECKSUM_TAG, STUBBING_VALUE); //stubbing until finish checking message
+            lastField(message).insertNext(CHECKSUM_TAG, STUBBING_VALUE); //stubbing until finish checking message
         }
 
         FixField msgSeqNum = findField(message, MSG_SEQ_NUM_TAG, US_ASCII, bodyLength);
@@ -1074,7 +1095,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             FixField senderSubID = findField(message, SENDER_SUB_ID_TAG, US_ASCII, bodyLength);
 
             if (senderSubID == null) {
-                senderSubID = targetCompID.insertNext(SENDER_SUB_ID_TAG, settings.getSenderSubID());
+                targetCompID.insertNext(SENDER_SUB_ID_TAG, settings.getSenderSubID());
             } else {
                 String value = senderSubID.getValue();
 
@@ -2196,14 +2217,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     private void applyNextStrategy() {
         LOGGER.info("Cleaning up current strategy {}", strategy.getState().getType());
         LOGGER.info("Started waiting for recovery finish.");
-        while (activeRecovery.get()) {
-            LOGGER.debug("Waiting for recovery to finish.");
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                LOGGER.error("Error while waiting for recovery to finish", e);
-            }
-        }
+        awaitInactiveRecovery();
         LOGGER.info("Stopped waiting for recovery finish.");
         try {
             strategy.getCleanupHandler().cleanup();
@@ -2238,6 +2252,18 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         LOGGER.info("Next strategy applied: {}, duration: {}", nextStrategyConfig.getRuleType(), nextStrategyConfig.getDuration());
         executorService.schedule(this::applyNextStrategy, nextStrategyConfig.getDuration().toMillis(), TimeUnit.MILLISECONDS);
+    }
+
+    private void awaitInactiveRecovery() {
+        boolean active = activeRecovery.get();
+        while (active && !Thread.currentThread().isInterrupted()) {
+            recoveryLock.lock();
+            try {
+                active = activeRecovery.get();
+            } finally {
+                recoveryLock.unlock();
+            }
+        }
     }
 
     private Consumer<RuleConfiguration> getSetupFunction(RuleConfiguration config) {
@@ -2313,8 +2339,8 @@ public class FixHandler implements AutoCloseable, IHandler {
                     updateLength(missedMessage);
                     updateChecksum(missedMessage);
 
-                    LOGGER.info("Sending recovery message from state: {}", missedMessage.toString(US_ASCII));
                     if(!skip) {
+                        LOGGER.info("Sending recovery message from state: {}", missedMessage.toString(US_ASCII));
                         channel.send(missedMessage, strategy.getState().enrichProperties(), null, SendMode.MANGLE)
                             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
                         try {
@@ -2325,11 +2351,13 @@ public class FixHandler implements AutoCloseable, IHandler {
                     }
 
                     if(skip && recoveryConfig.getOutOfOrder()) {
+                        LOGGER.info("Skip recovery message out of order: {}", missedMessage.toString(US_ASCII));
                         skip = false;
                         skipped = missedMessage;
                     }
 
-                    if(!skip && recoveryConfig.getOutOfOrder()) {
+                    if(!skip && recoveryConfig.getOutOfOrder() && skipped != null) {
+                        LOGGER.info("Sending recovery message from state out of order: {}", skipped.toString(US_ASCII));
                         channel.send(skipped, strategy.getState().enrichProperties(), null, SendMode.MANGLE)
                             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
                         try {
@@ -2403,27 +2431,13 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     private void disconnect(boolean graceful) throws ExecutionException, InterruptedException {
         LOGGER.info("Started waiting for recovery finish.");
-        while (activeRecovery.get()) {
-            LOGGER.debug("Waiting for recovery to finish.");
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                LOGGER.error("Error while waiting for recovery to finish", e);
-            }
-        }
+        awaitInactiveRecovery();
         LOGGER.info("Finished waiting for recovery finish.");
         if(graceful) {
             sendLogout();
             waitLogoutResponse();
         }
-        while (activeRecovery.get()) {
-            LOGGER.debug("Waiting for recovery to finish.");
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                LOGGER.error("Error while waiting for recovery to finish", e);
-            }
-        }
+        awaitInactiveRecovery();
         enabled.set(false);
         activeLogonExchange.set(false);
         resetHeartbeatTask();
@@ -2585,17 +2599,20 @@ public class FixHandler implements AutoCloseable, IHandler {
         ruleEndEvent(type, start, messageIDS, Collections.emptyMap());
     }
 
-    private void ruleErrorEvent(RuleType type, String message, Throwable error) {
+    private void ruleErrorEvent(RuleType type, String message, @Nullable Throwable error) {
         String errorLog = String.format("Rule %s error event: message - %s, error - %s", type, message, error);
         LOGGER.error(errorLog, error);
-        context.send(
-            Event
+        Event event = Event
                 .start()
                 .endTimestamp()
                 .type(STRATEGY_EVENT_TYPE)
                 .name(errorLog)
-                .exception(error, true)
-                .status(Event.Status.FAILED),
+                .status(Event.Status.FAILED);
+        if (error != null) {
+            event.exception(error, true);
+        }
+        context.send(
+                event,
             strategyRootEvent
         );
     }
