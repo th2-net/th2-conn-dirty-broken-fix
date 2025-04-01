@@ -32,9 +32,9 @@ import com.fasterxml.jackson.module.kotlin.KotlinFeature
 import com.fasterxml.jackson.module.kotlin.KotlinModule
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.google.auto.service.AutoService
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.ByteBufUtil
-import mu.KotlinLogging
 
 private val LOGGER = KotlinLogging.logger {}
 

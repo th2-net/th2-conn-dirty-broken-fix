@@ -23,8 +23,8 @@ import com.fasterxml.jackson.annotation.JsonSubTypes
 import com.fasterxml.jackson.annotation.JsonSubTypes.Type
 import com.fasterxml.jackson.annotation.JsonTypeInfo
 import com.fasterxml.jackson.annotation.JsonTypeInfo.Id.DEDUCTION
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.netty.buffer.ByteBuf
-import mu.KotlinLogging
 import java.util.regex.Pattern
 import kotlin.properties.Delegates.notNull
 
@@ -56,7 +56,7 @@ object MessageTransformer {
         }
 
         if (results.isEmpty()) {
-            logger.debug("No transformations were applied")
+            logger.debug { "No transformations were applied" }
             return null
         }
 
