@@ -15,16 +15,13 @@
  */
 package com.exactpro.th2.conn.dirty.fix.brokenconn.strategy
 
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BatchSendConfiguration
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.MissMessageConfiguration
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RecoveryConfig
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RuleConfiguration
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.SplitSendConfiguration
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.TransformMessageConfiguration
+import com.exactpro.th2.conn.dirty.fix.*
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.*
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.StrategyState.Companion.resetAndCopyMissedMessages
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.CleanupHandler
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.OnCloseHandler
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.RecoveryHandler
+import io.netty.buffer.ByteBuf
 import mu.KotlinLogging
 import java.time.Instant
 import java.util.concurrent.locks.ReentrantReadWriteLock
@@ -52,6 +49,13 @@ class StatefulStrategy(
         get() = lock.read { state.config?.missOutgoingMessagesConfiguration ?: error("Miss outgoing messages config isn't present.") }
     val disableForMessageTypes: Set<String>
         get() = lock.read { state.config?.disableForMessageTypes ?: emptySet() }
+
+    val duplicateRequestConfiguration: DuplicateRequestConfiguration
+        get() = lock.read { state.config?.duplicateRequestConfiguration ?: DuplicateRequestConfiguration() }
+
+    val negativeStructureConfiguration: NegativeStructureConfiguration
+        get() = lock.read { state.config?.negativeStructureConfiguration ?: NegativeStructureConfiguration() }
+
     val transformMessageConfiguration: TransformMessageConfiguration
         get() = lock.read { state.config?.transformMessageConfiguration ?: error("Transform message config isn't present.") }
     val batchSendConfiguration: BatchSendConfiguration
@@ -69,6 +73,10 @@ class StatefulStrategy(
     val allowMessagesBeforeRetransmissionFinishes: Boolean
         get() = lock.read { _allowMessagesBeforeRetransmissionFinishes }
 
+    private var _outOfOrder: Boolean = false
+    val outOfOrder: Boolean
+        get() = lock.read { _outOfOrder }
+
     val sendResendRequestOnLogoutReply: Boolean
         get() = lock.read {state.config?.sendResendRequestOnLogoutReply ?: false }
 
@@ -80,6 +88,29 @@ class StatefulStrategy(
 
     val recoveryConfig: RecoveryConfig
         get() = lock.read { state.config?.recoveryConfig ?: RecoveryConfig() }
+
+    val corruptMessageStructureConfiguration: CorruptMessageStructureConfiguration
+        get() = lock.read { state.config?.corruptMessageStructureConfiguration ?: error("corruptMessageSturctureConfiguration isn't present.") }
+
+    val adjustSendingTimeConfiguration: AdjustSendingTimeConfiguration
+        get() = lock.read { state.config?.adjustSendingTimeConfiguration ?: error("adjustSendingTimeConfiguration isn't present.") }
+
+    private var _negativeStructureCorruptions: Sequence<(ByteBuf) -> MetadataUpdate?> = emptySequence()
+
+    private var corruptionIterator: Iterator<(ByteBuf) -> MetadataUpdate?>? = null
+
+    fun getNextCorruption(): ((ByteBuf) -> MetadataUpdate?)? = lock.write {
+        if (corruptionIterator == null) {
+            corruptionIterator = _negativeStructureCorruptions.iterator()
+        }
+
+        return if (corruptionIterator?.hasNext() == true) {
+            corruptionIterator?.next()
+        } else {
+            corruptionIterator = null
+            null
+        }
+    }
 
     // strategies
     fun updateSendStrategy(func: SendStrategy.() -> Unit) = lock.write {
@@ -113,6 +144,11 @@ class StatefulStrategy(
     fun disableAllowMessagesBeforeRetransmissionFinishes(reason: String) = lock.write {
         _allowMessagesBeforeRetransmissionFinishes = false
         LOGGER.info("Disabled allow messages before retransmission finishes by the '$reason' reason")
+    }
+
+    fun disableOutOfOrder(reason: String) = lock.write {
+        _outOfOrder = false
+        LOGGER.info("Disabled outOfOrder retransmission '$reason' reason")
     }
 
     fun <T> getReceiveMessageStrategy(func: ReceiveStrategy.() -> T) = lock.read {
@@ -159,6 +195,7 @@ class StatefulStrategy(
         lock.write {
             state = state.resetAndCopyMissedMessages(config)
             _allowMessagesBeforeRetransmissionFinishes = state.config?.allowMessagesBeforeRetransmissionFinishes ?: false
+            _outOfOrder = state.config?.recoveryConfig?.outOfOrder ?: false
             sendStrategy.sendHandler = defaultStrategy.sendStrategy.sendHandler
             sendStrategy.sendPreprocessor = defaultStrategy.sendStrategy.sendPreprocessor
             receiveStrategy.receivePreprocessor = defaultStrategy.receiveStrategy.receivePreprocessor
@@ -169,6 +206,8 @@ class StatefulStrategy(
             recoveryHandler = defaultStrategy.recoveryHandler
             cleanupHandler = defaultStrategy.cleanupHandler
             onCloseHandler = defaultStrategy.closeHandler
+            _negativeStructureCorruptions = CorruptionGenerator.createTransformationSequence(HEADER_TRAILER_TAGS, HEADER_TRAILER_TAGS_INFO)
+            corruptionIterator = null
         }
     }
 
@@ -176,6 +215,7 @@ class StatefulStrategy(
         lock.write {
             state = state.resetAndCopyMissedMessages()
             _allowMessagesBeforeRetransmissionFinishes = state.config?.allowMessagesBeforeRetransmissionFinishes ?: false
+            _outOfOrder = state.config?.recoveryConfig?.outOfOrder ?: false
             sendStrategy.sendHandler = defaultStrategy.sendStrategy.sendHandler
             sendStrategy.sendPreprocessor = defaultStrategy.sendStrategy.sendPreprocessor
             receiveStrategy.receivePreprocessor = defaultStrategy.receiveStrategy.receivePreprocessor
@@ -186,6 +226,8 @@ class StatefulStrategy(
             recoveryHandler = defaultStrategy.recoveryHandler
             cleanupHandler = defaultStrategy.cleanupHandler
             onCloseHandler = defaultStrategy.closeHandler
+            _negativeStructureCorruptions = CorruptionGenerator.createTransformationSequence(HEADER_TRAILER_TAGS, HEADER_TRAILER_TAGS_INFO)
+            corruptionIterator = null
         }
     }
 

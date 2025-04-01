@@ -30,6 +30,7 @@ import com.exactpro.th2.dataprovider.lw.grpc.MessageStream
 import com.exactpro.th2.dataprovider.lw.grpc.TimeRelation
 import com.google.protobuf.Timestamp
 import com.google.protobuf.util.Timestamps.compare
+import io.grpc.Context
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.Unpooled
 import java.time.Instant
@@ -44,8 +45,12 @@ import java.time.ZonedDateTime
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import mu.KotlinLogging
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
+import kotlin.text.Charsets.US_ASCII
 
 class MessageLoader(
+    private val executor: ScheduledExecutorService,
     private val dataProvider: DataProviderService,
     private val sessionStartTime: LocalTime?,
     private val bookName: String
@@ -114,9 +119,10 @@ class MessageLoader(
         sessionAlias: String,
         direction: Direction,
         fromSequence: Long,
+        timeout: Long,
         processMessage: (ByteBuf) -> Boolean
     ) = searchLock.withLock {
-        processMessagesInRangeInternal(sessionGroup, sessionAlias, direction, fromSequence, processMessage)
+        processMessagesInRangeInternal(sessionGroup, sessionAlias, direction, fromSequence, timeout, processMessage)
     }
 
     private fun processMessagesInRangeInternal(
@@ -124,8 +130,10 @@ class MessageLoader(
         sessionAlias: String,
         direction: Direction,
         fromSequence: Long,
+        timeout: Long,
         processMessage: (ByteBuf) -> Boolean
     ) {
+        val deadline = System.currentTimeMillis() + timeout
         var timestamp: Timestamp? = null
         var skipRetransmission = false
         ProviderCall.withCancellation {
@@ -135,10 +143,20 @@ class MessageLoader(
                     sessionGroup = sessionGroup,
                     sessionAlias = sessionAlias,
                     direction = direction
-                )
+                ).also {
+                    K_LOGGER.info { "Backward iterator params: sessionAlias - $sessionAlias from - ${it.startTimestamp} to - ${it.endTimestamp}" }
+                }
             )
 
-            val firstValidMessage = firstValidMessageDetails(backwardIterator) ?: return@withCancellation
+            val firstValidMessage = firstValidMessageDetails(backwardIterator)
+
+            if (firstValidMessage == null) {
+                K_LOGGER.info { "Not found valid messages to recover." }
+                return@withCancellation
+            }
+            firstValidMessage.let {
+                K_LOGGER.info { "Backward search. First valid message seq num: ${it.payloadSequence} timestamp: ${it.timestamp} cradle sequence: ${it.messageSequence}" }
+            }
 
             var messagesToSkip = firstValidMessage.payloadSequence - fromSequence
 
@@ -150,14 +168,19 @@ class MessageLoader(
                     continue
                 }
                 timestamp = message.messageId.timestamp
+                val buf = Unpooled.copiedBuffer(message.bodyRaw.toByteArray())
+                val sequence = buf.findField(MSG_SEQ_NUM_TAG)?.value?.toInt()
+
+                K_LOGGER.debug { "Backward search: Skip message with sequence - $sequence" }
+
                 messagesToSkip -= 1
                 if(messagesToSkip == 0L) {
 
-                    val buf = Unpooled.copiedBuffer(message.bodyRaw.toByteArray())
-                    val sequence = buf.findField(MSG_SEQ_NUM_TAG)?.value?.toInt() ?: continue
+                    sequence ?: continue
 
                     if(sequence > 1 && lastProcessedSequence == 1 || sequence > 2 && lastProcessedSequence == 2) {
                         skipRetransmission = true
+                        K_LOGGER.info { "Retransmission will be skipped. Not found valid message with sequence more than 1." }
                         return@withCancellation
                     }
 
@@ -168,17 +191,21 @@ class MessageLoader(
 
                         timestamp = validMessage.timestamp
                         if(validMessage.payloadSequence <= fromSequence) {
+                            K_LOGGER.info { "Found valid message with start recovery sequence: ${buf.toString(US_ASCII)}" }
                             break
                         } else {
                             messagesToSkip = validMessage.payloadSequence - fromSequence
+                            K_LOGGER.info { "Adjusted number of messages to skip: $messagesToSkip using ${validMessage.payloadSequence} - $fromSequence" }
                         }
 
                     } else {
 
                         if(sequence <= fromSequence) {
+                            K_LOGGER.info { "Found valid message with start recovery sequence: ${buf.toString(US_ASCII)}" }
                             break
                         } else {
                             messagesToSkip = sequence - fromSequence
+                            K_LOGGER.info { "Adjusted number of messages to skip: $messagesToSkip using $sequence - $fromSequence" }
                         }
                     }
                 }
@@ -191,8 +218,7 @@ class MessageLoader(
 
         K_LOGGER.info { "Loading retransmission messages from ${startSearchTimestamp.toInstant()}" }
 
-        ProviderCall.withCancellation {
-
+        withDeadline(deadline - System.currentTimeMillis()) {
             val iterator = dataProvider.searchMessageGroups(
                 createSearchGroupRequest(
                     from = startSearchTimestamp,
@@ -201,13 +227,26 @@ class MessageLoader(
                     sessionAlias = sessionAlias,
                     direction = direction,
                     timeRelation = TimeRelation.NEXT,
-                )
+                    keepOpen = true,
+                ).also {
+                    K_LOGGER.info { "Forward iterator params: sessionAlias - $sessionAlias from - ${it.startTimestamp} to - ${it.endTimestamp}" }
+                }
             )
 
             while (iterator.hasNext()) {
-                val message = Unpooled.buffer().writeBytes(iterator.next().message.bodyRaw.toByteArray())
+                val next = iterator.next().message
+                if(next.messagePropertiesMap.getOrDefault("isCorruptedMessage", "N") == "Y") {
+                    continue
+                }
+                if(next.containsMessageProperties("encode-mode")) {
+                    continue
+                }
+                val message = Unpooled.buffer().writeBytes(next.bodyRaw.toByteArray())
+                K_LOGGER.info { "Sending message to recovery processor: ${message.toString(US_ASCII)}" }
                 if (!processMessage(message)) break
             }
+        }.onFailure {
+            K_LOGGER.error(it) { "Search message request is interrupted" }
         }
     }
 
@@ -267,6 +306,7 @@ class MessageLoader(
         sessionAlias: String,
         direction: Direction,
         timeRelation: TimeRelation = TimeRelation.PREVIOUS,
+        keepOpen: Boolean = false,
     ) = MessageGroupsSearchRequest.newBuilder().apply {
         startTimestamp = from
         endTimestamp = to
@@ -279,11 +319,30 @@ class MessageLoader(
         addMessageGroup(MessageGroupsSearchRequest.Group.newBuilder().setName(sessionGroup))
         bookIdBuilder.name = bookName
         searchDirection = timeRelation
+        this.keepOpen = keepOpen
     }.build()
 
     private fun checkPossDup(buf: ByteBuf): Boolean = buf.findField(POSS_DUP_TAG)?.value == IS_POSS_DUP
 
     data class MessageDetails(val payloadSequence: Int, val messageSequence: Long, val timestamp: Timestamp)
+
+    private fun withDeadline(
+        durationMs: Long,
+        code: () -> Unit
+    ): Result<Unit> {
+        return try {
+            K_LOGGER.info { "deadline $durationMs" }
+            Context.current()
+                .withCancellation()
+                .withDeadlineAfter(durationMs, TimeUnit.MILLISECONDS, executor)
+                .use { context ->
+                    context.call { code() }
+                    Result.success(Unit)
+                }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 
     companion object {
         val K_LOGGER = KotlinLogging.logger {  }

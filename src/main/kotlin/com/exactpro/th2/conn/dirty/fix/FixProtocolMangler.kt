@@ -1,5 +1,5 @@
 /*
- * Copyright 2022-2023 Exactpro (Exactpro Systems Limited)
+ * Copyright 2022-2025 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -73,7 +73,9 @@ class FixProtocolMangler(context: IManglerContext) : IMangler {
             }
         }
 
-        val (name, results, byteBuf) = MessageTransformer.transform(message, rule, unconditionally) ?: return null
+        val (name, results, message) = MessageTransformer.transform(message, rule, unconditionally) ?: return null
+
+        LOGGER.trace { "Message after transformation: ${message.toString(Charsets.UTF_8)}" }
 
         return Event.start().apply {
             type(MANGLE_EVENT_TYPE)
@@ -94,7 +96,7 @@ class FixProtocolMangler(context: IManglerContext) : IMangler {
             }
 
             bodyData(createMessageBean("Original message:"))
-            bodyData(createMessageBean(ByteBufUtil.prettyHexDump(byteBuf)))
+            bodyData(createMessageBean(ByteBufUtil.prettyHexDump(message)))
 
             TableBuilder<ActionRow>().run {
                 results.forEach { result ->
@@ -126,9 +128,7 @@ class FixProtocolMangler(context: IManglerContext) : IMangler {
         if (rules.isEmpty()) return null
 
         val rule = rules.filter { rule ->
-            rule.transform.any { transform ->
-                transform.conditions.all { it.matches(message) }
-            }
+            rule.transform.any { it.conditions.all(message::contains) }
         }.randomOrNull()
 
         if (rule == null) {
@@ -147,7 +147,14 @@ class FixProtocolManglerFactory : IManglerFactory {
     override fun create(context: IManglerContext) = FixProtocolMangler(context)
 }
 
-class FixProtocolManglerSettings(val rules: List<Rule> = emptyList()) : IManglerSettings
+class FixProtocolManglerSettings(
+    val context: Context = Context(),
+    val rules: List<Rule> = emptyList(),
+) : IManglerSettings {
+    init {
+        rules.forEach { it.init(context) }
+    }
+}
 
 private data class ActionRow(
     val corruptionType: String,

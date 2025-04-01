@@ -1,6 +1,6 @@
 plugins {
     id "application"
-    id "com.exactpro.th2.gradle.component" version "0.1.1"
+    id "com.exactpro.th2.gradle.component" version "0.1.8"
     id 'org.jetbrains.kotlin.jvm' version '1.8.22'
     id "org.jetbrains.kotlin.kapt" version "1.8.22"
 }
@@ -48,7 +48,7 @@ dependencies {
     implementation 'io.github.microutils:kotlin-logging:3.0.5'
     implementation 'org.apache.commons:commons-lang3'
 
-    implementation 'io.netty:netty-all'
+    implementation 'io.netty:netty-all:4.1.118.Final'
     implementation 'com.google.auto.service:auto-service:1.1.1'
 
     implementation 'com.fasterxml.jackson.core:jackson-core'
