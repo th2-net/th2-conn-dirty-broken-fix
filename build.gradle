@@ -1,30 +1,19 @@
 plugins {
     id "application"
-    id "com.exactpro.th2.gradle.component" version "0.1.8"
-    id 'org.jetbrains.kotlin.jvm' version '1.8.22'
-    id "org.jetbrains.kotlin.kapt" version "1.8.22"
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.kapt)
+    alias(libs.plugins.th2.component)
 }
 
 group 'com.exactpro.th2'
 version release_version
 
-kotlin {
-    jvmToolchain(11)
-}
-
 repositories {
     mavenCentral()
-
-    maven {
-        name 'Sonatype_snapshots'
-        url 'https://s01.oss.sonatype.org/content/repositories/snapshots/'
-    }
-
     maven {
         name 'Sonatype_releases'
         url 'https://s01.oss.sonatype.org/content/repositories/releases/'
     }
-
     mavenLocal()
 
     configurations.configureEach {
@@ -34,34 +23,35 @@ repositories {
 }
 
 dependencies {
-    implementation("com.exactpro.th2:common:5.13.1-dev") {
-        exclude group: 'com.exactpro.th2', module: 'task-utils'
-    }
-    implementation "com.exactpro.th2:common-utils:2.2.3-dev"
-    implementation 'com.exactpro.th2:netty-bytebuf-utils:0.0.1'
-    implementation 'net.lingala.zip4j:zip4j:2.11.5'
-    implementation 'org.apache.httpcomponents.client5:httpclient5:5.3.1'
-    implementation'com.exactpro.th2:conn-dirty-tcp-core:3.6.0-dev'
-    implementation 'com.exactpro.th2:grpc-lw-data-provider:2.3.1-dev'
+    implementation(libs.th2.common)
+    implementation(libs.th2.common.utils)
+    implementation(libs.th2.netty.bytebuf.utils)
+    implementation(libs.th2.conn.dirty.tcp.core)
+    implementation(libs.th2.grpc.lw.data.provider)
+
+    implementation(libs.zip4j)
+    implementation(libs.httpclient5)
 
     implementation 'org.slf4j:slf4j-api'
-    implementation 'io.github.microutils:kotlin-logging:3.0.5'
+    implementation(libs.kotlin.logging)
     implementation 'org.apache.commons:commons-lang3'
 
-    implementation 'io.netty:netty-all:4.1.118.Final'
-    implementation 'com.google.auto.service:auto-service:1.1.1'
+    implementation 'io.netty:netty-all'
 
     implementation 'com.fasterxml.jackson.core:jackson-core'
     implementation 'com.fasterxml.jackson.core:jackson-databind'
     implementation 'com.fasterxml.jackson.module:jackson-module-kotlin'
 
-    testImplementation 'org.mockito:mockito-core:5.12.0'
-    testImplementation 'org.jetbrains.kotlin:kotlin-test-junit5:1.8.22'
-    testImplementation 'org.junit.jupiter:junit-jupiter-params:5.10.3'
-    testImplementation 'org.mockito.kotlin:mockito-kotlin:5.3.1'
+    testImplementation(libs.mockito.core)
+    testImplementation(libs.mockito.kotlin)
+    testImplementation(platform(libs.junit.bom))
+    testImplementation("org.junit.jupiter:junit-jupiter-params")
+    testImplementation("org.junit.platform:junit-platform-launcher")
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
 
-    annotationProcessor 'com.google.auto.service:auto-service:1.1.1'
-    kapt 'com.google.auto.service:auto-service:1.1.1'
+    compileOnly(libs.auto.service)
+    annotationProcessor(libs.auto.service)
+    kapt(libs.auto.service)
 }
 
 test {
@@ -74,6 +64,4 @@ application {
 
 dependencyCheck {
     suppressionFile="suppressions.xml"
-    //FIXME: we should check all used dependencies
-    skipConfigurations = ['kapt', 'kaptClasspath_kaptKotlin', 'kaptTest', 'kaptTestFixtures', 'annotationProcessor']
 }

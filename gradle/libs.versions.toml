@@ -1,0 +1,25 @@
+[versions]
+kotlin = "2.1.20"
+th2-plugin = "0.2.4"
+
+[libraries]
+th2-common = { group = "com.exactpro.th2", name = "common", version = "5.15.0-dev" }
+th2-common-utils = { group = "com.exactpro.th2", name = "common-utils", version = "2.3.1-dev" }
+th2-netty-bytebuf-utils = { group = "com.exactpro.th2", name = "netty-bytebuf-utils", version = "0.3.0" }
+th2-conn-dirty-tcp-core = { group = "com.exactpro.th2", name = "conn-dirty-tcp-core", version = "3.6.0-dev" }
+th2-grpc-lw-data-provider = { group = "com.exactpro.th2", name = "grpc-lw-data-provider", version = "2.3.4-dev" }
+
+kotlin-logging = { group = "io.github.oshai", name = "kotlin-logging", version = "7.0.6" }
+zip4j = { group = "net.lingala.zip4j", name = "zip4j", version = "2.11.5" }
+httpclient5 = { group = "org.apache.httpcomponents.client5", name = "httpclient5", version = "5.4.3" }
+
+auto-service = { group = "com.google.auto.service", name = "auto-service", version = "1.1.1" }
+
+junit-bom = { group = "org.junit", name = "junit-bom", version = "5.12.1" }
+mockito-core = { group = "org.mockito", name = "mockito-core", version = "5.16.1" }
+mockito-kotlin = { group = "org.mockito.kotlin", name = "mockito-kotlin", version = "5.4.0" }
+
+[plugins]
+th2-component = { id = "com.exactpro.th2.gradle.component", version.ref = "th2-plugin" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-kapt = { id = "org.jetbrains.kotlin.kapt", version.ref = "kotlin" }

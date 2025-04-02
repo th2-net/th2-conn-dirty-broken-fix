@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 Exactpro (Exactpro Systems Limited)
+ * Copyright 2023-2025 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,26 @@
  */
 package com.exactpro.th2.conn.dirty.fix.brokenconn.strategy
 
-import com.exactpro.th2.conn.dirty.fix.*
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.*
+import com.exactpro.th2.conn.dirty.fix.CorruptionGenerator
+import com.exactpro.th2.conn.dirty.fix.HEADER_TRAILER_TAGS
+import com.exactpro.th2.conn.dirty.fix.HEADER_TRAILER_TAGS_INFO
+import com.exactpro.th2.conn.dirty.fix.MetadataUpdate
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.AdjustSendingTimeConfiguration
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BatchSendConfiguration
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.CorruptMessageStructureConfiguration
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.DuplicateRequestConfiguration
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.MissMessageConfiguration
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.NegativeStructureConfiguration
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RecoveryConfig
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RuleConfiguration
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.SplitSendConfiguration
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.TransformMessageConfiguration
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.StrategyState.Companion.resetAndCopyMissedMessages
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.CleanupHandler
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.OnCloseHandler
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.api.RecoveryHandler
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.netty.buffer.ByteBuf
-import mu.KotlinLogging
 import java.time.Instant
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read

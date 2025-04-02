@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Exactpro (Exactpro Systems Limited)
+ * Copyright 2023-2025 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ import com.exactpro.th2.dataprovider.lw.grpc.MessageStream
 import com.exactpro.th2.dataprovider.lw.grpc.TimeRelation
 import com.google.protobuf.Timestamp
 import com.google.protobuf.util.Timestamps.compare
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.grpc.Context
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.Unpooled
@@ -44,7 +45,6 @@ import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
-import mu.KotlinLogging
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import kotlin.text.Charsets.US_ASCII
