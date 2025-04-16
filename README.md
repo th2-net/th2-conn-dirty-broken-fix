@@ -329,6 +329,7 @@ spec:
 * Improved log messages (`SenderCompId>/SenderSubId > TargetCompId[host:port]` prefix is printed)
 * Updated:
   * grpc-lw-data-provider: `2.4.0-dev`
+  * kotlin-logging: `7.0.7`
 
 ## 1.5.0
 
