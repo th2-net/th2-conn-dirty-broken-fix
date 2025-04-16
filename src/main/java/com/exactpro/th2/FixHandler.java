@@ -330,13 +330,13 @@ public class FixHandler implements AutoCloseable, IHandler {
         boolean enableReconnect = properties.containsKey(ENABLE_RECONNECT_PROPERTY);
 
         if(isLogout && enableReconnect) {
-            String text = debugAndFormat("Enabling session reconnects");
+            String text = debugAndFormat("Enabling session %s reconnects", channel.getSessionAlias());
             context.send(CommonUtil.toEvent(text));
             sessionActive.set(true);
             try {
                 sendingTimeoutHandler.getWithTimeout(openChannel());
             } catch (Exception e) {
-                String error = errorAndFormat("Error while ending session by user logout. Is graceful disconnect", e);
+                String error = errorAndFormat("Error while ending session %s by user logout. Is graceful disconnect", e, channel.getSessionAlias());
                 context.send(CommonUtil.toErrorEvent(error, e));
             }
             return CompletableFuture.completedFuture(null);
@@ -369,11 +369,11 @@ public class FixHandler implements AutoCloseable, IHandler {
         boolean disableReconnect = properties.containsKey(DISABLE_RECONNECT_PROPERTY);
 
         if(isLogout) {
-            String text = debugAndFormat("Closing session. Is graceful disconnect: %b", !isUngracefulDisconnect);
+            String text = debugAndFormat("Closing session %s. Is graceful disconnect: %b", channel.getSessionAlias(), !isUngracefulDisconnect);
             context.send(CommonUtil.toEvent(text));
             try {
                 if(disableReconnect) {
-                    String message = debugAndFormat("Disabling session reconnects: %b", channel.getSessionAlias());
+                    String message = debugAndFormat("Disabling session %s reconnects: %b", channel.getSessionAlias(), !isUngracefulDisconnect);
                     context.send(CommonUtil.toEvent(message));
                     sessionActive.set(false);
                 }
@@ -386,7 +386,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                     channel.close().get();
                 }
             } catch (Exception e) {
-                String error = errorAndFormat("Error while ending session by user logout. Is graceful disconnect: %b", e, !isUngracefulDisconnect);
+                String error = errorAndFormat("Error while ending session %s by user logout. Is graceful disconnect: %b", e, channel.getSessionAlias(), !isUngracefulDisconnect);
                 context.send(CommonUtil.toErrorEvent(error, e));
             }
             return CompletableFuture.completedFuture(null);
@@ -419,7 +419,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         if(strategy.getAllowMessagesBeforeLogon()) {
             while (!channel.isOpen()) {
-                warn("Session is not yet logged in");
+                warn("Session is not yet logged in: %s", channel.getSessionAlias());
                 try {
                     //noinspection BusyWait
                     Thread.sleep(100);
@@ -434,7 +434,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             }
         } else {
             while (!enabled.get()) {
-                warn("Session is not yet logged in");
+                warn("Session is not yet logged in: %s", channel.getSessionAlias());
                 try {
                     //noinspection BusyWait
                     Thread.sleep(100);
@@ -1289,7 +1289,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
 
         if(enabled.get()) {
-            String message = warnAndFormat("Logon attempt while already logged in");
+            String message = warnAndFormat("Logon attempt while already logged in: %s - %s", channel.getSessionGroup(), channel.getSessionAlias());
             context.send(CommonUtil.toEvent(message));
             return;
         }
@@ -2104,7 +2104,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.resetStrategyAndState(configuration);
         ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
         if(!enabled.get()) {
-            String message = errorAndFormat("Session isn't logged in.", null);
+            String message = errorAndFormat("Session %s isn't logged in.", null, channel.getSessionAlias());
             ruleErrorEvent(strategy.getType(), message, null);
             return;
         }
@@ -2123,7 +2123,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.resetStrategyAndState(configuration);
         ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
         if(!enabled.get()) {
-            String message = errorAndFormat("Session isn't logged in.", null);
+            String message = errorAndFormat("Session %s isn't logged in.", null, channel.getSessionAlias());
             ruleErrorEvent(strategy.getType(), message, null);
             return;
         }
@@ -2144,7 +2144,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.resetStrategyAndState(configuration);
         ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
         if(!enabled.get()) {
-            String message = errorAndFormat("Session isn't logged in.", null);
+            String message = errorAndFormat("Session %s isn't logged in.", null, channel.getSessionAlias());
             ruleErrorEvent(strategy.getType(), message, null);
             return;
         }
@@ -3194,7 +3194,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     private void waitUntilLoggedIn() {
         long start = System.currentTimeMillis();
         while (!enabled.get() && System.currentTimeMillis() - start < 2000) {
-            info("Waiting until session will be logged in");
+            info("Waiting until session will be logged in: %s", channel.getSessionAlias());
             try {
                 Thread.sleep(100);
             } catch (Exception e) {
@@ -3206,7 +3206,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     private void waitLogoutResponse() {
         long start = System.currentTimeMillis();
         while(System.currentTimeMillis() - start < settings.getDisconnectRequestDelay() && enabled.get()) {
-            warn("Waiting session logout");
+            warn("Waiting session logout: %s", channel.getSessionAlias());
             try {
                 //noinspection BusyWait
                 Thread.sleep(100);
