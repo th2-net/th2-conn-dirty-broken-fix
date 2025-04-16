@@ -207,7 +207,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     private final ReentrantLock logonLock = new ReentrantLock();
 
     private final String logFormat;
-    private final String formatPrefix;
+    private final String reportPrefix;
 
     public FixHandler(IHandlerContext context) {
         this.context = context;
@@ -216,8 +216,8 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         String sessionName = formatSession(settings.getSenderCompID(), settings.getSenderSubID(),
                 settings.getTargetCompID(), settings.getHost(), settings.getPort());
-        logFormat = sessionName + ": {}";
-        formatPrefix = sessionName + ": ";
+        reportPrefix = sessionName + ": ";
+        logFormat = reportPrefix + "{}";
 
         executorService = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
                 .setNameFormat(settings.getSenderCompID() + '/' +
@@ -578,8 +578,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             if(settings.isLogoutOnIncorrectServerSequence()) {
                 String text = debugAndFormat("Received server sequence %d but expected %d. Sending logout with text: MsgSeqNum is too low...", receivedMsgSeqNum, serverMsgSeqNum.get());
                 context.send(CommonUtil.toEvent(text));
-                text = debugAndFormat("MsgSeqNum too low, expecting %d but received %d", serverMsgSeqNum.get() + 1, receivedMsgSeqNum);
-                sendLogout(text);
+                sendLogout(String.format("MsgSeqNum too low, expecting %d but received %d", serverMsgSeqNum.get() + 1, receivedMsgSeqNum));
                 reconnectRequestTimer = executorService.schedule(this::sendLogon, settings.getReconnectDelay(), TimeUnit.SECONDS);
                 if (LOGGER.isErrorEnabled()) error("Invalid message. SeqNum is less than expected %d: %s", null, serverMsgSeqNum.get(), message.toString(US_ASCII));
             } else {
@@ -3419,7 +3418,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private @NotNull String format(String message, Object... args) {
-        return formatPrefix + String.format(message, args);
+        return reportPrefix + String.format(message, args);
     }
 
     private static String formatSession(@NotNull String senderCompId, @Nullable String senderSubId,
