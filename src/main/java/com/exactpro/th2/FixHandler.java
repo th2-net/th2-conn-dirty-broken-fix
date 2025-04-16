@@ -409,11 +409,14 @@ public class FixHandler implements AutoCloseable, IHandler {
         if (!channel.isOpen()) {
             try {
                 sendingTimeoutHandler.getWithTimeout(openChannel());
-            } catch (TimeoutException e) {
-                ExceptionUtils.asRuntimeException(new TimeoutException(
-                        format("could not open connection before timeout %d mls elapsed", currentTimeout)));
             } catch (Exception e) {
-                ExceptionUtils.asRuntimeException(e);
+                String message = format("could not open connection before timeout %d mls elapsed", currentTimeout);
+                if (e instanceof TimeoutException) {
+                    TimeoutException exception = new TimeoutException(message);
+                    exception.addSuppressed(e);
+                    ExceptionUtils.asRuntimeException(exception);
+                }
+                throw new RuntimeException(message, e);
             }
         }
 
@@ -428,8 +431,10 @@ public class FixHandler implements AutoCloseable, IHandler {
                 }
                 if (System.currentTimeMillis() > deadline) {
                     // The method should have checked exception in signature...
-                    ExceptionUtils.asRuntimeException(new TimeoutException(format("session was not established within %d mls",
-                            settings.getConnectionTimeoutOnSend())));
+                    ExceptionUtils.asRuntimeException(
+                            new TimeoutException(
+                                    format("session was not established within %d mls",
+                                            settings.getConnectionTimeoutOnSend())));
                 }
             }
         } else {
@@ -443,8 +448,10 @@ public class FixHandler implements AutoCloseable, IHandler {
                 }
                 if (System.currentTimeMillis() > deadline) {
                     // The method should have checked exception in signature...
-                    ExceptionUtils.asRuntimeException(new TimeoutException(format("session was not established within %d mls",
-                        settings.getConnectionTimeoutOnSend())));
+                    ExceptionUtils.asRuntimeException(
+                            new TimeoutException(
+                                    format("session was not established within %d mls",
+                                            settings.getConnectionTimeoutOnSend())));
                 }
             }
         }
