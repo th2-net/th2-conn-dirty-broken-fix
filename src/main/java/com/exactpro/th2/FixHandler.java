@@ -277,17 +277,17 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
 
         String host = settings.getHost();
-        if (host == null || host.isBlank()) throw new IllegalArgumentException("host cannot be blank");
+        if (host == null || host.isBlank()) throw new IllegalArgumentException(format("host cannot be blank"));
         int port = settings.getPort();
-        if (port < 1 || port > 65535) throw new IllegalArgumentException("port must be in 1..65535 range");
+        if (port < 1 || port > 65535) throw new IllegalArgumentException(format("port must be in 1..65535 range"));
         address = new InetSocketAddress(host, port);
         Objects.requireNonNull(settings.getSecurity(), "security cannot be null");
         Objects.requireNonNull(settings.getBeginString(), "BeginString can not be null");
         Objects.requireNonNull(settings.getResetSeqNumFlag(), "ResetSeqNumFlag can not be null");
         Objects.requireNonNull(settings.getResetOnLogon(), "ResetOnLogon can not be null");
-        if (settings.getHeartBtInt() <= 0) throw new IllegalArgumentException("HeartBtInt cannot be negative or zero");
-        if (settings.getTestRequestDelay() <= 0) throw new IllegalArgumentException("TestRequestDelay cannot be negative or zero");
-        if (settings.getDisconnectRequestDelay() <= 0) throw new IllegalArgumentException("DisconnectRequestDelay cannot be negative or zero");
+        if (settings.getHeartBtInt() <= 0) throw new IllegalArgumentException(format("HeartBtInt cannot be negative or zero"));
+        if (settings.getTestRequestDelay() <= 0) throw new IllegalArgumentException(format("TestRequestDelay cannot be negative or zero"));
+        if (settings.getDisconnectRequestDelay() <= 0) throw new IllegalArgumentException(format("DisconnectRequestDelay cannot be negative or zero"));
 
         passwordManager = new PasswordManager(settings.getInfraBackupUrl(), settings.getPassword(), settings.getNewPassword(), settings.getSenderCompID());
 
@@ -306,7 +306,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         scheduler = new StrategyScheduler(brokenConnConfig.getSchedulerType(), brokenConnConfig.getRules());
         executorService.schedule(this::applyNextStrategy, 0, TimeUnit.MILLISECONDS);
         if (settings.getConnectionTimeoutOnSend() <= 0) {
-            throw new IllegalArgumentException("connectionTimeoutOnSend must be greater than zero");
+            throw new IllegalArgumentException(format("connectionTimeoutOnSend must be greater than zero"));
         }
     }
 
@@ -343,7 +343,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
 
         if (!sessionActive.get()) {
-            throw new IllegalStateException("Session is not active. It is not possible to send messages.");
+            throw new IllegalStateException(format("Session is not active. It is not possible to send messages."));
         }
 
         if(isLogout && !channel.isOpen()) {
@@ -416,7 +416,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                     exception.addSuppressed(e);
                     ExceptionUtils.asRuntimeException(exception);
                 }
-                throw new RuntimeException(message, e);
+                throw new RuntimeException(format(message), e);
             }
         }
 
@@ -510,7 +510,11 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         try {
             if (checksum == -1 || endOfMessageIdx == -1 || endOfMessageIdx - checksum != 7) {
-                throw new IllegalStateException("Failed to parse message: " + buffer.toString(US_ASCII) + ". No Checksum or no tag separator at the end of the message with index: " + beginStringIdx);
+                throw new IllegalStateException(format(
+                        "Failed to parse message: "
+                                + buffer.toString(US_ASCII)
+                                + ". No Checksum or no tag separator at the end of the message with index: "
+                                + beginStringIdx));
             }
         } catch (Exception e) {
             if (nextBeginString > 0) {
@@ -3263,7 +3267,8 @@ public class FixHandler implements AutoCloseable, IHandler {
     public String getRandomOldPassword() {
         var previouslyUsedPasswords = passwordManager.getPreviouslyUsedPasswords();
         if(previouslyUsedPasswords.isEmpty()) {
-            throw new IllegalStateException("There was attempt to get old password while there is no old passwords");
+            throw new IllegalStateException(format(
+                    "There was attempt to get old password while there is no old passwords"));
         }
         return previouslyUsedPasswords.get(random.nextInt(previouslyUsedPasswords.size()));
     }
