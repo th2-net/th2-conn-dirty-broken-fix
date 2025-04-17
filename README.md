@@ -1,4 +1,4 @@
-# th2-conn-dirty-fix (1.5.0)
+# th2-conn-dirty-fix (1.5.1)
 
 This microservice allows sending and receiving messages via FIX protocol
 
@@ -323,6 +323,13 @@ spec:
 ```
 
 # Changelog
+
+## 1.5.1
+
+* Improved log messages (`SenderCompId>/SenderSubId > TargetCompId[host:port]` prefix is printed)
+* Updated:
+  * grpc-lw-data-provider: `2.4.0-dev`
+  * kotlin-logging: `7.0.7`
 
 ## 1.5.0
 

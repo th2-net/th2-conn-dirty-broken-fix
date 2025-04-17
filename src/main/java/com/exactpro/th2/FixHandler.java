@@ -206,10 +206,18 @@ public class FixHandler implements AutoCloseable, IHandler {
     private final ReentrantLock disconnectStrategyLock = new ReentrantLock();
     private final ReentrantLock logonLock = new ReentrantLock();
 
+    private final String logFormat;
+    private final String reportPrefix;
+
     public FixHandler(IHandlerContext context) {
         this.context = context;
         strategyRootEvent = context.send(CommonUtil.toEvent("Strategy root event"), null);
         this.settings = (FixHandlerSettings) context.getSettings();
+
+        String sessionName = formatSession(settings.getSenderCompID(), settings.getSenderSubID(),
+                settings.getTargetCompID(), settings.getHost(), settings.getPort());
+        reportPrefix = sessionName + ": ";
+        logFormat = reportPrefix + "{}";
 
         executorService = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
                 .setNameFormat(settings.getSenderCompID() + '/' +
@@ -269,17 +277,17 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
 
         String host = settings.getHost();
-        if (host == null || host.isBlank()) throw new IllegalArgumentException("host cannot be blank");
+        if (host == null || host.isBlank()) throw new IllegalArgumentException(format("host cannot be blank"));
         int port = settings.getPort();
-        if (port < 1 || port > 65535) throw new IllegalArgumentException("port must be in 1..65535 range");
+        if (port < 1 || port > 65535) throw new IllegalArgumentException(format("port must be in 1..65535 range"));
         address = new InetSocketAddress(host, port);
         Objects.requireNonNull(settings.getSecurity(), "security cannot be null");
         Objects.requireNonNull(settings.getBeginString(), "BeginString can not be null");
         Objects.requireNonNull(settings.getResetSeqNumFlag(), "ResetSeqNumFlag can not be null");
         Objects.requireNonNull(settings.getResetOnLogon(), "ResetOnLogon can not be null");
-        if (settings.getHeartBtInt() <= 0) throw new IllegalArgumentException("HeartBtInt cannot be negative or zero");
-        if (settings.getTestRequestDelay() <= 0) throw new IllegalArgumentException("TestRequestDelay cannot be negative or zero");
-        if (settings.getDisconnectRequestDelay() <= 0) throw new IllegalArgumentException("DisconnectRequestDelay cannot be negative or zero");
+        if (settings.getHeartBtInt() <= 0) throw new IllegalArgumentException(format("HeartBtInt cannot be negative or zero"));
+        if (settings.getTestRequestDelay() <= 0) throw new IllegalArgumentException(format("TestRequestDelay cannot be negative or zero"));
+        if (settings.getDisconnectRequestDelay() <= 0) throw new IllegalArgumentException(format("DisconnectRequestDelay cannot be negative or zero"));
 
         passwordManager = new PasswordManager(settings.getInfraBackupUrl(), settings.getPassword(), settings.getNewPassword(), settings.getSenderCompID());
 
@@ -298,7 +306,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         scheduler = new StrategyScheduler(brokenConnConfig.getSchedulerType(), brokenConnConfig.getRules());
         executorService.schedule(this::applyNextStrategy, 0, TimeUnit.MILLISECONDS);
         if (settings.getConnectionTimeoutOnSend() <= 0) {
-            throw new IllegalArgumentException("connectionTimeoutOnSend must be greater than zero");
+            throw new IllegalArgumentException(format("connectionTimeoutOnSend must be greater than zero"));
         }
     }
 
@@ -307,7 +315,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         channel = context.createChannel(address, settings.getSecurity(), Map.of(), true, settings.getReconnectDelay() * 1000L, settings.getRateLimit());
         if(settings.isLoadSequencesFromCradle()) {
             SequenceHolder sequences = messageLoader.loadInitialSequences(channel.getSessionGroup(), channel.getSessionAlias());
-            LOGGER.info("Loaded sequences are: client - {}, server - {}", sequences.getClientSeq(), sequences.getServerSeq());
+            info("Loaded sequences are: client - %d, server - %d", sequences.getClientSeq(), sequences.getServerSeq());
             msgSeqNum.set(sequences.getClientSeq());
             serverMsgSeqNum.set(sequences.getServerSeq());
         }
@@ -322,23 +330,24 @@ public class FixHandler implements AutoCloseable, IHandler {
         boolean enableReconnect = properties.containsKey(ENABLE_RECONNECT_PROPERTY);
 
         if(isLogout && enableReconnect) {
-            context.send(CommonUtil.toEvent(String.format("Enabling session reconnects: %b", channel.getSessionAlias())));
+            String text = debugAndFormat("Enabling session %s reconnects", channel.getSessionAlias());
+            context.send(CommonUtil.toEvent(text));
             sessionActive.set(true);
             try {
                 sendingTimeoutHandler.getWithTimeout(openChannel());
             } catch (Exception e) {
-                context.send(CommonUtil.toErrorEvent(String.format("Error while ending session %s by user logout. Is graceful disconnect: %b", channel.getSessionAlias()), e));
+                String error = errorAndFormat("Error while ending session %s by user logout. Is graceful disconnect", e, channel.getSessionAlias());
+                context.send(CommonUtil.toErrorEvent(error, e));
             }
             return CompletableFuture.completedFuture(null);
         }
 
         if (!sessionActive.get()) {
-            throw new IllegalStateException("Session is not active. It is not possible to send messages.");
+            throw new IllegalStateException(format("Session is not active. It is not possible to send messages."));
         }
 
         if(isLogout && !channel.isOpen()) {
-            String message = String.format("%s - %s: Logout ignored as channel is already closed.", channel.getSessionGroup(), channel.getSessionAlias());
-            LOGGER.warn(message);
+            String message = warnAndFormat("Logout ignored as channel is already closed.");
             context.send(CommonUtil.toEvent(message));
             return CompletableFuture.completedFuture(null);
         }
@@ -360,10 +369,12 @@ public class FixHandler implements AutoCloseable, IHandler {
         boolean disableReconnect = properties.containsKey(DISABLE_RECONNECT_PROPERTY);
 
         if(isLogout) {
-            context.send(CommonUtil.toEvent(String.format("Closing session %s. Is graceful disconnect: %b", channel.getSessionAlias(), !isUngracefulDisconnect)));
+            String text = debugAndFormat("Closing session %s. Is graceful disconnect: %b", channel.getSessionAlias(), !isUngracefulDisconnect);
+            context.send(CommonUtil.toEvent(text));
             try {
                 if(disableReconnect) {
-                    context.send(CommonUtil.toEvent(String.format("Disabling session reconnects: %b", channel.getSessionAlias())));
+                    String message = debugAndFormat("Disabling session %s reconnects: %b", channel.getSessionAlias(), !isUngracefulDisconnect);
+                    context.send(CommonUtil.toEvent(message));
                     sessionActive.set(false);
                 }
                 disconnect(!isUngracefulDisconnect);
@@ -375,7 +386,8 @@ public class FixHandler implements AutoCloseable, IHandler {
                     channel.close().get();
                 }
             } catch (Exception e) {
-                context.send(CommonUtil.toErrorEvent(String.format("Error while ending session %s by user logout. Is graceful disconnect: %b", channel.getSessionAlias(), !isUngracefulDisconnect), e));
+                String error = errorAndFormat("Error while ending session %s by user logout. Is graceful disconnect: %b", e, channel.getSessionAlias(), !isUngracefulDisconnect);
+                context.send(CommonUtil.toErrorEvent(error, e));
             }
             return CompletableFuture.completedFuture(null);
         }
@@ -397,43 +409,49 @@ public class FixHandler implements AutoCloseable, IHandler {
         if (!channel.isOpen()) {
             try {
                 sendingTimeoutHandler.getWithTimeout(openChannel());
-            } catch (TimeoutException e) {
-                ExceptionUtils.asRuntimeException(new TimeoutException(
-                        String.format("could not open connection before timeout %d mls elapsed",
-                                currentTimeout)));
             } catch (Exception e) {
-                ExceptionUtils.asRuntimeException(e);
+                String message = format("could not open connection before timeout %d mls elapsed", currentTimeout);
+                if (e instanceof TimeoutException) {
+                    TimeoutException exception = new TimeoutException(message);
+                    exception.addSuppressed(e);
+                    ExceptionUtils.asRuntimeException(exception);
+                }
+                throw new RuntimeException(format(message), e);
             }
         }
 
         if(strategy.getAllowMessagesBeforeLogon()) {
             while (!channel.isOpen()) {
-                if (LOGGER.isWarnEnabled()) LOGGER.warn("Session is not yet logged in: {}", channel.getSessionAlias());
+                warn("Session is not yet logged in: %s", channel.getSessionAlias());
                 try {
                     //noinspection BusyWait
                     Thread.sleep(100);
                 } catch (InterruptedException e) {
-                    LOGGER.error("Error while sleeping.");
+                    error("Error while sleeping.", e);
                 }
                 if (System.currentTimeMillis() > deadline) {
                     // The method should have checked exception in signature...
-                    ExceptionUtils.asRuntimeException(new TimeoutException(String.format("session was not established within %d mls",
-                        settings.getConnectionTimeoutOnSend())));
+                    ExceptionUtils.asRuntimeException(
+                            new TimeoutException(
+                                    format("session was not established within %d mls",
+                                            settings.getConnectionTimeoutOnSend())));
                 }
             }
         } else {
             while (!enabled.get()) {
-                if (LOGGER.isWarnEnabled()) LOGGER.warn("Session is not yet logged in: {}", channel.getSessionAlias());
+                warn("Session is not yet logged in: %s", channel.getSessionAlias());
                 try {
                     //noinspection BusyWait
                     Thread.sleep(100);
                 } catch (InterruptedException e) {
-                    LOGGER.error("Error while sleeping.");
+                    error("Error while sleeping.", e);
                 }
                 if (System.currentTimeMillis() > deadline) {
                     // The method should have checked exception in signature...
-                    ExceptionUtils.asRuntimeException(new TimeoutException(String.format("session was not established within %d mls",
-                        settings.getConnectionTimeoutOnSend())));
+                    ExceptionUtils.asRuntimeException(
+                            new TimeoutException(
+                                    format("session was not established within %d mls",
+                                            settings.getConnectionTimeoutOnSend())));
                 }
             }
         }
@@ -492,7 +510,11 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         try {
             if (checksum == -1 || endOfMessageIdx == -1 || endOfMessageIdx - checksum != 7) {
-                throw new IllegalStateException("Failed to parse message: " + buffer.toString(US_ASCII) + ". No Checksum or no tag separator at the end of the message with index: " + beginStringIdx);
+                throw new IllegalStateException(format(
+                        "Failed to parse message: "
+                                + buffer.toString(US_ASCII)
+                                + ". No Checksum or no tag separator at the end of the message with index: "
+                                + beginStringIdx));
             }
         } catch (Exception e) {
             if (nextBeginString > 0) {
@@ -529,14 +551,14 @@ public class FixHandler implements AutoCloseable, IHandler {
         FixField msgSeqNumValue = findField(message, MSG_SEQ_NUM_TAG);
         if (msgSeqNumValue == null) {
             metadata.put(REJECT_REASON, "No msgSeqNum Field");
-            if (LOGGER.isErrorEnabled()) LOGGER.error("Invalid message. No MsgSeqNum in message: {}", message.toString(US_ASCII));
+            if (LOGGER.isErrorEnabled()) error("Invalid message. No MsgSeqNum in message: %s", null, message.toString(US_ASCII));
             return metadata;
         }
 
         FixField msgType = findField(message, MSG_TYPE_TAG);
         if (msgType == null) {
             metadata.put(REJECT_REASON, "No msgType Field");
-            if (LOGGER.isErrorEnabled()) LOGGER.error("Invalid message. No MsgType in message: {}", message.toString(US_ASCII));
+            if (LOGGER.isErrorEnabled()) error("Invalid message. No MsgType in message: %s", null, message.toString(US_ASCII));
             return metadata;
         }
 
@@ -565,12 +587,14 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         if(receivedMsgSeqNum < serverMsgSeqNum.get() && !isDup) {
             if(settings.isLogoutOnIncorrectServerSequence()) {
-                context.send(CommonUtil.toEvent(String.format("Received server sequence %d but expected %d. Sending logout with text: MsgSeqNum is too low...", receivedMsgSeqNum, serverMsgSeqNum.get())));
+                String text = debugAndFormat("Received server sequence %d but expected %d. Sending logout with text: MsgSeqNum is too low...", receivedMsgSeqNum, serverMsgSeqNum.get());
+                context.send(CommonUtil.toEvent(text));
                 sendLogout(String.format("MsgSeqNum too low, expecting %d but received %d", serverMsgSeqNum.get() + 1, receivedMsgSeqNum));
                 reconnectRequestTimer = executorService.schedule(this::sendLogon, settings.getReconnectDelay(), TimeUnit.SECONDS);
-                if (LOGGER.isErrorEnabled()) LOGGER.error("Invalid message. SeqNum is less than expected {}: {}", serverMsgSeqNum.get(), message.toString(US_ASCII));
+                if (LOGGER.isErrorEnabled()) error("Invalid message. SeqNum is less than expected %d: %s", null, serverMsgSeqNum.get(), message.toString(US_ASCII));
             } else {
-                context.send(CommonUtil.toEvent(String.format("Received server sequence %d but expected %d. Correcting server sequence.", receivedMsgSeqNum, serverMsgSeqNum.get() + 1)));
+                String text = debugAndFormat("Received server sequence %d but expected %d. Correcting server sequence.", receivedMsgSeqNum, serverMsgSeqNum.get() + 1);
+                context.send(CommonUtil.toEvent(text));
                 serverMsgSeqNum.set(receivedMsgSeqNum - 1);
             }
             metadata.put(REJECT_REASON, "SeqNum is less than expected.");
@@ -588,7 +612,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         switch (msgTypeValue) {
             case MSG_TYPE_HEARTBEAT:
-                if (LOGGER.isInfoEnabled()) LOGGER.info("Heartbeat received - {}", message.toString(US_ASCII));
+                if (LOGGER.isInfoEnabled()) info("Heartbeat received - %s", message.toString(US_ASCII));
                 handleHeartbeat(message);
                 break;
             case MSG_TYPE_LOGON:
@@ -603,17 +627,17 @@ public class FixHandler implements AutoCloseable, IHandler {
                 break;
             case MSG_TYPE_RESEND_REQUEST:
                 state.addMessageID(messageId);
-                if (LOGGER.isInfoEnabled()) LOGGER.info("Resend request received - {}", message.toString(US_ASCII));
+                if (LOGGER.isInfoEnabled()) info("Resend request received - %s", message.toString(US_ASCII));
                 handleResendRequest(message);
                 break;
             case MSG_TYPE_SEQUENCE_RESET: //gap fill
                 state.addMessageID(messageId);
-                if (LOGGER.isInfoEnabled()) LOGGER.info("Sequence reset received - {}", message.toString(US_ASCII));
+                if (LOGGER.isInfoEnabled()) info("Sequence reset received - %s", message.toString(US_ASCII));
                 resetSequence(message);
                 break;
             case MSG_TYPE_TEST_REQUEST:
                 state.addMessageID(messageId);
-                if(LOGGER.isInfoEnabled()) LOGGER.info("Test request received - {}", message.toString(US_ASCII));
+                if(LOGGER.isInfoEnabled()) info("Test request received - %s", message.toString(US_ASCII));
                 if(strategy.getIncomingMessageStrategy(IncomingMessagesStrategy::getTestRequestProcessor).process(message, metadata) != null) {
                     return metadata;
                 }
@@ -622,7 +646,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                 if(isDup) {
                     state.addMessageID(messageId);
                 }
-                if(LOGGER.isInfoEnabled()) LOGGER.info("Received message - {}", message.toString(US_ASCII));
+                if(LOGGER.isInfoEnabled()) info("Received message - %s", message.toString(US_ASCII));
         }
 
         resetTestRequestTask();
@@ -646,14 +670,14 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     @Nullable
     private Map<String, String> handleLogon(@NotNull ByteBuf message, Map<String, String> metadata) {
-        if (LOGGER.isInfoEnabled()) LOGGER.info("Logon received - {}", message.toString(US_ASCII));
+        if (LOGGER.isInfoEnabled()) info("Logon received - %s", message.toString(US_ASCII));
         boolean connectionSuccessful = checkLogon(message);
         if (connectionSuccessful) {
             if(settings.useNextExpectedSeqNum()) {
                 FixField nextExpectedSeqField = findField(message, NEXT_EXPECTED_SEQ_NUMBER_TAG);
                 if(nextExpectedSeqField == null) {
                     metadata.put(REJECT_REASON, "No NextExpectedSeqNum field");
-                    if (LOGGER.isErrorEnabled()) LOGGER.error("Invalid message. No NextExpectedSeqNum in message: {}", message.toString(US_ASCII));
+                    if (LOGGER.isErrorEnabled()) error("Invalid message. No NextExpectedSeqNum in message: %s", null, message.toString(US_ASCII));
                     return metadata;
                 }
 
@@ -664,7 +688,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                     try {
                         activeRecovery.set(true);
                         if(!channel.isOpen()) {
-                            LOGGER.warn("Recovery is interrupted.");
+                            warn("Recovery is interrupted.");
                         } else {
                             strategy.getRecoveryHandler().recovery(nextExpectedSeqNumber, seqNum);
                         }
@@ -673,10 +697,9 @@ public class FixHandler implements AutoCloseable, IHandler {
                         recoveryLock.unlock();
                     }
                 } else if (nextExpectedSeqNumber > seqNum) {
+                    String text = infoAndFormat("Corrected next client seq num from %s to %s", seqNum, nextExpectedSeqNumber);
                     context.send(
-                            Event.start()
-                                    .name(String.format("Corrected next client seq num from %s to %s", seqNum, nextExpectedSeqNumber))
-                                    .type("Logon"),
+                            Event.start().name(text).type("Logon"),
                         null
                     );
                     msgSeqNum.set(nextExpectedSeqNumber - 1);
@@ -708,7 +731,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private Map<String, String> handleLogout(@NotNull ByteBuf message, Map<String, String> metadata) {
-        if (LOGGER.isInfoEnabled()) LOGGER.info("Logout received - {}", message.toString(US_ASCII));
+        if (LOGGER.isInfoEnabled()) info("Logout received - %s", message.toString(US_ASCII));
         if(strategy.getSendResendRequestOnLogoutReply()) {
             sendResendRequest(serverMsgSeqNum.get() - 5, 0);
         }
@@ -719,7 +742,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             if(statusCode != SUCCESSFUL_LOGOUT_CODE) {
                 FixField text = findField(message, TEXT_TAG);
                 if (text != null) {
-                    LOGGER.warn("Received Logout has text (58) tag: {}", text.getValue());
+                    warn("Received Logout has text (58) tag: %s", text.getValue());
                     String wrongClientSequence = StringUtils.substringBetween(text.getValue(), "expecting ", " but received");
                     if (wrongClientSequence != null) {
                         msgSeqNum.set(Integer.parseInt(wrongClientSequence) - 1);
@@ -753,7 +776,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             disconnect(false);
             openChannel();
         } catch (Exception e) {
-            LOGGER.error("Error while disconnecting in handle logout.");
+            error("Error while disconnecting in handle logout.", e);
         }
         return metadata;
     }
@@ -767,7 +790,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         FixField gapFillMode = findField(message, GAP_FILL_FLAG_TAG);
 
         if(seqNumValue == null) {
-            LOGGER.warn("Failed to reset servers MsgSeqNum. No such tag in message: {}", message.toString(US_ASCII));
+            if (LOGGER.isWarnEnabled()) warn("Failed to reset servers MsgSeqNum. No such tag in message: %s", message.toString(US_ASCII));
             return;
         }
 
@@ -806,7 +829,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         try {
             communicationLock.lock();
 
-            LOGGER.info("Sending resend request: {} - {}", beginSeqNo, endSeqNo);
+            info("Sending resend request: %d - %d", beginSeqNo, endSeqNo);
             StringBuilder resendRequest = new StringBuilder();
             setHeader(resendRequest, MSG_TYPE_RESEND_REQUEST, msgSeqNum.incrementAndGet(), null, isPossDup);
             resendRequest.append(BEGIN_SEQ_NO).append(beginSeqNo);
@@ -861,7 +884,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             try {
                 activeRecovery.set(true);
                 if(!channel.isOpen()) {
-                    LOGGER.warn("Recovery is interrupted.");
+                    warn("Recovery is interrupted.");
                 } else {
                     strategy.getRecoveryHandler().recovery(beginSeqNo, endSeqNo);
                 }
@@ -884,34 +907,34 @@ public class FixHandler implements AutoCloseable, IHandler {
             AtomicReference<ByteBuf> skipped = new AtomicReference<>(null);
 
             int endSeq = endSeqNo;
-            LOGGER.info("Loading messages from {} to {}", beginSeqNo, endSeqNo);
+            info("Loading messages from %d to %d", beginSeqNo, endSeqNo);
             if(settings.isLoadMissedMessagesFromCradle()) {
                 Function1<ByteBuf, Boolean> processMessage = (buf) -> {
                     FixField seqNum = findField(buf, MSG_SEQ_NUM_TAG);
                     FixField msgTypeField = findField(buf, MSG_TYPE_TAG);
 
-                    LOGGER.info("Processing cradle recovery message {}", buf.toString(US_ASCII));
+                    if (LOGGER.isInfoEnabled()) info("Processing cradle recovery message %s", buf.toString(US_ASCII));
 
                     if(seqNum == null || seqNum.getValue() == null
                             || msgTypeField == null || msgTypeField.getValue() == null) {
-                        LOGGER.info("Dropping recovery message. Missing SeqNum tag: {}", buf.toString(US_ASCII));
+                        if (LOGGER.isInfoEnabled()) info("Dropping recovery message. Missing SeqNum tag: %s", buf.toString(US_ASCII));
                         return true;
                     }
                     int sequence = Integer.parseInt(seqNum.getValue());
                     String msgType = msgTypeField.getValue();
 
                     if(sequence < beginSeqNo) {
-                        LOGGER.info("Dropping recovery message. SeqNum is less than BeginSeqNo: {}", buf.toString(US_ASCII));
+                        if (LOGGER.isInfoEnabled()) info("Dropping recovery message. SeqNum is less than BeginSeqNo: %s", buf.toString(US_ASCII));
                         return true;
                     }
 
                     if(sequence > endSeq) {
-                        LOGGER.info("Finishing recovery. SeqNum > EndSeq: {}", buf.toString(US_ASCII));
+                        if (LOGGER.isInfoEnabled()) info("Finishing recovery. SeqNum > EndSeq: %s", buf.toString(US_ASCII));
                         return false;
                     }
 
                     if(recoveryConfig.getSequenceResetForAdmin() && ADMIN_MESSAGES.contains(msgType)) {
-                        LOGGER.info("Dropping recovery message. Admin message sequence reset: {}", buf.toString(US_ASCII));
+                        if (LOGGER.isInfoEnabled()) info("Dropping recovery message. Admin message sequence reset: %s", buf.toString(US_ASCII));
                         return sequence != endSeq;
                     }
                     FixField possDup = findField(buf, POSS_DUP_TAG);
@@ -919,7 +942,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
                     if(sequence - 1 != lastProcessedSequence.get() ) {
                         int seqNo = Math.max(beginSeqNo, lastProcessedSequence.get() + 1);
-                        LOGGER.error("Messages [{}, {}] couldn't be recovered in the middle of recovery", seqNo, sequence);
+                        error("Messages [%d, %d] couldn't be recovered in the middle of recovery", null, seqNo, sequence);
                         StringBuilder sequenceReset = createSequenceReset(seqNo, sequence);
                         channel.send(Unpooled.wrappedBuffer(sequenceReset.toString().getBytes(StandardCharsets.UTF_8)),
                                 strategy.getState().enrichProperties(),
@@ -933,18 +956,18 @@ public class FixHandler implements AutoCloseable, IHandler {
                     updateLength(buf);
                     updateChecksum(buf);
                     if(!skip.get()) {
-                        LOGGER.info("Sending recovery message: {}", buf.toString(US_ASCII));
+                        if (LOGGER.isInfoEnabled()) info("Sending recovery message: %s", buf.toString(US_ASCII));
                         channel.send(buf, strategy.getState().enrichProperties(), null, SendMode.MANGLE)
                             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
                         try {
                             Thread.sleep(settings.getRecoverySendIntervalMs());
                         } catch (InterruptedException e) {
-                            LOGGER.error("Error while waiting send interval during recovery", e);
+                            error("Error while waiting send interval during recovery", null, e);
                         }
                     }
 
                     if(skip.get() && strategy.getOutOfOrder()) {
-                        LOGGER.info("Skipping recovery message. OutOfOrder: {}", buf.toString(US_ASCII));
+                        if (LOGGER.isInfoEnabled()) info("Skipping recovery message. OutOfOrder: %s", buf.toString(US_ASCII));
                         skipped.set(buf);
                         skip.set(false);
                         lastProcessedSequence.set(sequence);
@@ -952,14 +975,14 @@ public class FixHandler implements AutoCloseable, IHandler {
                     }
 
                     if(!skip.get() && strategy.getOutOfOrder()) {
-                        LOGGER.info("Sending recovery message. OutOfOrder: {}", skipped.get().toString(US_ASCII));
+                        if (LOGGER.isInfoEnabled()) info("Sending recovery message. OutOfOrder: %s", skipped.get().toString(US_ASCII));
                         skip.set(true);
                         channel.send(skipped.get(), strategy.getState().enrichProperties(), null, SendMode.MANGLE)
                             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
                         try {
                             Thread.sleep(settings.getRecoverySendIntervalMs());
                         } catch (InterruptedException e) {
-                            LOGGER.error("Error while waiting send interval during recovery", e);
+                            error("Error while waiting send interval during recovery", e);
                         }
                     }
 
@@ -980,7 +1003,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                 if(lastProcessedSequence.get() < endSeq && msgSeqNum.get() + 1 != lastProcessedSequence.get() + 1) {
                     int seqNo = Math.max(lastProcessedSequence.get() + 1, beginSeqNo);
                     int newSeqNo = msgSeqNum.get() + 1;
-                    LOGGER.error("Messages [{}, {}] couldn't be recovered in the end of recovery", seqNo, newSeqNo);
+                    error("Messages [%d, %d] couldn't be recovered in the end of recovery", null, seqNo, newSeqNo);
                     String seqReset = createSequenceReset(seqNo, newSeqNo).toString();
                     channel.send(
                         Unpooled.wrappedBuffer(seqReset.getBytes(StandardCharsets.UTF_8)),
@@ -998,7 +1021,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             resetHeartbeatTask();
 
         } catch (Exception e) {
-            LOGGER.error("Error while loading messages for recovery", e);
+            error("Error while loading messages for recovery", e);
             String seqReset =
                 createSequenceReset(Math.max(beginSeqNo, lastProcessedSequence.get() + 1), msgSeqNum.get() + 1).toString();
             channel.send(
@@ -1047,7 +1070,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.getState().enrichProperties(metadata);
         strategy.getOutgoingMessageStrategy(OutgoingMessagesStrategy::getOutgoingMessageProcessor).process(message, metadata);
 
-        if (LOGGER.isInfoEnabled()) LOGGER.info("Outgoing message: {}", message.toString(US_ASCII));
+        if (LOGGER.isInfoEnabled()) info("Outgoing message: %s", message.toString(US_ASCII));
         if(enabled.get()) resetHeartbeatTask();
     }
 
@@ -1079,7 +1102,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         if (msgType == null) {                                                        //should we interrupt sending message?
             if (LOGGER.isErrorEnabled()) {
-                LOGGER.error("No msgType in message {}", message.toString(US_ASCII));
+                error("No msgType in message %s", null, message.toString(US_ASCII));
             }
 
             if (metadata.get("MsgType") != null) {
@@ -1213,7 +1236,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
                 setChecksumAndBodyLength(heartbeat);
 
-                LOGGER.info("Send Heartbeat to server - {}", heartbeat);
+                info("Send Heartbeat to server - %s", heartbeat);
                 channel.send(Unpooled.wrappedBuffer(heartbeat.toString().getBytes(StandardCharsets.UTF_8)),
                         strategy.getState().enrichProperties(),
                         null,
@@ -1253,7 +1276,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                                 null,
                                 SendMode.HANDLE_AND_MANGLE)
                         .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
-                LOGGER.info("Send TestRequest to server - {}", testRequest);
+                info("Send TestRequest to server - %s", testRequest);
                 resetTestRequestTask();
                 resetHeartbeatTask();
             } finally {
@@ -1266,18 +1289,17 @@ public class FixHandler implements AutoCloseable, IHandler {
     public void sendLogon() {
         Map<String, String> props = new HashMap<>();
         if(!sessionActive.get() || !channel.isOpen()) {
-            LOGGER.info("Logon is not sent to server because session is not active.");
+            info("Logon is not sent to server because session is not active.");
             return;
         }
 
         if(activeLogonExchange.get()) {
-            LOGGER.info("Active logon exchange already going on.");
+            info("Active logon exchange already going on.");
             return;
         }
 
         if(enabled.get()) {
-            String message = String.format("Logon attempt while already logged in: %s - %s", channel.getSessionGroup(), channel.getSessionAlias());
-            LOGGER.warn(message);
+            String message = warnAndFormat("Logon attempt while already logged in: %s - %s", channel.getSessionGroup(), channel.getSessionAlias());
             context.send(CommonUtil.toEvent(message));
             return;
         }
@@ -1288,7 +1310,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             logonLock.lock();
             if(!activeLogonExchange.get() && !enabled.get()) {
                 activeLogonExchange.set(true);
-                LOGGER.info("Send logon - {}", logon);
+                info("Send logon - %s", logon);
                 channel.send(Unpooled.wrappedBuffer(logon.toString().getBytes(StandardCharsets.UTF_8)),
                                 strategy.getState().enrichProperties(props),
                                 null,
@@ -1378,7 +1400,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                 }
                 setChecksumAndBodyLength(logout);
 
-                LOGGER.debug("Sending logout - {}", logout);
+                debug("Sending logout - %s", logout);
 
                 try {
                     MessageID messageID = channel.send(
@@ -1389,9 +1411,9 @@ public class FixHandler implements AutoCloseable, IHandler {
                     ).get();
                     strategy.getState().addMessageID(messageID);
 
-                    LOGGER.info("Sent logout - {}", logout);
+                    info("Sent logout - %s", logout);
                 } catch (Exception e) {
-                    LOGGER.error("Failed to send logout - {}", logout, e);
+                    error("Failed to send logout - %s", e, logout);
                 }
             }
         } finally {
@@ -1426,11 +1448,11 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         try {
             if(!executorService.awaitTermination(settings.getDisconnectRequestDelay(), TimeUnit.MILLISECONDS)) {
-                LOGGER.warn("Failed to shutdown executor.");
+                warn("Failed to shutdown executor.");
                 executorService.shutdownNow();
             }
         } catch (Exception e) {
-            LOGGER.error("Error while closing handler executor service.", e);
+            error("Error while closing handler executor service.", e);
         }
     }
 
@@ -1486,14 +1508,14 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         strategyState.updateCacheAndRunOnCondition(message, x -> x >= config.getBatchSize(), buffer -> {
             try {
-                LOGGER.info("Sending batch of size: {}", config.getBatchSize());
+                if (LOGGER.isInfoEnabled()) info("Sending batch of size: %d", config.getBatchSize());
                 channel.send(asExpandable(buffer),
                                 strategy.getState().enrichProperties(properties),
                                 eventID,
                                 SendMode.DIRECT)
                     .thenAcceptAsync(strategyState::addMessageID, executorService);
             } catch (Exception e) {
-                LOGGER.error("Error while sending batch.", e);
+                error("Error while sending batch.", e);
             }
             return Unit.INSTANCE;
         });
@@ -1521,7 +1543,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             try {
                 Thread.sleep(sleepTime);
             } catch (InterruptedException e) {
-                LOGGER.error("Error while sending messages in different tcp packets.");
+                error("Error while sending messages in different tcp packets.", e);
             }
             channel.send(asExpandable(slice),
                     strategy.getState().enrichProperties(metadata),
@@ -1534,7 +1556,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         String slicesTimestamps = sendingTimes.stream().map(formatter::format).collect(Collectors.joining(","));
         metadata.put(SPLIT_SEND_TIMESTAMPS_PROPERTY, slicesTimestamps);
-        LOGGER.info("Sent message by slices: {}", slicesTimestamps);
+        info("Sent message by slices: %s", slicesTimestamps);
         CompletableFuture<MessageID> messageID = channel.send(asExpandable(message),
                 strategy.getState().enrichProperties(metadata),
                 eventID,
@@ -1554,7 +1576,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
         Set<String> disableForMessageTypes = strategy.getDisableForMessageTypes();
         if (disableForMessageTypes.contains(msgTypeField.getValue())) {
-            LOGGER.info("Strategy '{}' is disabled for {} message type", strategy.getType(), msgTypeField.getValue());
+            info("Strategy '%s' is disabled for %s message type", strategy.getType(), msgTypeField.getValue());
             return;
         }
 
@@ -1665,7 +1687,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             try {
                 Thread.sleep(100);
             } catch (Exception e) {
-                LOGGER.error("Error while blocking send.", e);
+                error("Error while blocking send.", e);
             }
         }
         return null;
@@ -1706,7 +1728,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                 disconnect(strategy.getGracefulDisconnect());
                 if(!channel.isOpen()) openChannel().get();
             } catch (Exception e) {
-                LOGGER.error("Error while reconnecting.", e);
+                error("Error while reconnecting.", e);
             }
         } else {
             handleLogon(message, metadata);
@@ -1762,7 +1784,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         FixField msgTypeField = findField(message, MSG_TYPE_TAG, US_ASCII);
         if(msgTypeField != null && msgTypeField.getValue() != null && disableForMessageTypes.contains(msgTypeField.getValue())) {
-            LOGGER.info("Strategy '{}' is disabled for {} message type", strategy.getType(), msgTypeField.getValue());
+            info("Strategy '%s' is disabled for %s message type", strategy.getType(), msgTypeField.getValue());
             return null;
         }
         if(msgTypeField != null) {
@@ -1801,7 +1823,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         FixField msgTypeField = findField(message, MSG_TYPE_TAG, US_ASCII);
         if(msgTypeField != null && msgTypeField.getValue() != null && disableForMessageTypes.contains(msgTypeField.getValue())) {
-            LOGGER.info("Strategy '{}' is disabled for {} message type", strategy.getType(), msgTypeField.getValue());
+            info("Strategy '%s' is disabled for %s message type", strategy.getType(), msgTypeField.getValue());
             return null;
         }
         String msgType = msgTypeField.getValue();
@@ -1847,7 +1869,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         FixField msgTypeField = findField(message, MSG_TYPE_TAG, US_ASCII);
         if(msgTypeField != null && msgTypeField.getValue() != null && disableForMessageTypes.contains(msgTypeField.getValue())) {
-            LOGGER.info("Strategy '{}' is disabled for {} message type", strategy.getType(), msgTypeField.getValue());
+            info("Strategy '%s' is disabled for %s message type", strategy.getType(), msgTypeField.getValue());
             return null;
         }
         String msgType = msgTypeField.getValue();
@@ -1880,7 +1902,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         Set<String> disableForMessageTypes = strategy.getDisableForMessageTypes();
         FixField msgTypeField = findField(message, MSG_TYPE_TAG, US_ASCII);
         if(msgTypeField != null && msgTypeField.getValue() != null && disableForMessageTypes.contains(msgTypeField.getValue())) {
-            LOGGER.info("Strategy '{}' is disabled for {} message type", strategy.getType(), msgTypeField.getValue());
+            info("Strategy '%s' is disabled for %s message type", strategy.getType(), msgTypeField.getValue());
             return null;
         }
 
@@ -1907,7 +1929,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         Set<String> disableForMessageTypes = strategy.getDisableForMessageTypes();
         FixField msgTypeField = findField(copyMessage, MSG_TYPE_TAG, US_ASCII);
         if(msgTypeField != null && msgTypeField.getValue() != null && disableForMessageTypes.contains(msgTypeField.getValue())) {
-            LOGGER.info("Strategy '{}' is disabled for {} message type", strategy.getType(), msgTypeField.getValue());
+            info("Strategy '%s' is disabled for %s message type", strategy.getType(), msgTypeField.getValue());
             return null;
         }
 
@@ -1936,17 +1958,17 @@ public class FixHandler implements AutoCloseable, IHandler {
         Set<String> allowedMessageTypes = strategy.getDuplicateRequestConfiguration().getAllowedMessageTypes();
 
         if(msgTypeField != null && msgTypeField.getValue() != null && !allowedMessageTypes.contains(msgTypeField.getValue())) {
-            LOGGER.info("Strategy '{}' is disabled for {} message type", strategy.getType(), msgTypeField.getValue());
+            info("Strategy '%s' is disabled for %s message type", strategy.getType(), msgTypeField.getValue());
             return null;
         }
 
         if(msgTypeField != null && msgTypeField.getValue() != null && disableForMessageTypes.contains(msgTypeField.getValue())) {
-            LOGGER.info("Strategy '{}' is disabled for {} message type", strategy.getType(), msgTypeField.getValue());
+            info("Strategy '%s' is disabled for %s message type", strategy.getType(), msgTypeField.getValue());
             return null;
         }
 
         if(msgTypeField != null && msgTypeField.getValue() != null && ADMIN_MESSAGES.contains(msgTypeField.getValue())) {
-            LOGGER.info("Strategy '{}' is disabled for {} message type", strategy.getType(), msgTypeField.getValue());
+            info("Strategy '%s' is disabled for %s message type", strategy.getType(), msgTypeField.getValue());
             return null;
         }
 
@@ -2033,7 +2055,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             try {
                 Thread.sleep(100);
             } catch (Exception e) {
-                LOGGER.error("Error while blocking receive.", e);
+                error("Error while blocking receive.", e);
             }
         }
         return null;
@@ -2092,7 +2114,8 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.resetStrategyAndState(configuration);
         ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
         if(!enabled.get()) {
-            ruleErrorEvent(strategy.getType(), String.format("Session %s isn't logged in.", channel.getSessionAlias()), null);
+            String message = errorAndFormat("Session %s isn't logged in.", null, channel.getSessionAlias());
+            ruleErrorEvent(strategy.getType(), message, null);
             return;
         }
 
@@ -2110,7 +2133,8 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.resetStrategyAndState(configuration);
         ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
         if(!enabled.get()) {
-            ruleErrorEvent(strategy.getType(), String.format("Session %s isn't logged in.", channel.getSessionAlias()), null);
+            String message = errorAndFormat("Session %s isn't logged in.", null, channel.getSessionAlias());
+            ruleErrorEvent(strategy.getType(), message, null);
             return;
         }
 
@@ -2130,7 +2154,8 @@ public class FixHandler implements AutoCloseable, IHandler {
         strategy.resetStrategyAndState(configuration);
         ruleStartEvent(configuration.getRuleType(), strategy.getStartTime());
         if(!enabled.get()) {
-            ruleErrorEvent(strategy.getType(), String.format("Session %s isn't logged in.", channel.getSessionAlias()), null);
+            String message = errorAndFormat("Session %s isn't logged in.", null, channel.getSessionAlias());
+            ruleErrorEvent(strategy.getType(), message, null);
             return;
         }
         AtomicBoolean isMainSessionDisconnected = new AtomicBoolean(false);
@@ -2170,22 +2195,22 @@ public class FixHandler implements AutoCloseable, IHandler {
                     sessionDisconnected = true;
                 } else {
                     responseReceived = true;
-                    LOGGER.warn("Received response while connecting with the same compId and there is live session for this compId. {}", new String(buffer, StandardCharsets.UTF_8));
+                    if (LOGGER.isWarnEnabled()) warn("Received response while connecting with the same compId and there is live session for this compId. %s", new String(buffer, StandardCharsets.UTF_8));
                 }
             } catch (SocketTimeoutException e) {
                 responseReceived = false;
             }
 
         } catch (IOException e) {
-            LOGGER.error("Error while connecting from another socket to the same user.", e);
+            error("Error while connecting from another socket to the same user.", e);
             responseReceived = false;
         }
 
         try {
-            LOGGER.info("Waiting for 5 seconds to check if main session will be disconnected.");
+            info("Waiting for 5 seconds to check if main session will be disconnected.");
             Thread.sleep(5000);
         } catch (InterruptedException e) {
-            LOGGER.error("Interrupted", e);
+            error("Interrupted", e);
             Thread.currentThread().interrupt();
         }
 
@@ -2207,8 +2232,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             try {
                 disconnect(configuration.getGracefulDisconnect());
             } catch (Exception e) {
-                String message = String.format("Error while setting up %s", strategy.getType());
-                LOGGER.error(message, e);
+                String message = errorAndFormat("Error while setting up %s", e, strategy.getType());
                 context.send(CommonUtil.toErrorEvent(message, e), strategyRootEvent);
             }
         } finally {
@@ -2222,8 +2246,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             openChannelAndWaitForLogon();
             Thread.sleep(strategy.getConfig().getCleanUpDuration().toMillis());
         } catch (Exception e) {
-            String message = String.format("Error while cleaning up %s", strategy.getType());
-            LOGGER.error(message, e);
+            String message = errorAndFormat("Error while cleaning up %s", e, strategy.getType());
             context.send(CommonUtil.toErrorEvent(message, e), strategyRootEvent);
         }
         ruleEndEvent(strategy.getType(), state.getStartTime(), strategy.getState().getMessageIDs());
@@ -2235,8 +2258,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             disconnect(configuration.getGracefulDisconnect());
             openChannelAndWaitForLogon();
         } catch (Exception e) {
-            String message = String.format("Error while setup %s strategy.", configuration.getRuleType());
-            LOGGER.error(message, e);
+            String message = errorAndFormat("Error while setup %s strategy.", e, configuration.getRuleType());
             context.send(toErrorEvent(message, e), strategyRootEvent);
         }
         strategy.updateIncomingMessageStrategy(x -> {x.setIncomingMessagesPreprocessor(this::missIncomingMessages); return Unit.INSTANCE;});
@@ -2253,8 +2275,8 @@ public class FixHandler implements AutoCloseable, IHandler {
             openChannelAndWaitForLogon();
             Thread.sleep(strategy.getState().getConfig().getCleanUpDuration().toMillis());
         } catch (Exception e) {
-            String message = String.format("Error while cleaning up %s strategy", strategy.getType());
-            LOGGER.error(message, e);
+            String message = errorAndFormat("Error while cleaning up %s strategy", e, strategy.getType());
+            context.send(toErrorEvent(message, e), strategyRootEvent);
         }
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
         strategy.cleanupStrategy();
@@ -2269,8 +2291,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             disconnect(configuration.getGracefulDisconnect());
             if(!channel.isOpen()) openChannel().get();
         } catch (Exception e) {
-            String message = String.format("Error while setting up %s", strategy.getType());
-            LOGGER.error(message, e);
+            String message = errorAndFormat("Error while setting up %s", e, strategy.getType());
             context.send(CommonUtil.toErrorEvent(message, e), strategyRootEvent);
         }
         ruleStartEvent(strategy.getType(), strategy.getStartTime());
@@ -2286,8 +2307,8 @@ public class FixHandler implements AutoCloseable, IHandler {
             openChannelAndWaitForLogon();
             Thread.sleep(strategy.getState().getConfig().getCleanUpDuration().toMillis());
         } catch (Exception e) {
-            String message = String.format("Error while cleaning up %s strategy", strategy.getType());
-            LOGGER.error(message);
+            String message = errorAndFormat("Error while cleaning up %s strategy", e, strategy.getType());
+            context.send(CommonUtil.toErrorEvent(message, e), strategyRootEvent);
         }
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
         strategy.cleanupStrategy();
@@ -2329,7 +2350,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             channel.send(buf, strategy.getState().enrichProperties(metadata), null, SendMode.DIRECT).get(1, TimeUnit.SECONDS);
             Thread.sleep(strategy.getNegativeStructureConfiguration().getAfterSendTimeoutMs());
         } catch (Exception e) {
-            LOGGER.error("Error while applying transformation", e);
+            error("Error while applying transformation", e);
         } finally {
             blockSendLock.unlock();
         }
@@ -2532,8 +2553,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             disconnect(configuration.getGracefulDisconnect());
             openChannelAndWaitForLogon();
         } catch (Exception e) {
-            String message = String.format("Error while setup %s strategy.", strategy.getType());
-            LOGGER.error(message, e);
+            String message = errorAndFormat("Error while setup %s strategy.", e, strategy.getType());
             context.send(toErrorEvent(message, e), strategyRootEvent);
         }
         strategy.setOnCloseHandler(this::outageOnCloseHandler);
@@ -2548,8 +2568,8 @@ public class FixHandler implements AutoCloseable, IHandler {
         try {
             Thread.sleep(strategy.getState().getConfig().getCleanUpDuration().toMillis()); // waiting for new incoming/outgoing messages to trigger resend request.
         } catch (Exception e) {
-            String message = String.format("Error while cleaning up %s strategy", strategy.getType());
-            LOGGER.error(message, e);
+            String message = errorAndFormat("Error while cleaning up %s strategy", e, strategy.getType());
+            context.send(toErrorEvent(message, e), strategyRootEvent);
         }
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
     }
@@ -2562,8 +2582,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             disconnect(configuration.getGracefulDisconnect());
             openChannelAndWaitForLogon();
         } catch (Exception e) {
-            String message = String.format("Error while setup %s strategy.", strategy.getType());
-            LOGGER.error(message, e);
+            String message = errorAndFormat("Error while setup %s strategy.", e, strategy.getType());
             context.send(toErrorEvent(message, e), strategyRootEvent);
         }
         strategy.updateOutgoingMessageStrategy(x -> {x.setOutgoingMessageProcessor(this::missOutgoingMessages); return Unit.INSTANCE;});
@@ -2577,8 +2596,8 @@ public class FixHandler implements AutoCloseable, IHandler {
             openChannelAndWaitForLogon();
             Thread.sleep(strategy.getState().getConfig().getCleanUpDuration().toMillis());
         } catch (Exception e) {
-            String message = String.format("Error while cleaning up %s strategy", strategy.getType());
-            LOGGER.error(message, e);
+            String message = errorAndFormat("Error while cleaning up %s strategy", e, strategy.getType());
+            context.send(toErrorEvent(message, e), strategyRootEvent);
         }
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
         strategy.cleanupStrategy();
@@ -2638,8 +2657,8 @@ public class FixHandler implements AutoCloseable, IHandler {
             }
             Thread.sleep(strategy.getState().getConfig().getCleanUpDuration().toMillis());
         } catch (Exception e) {
-            String message = String.format("Error while cleaning up %s strategy", strategy.getType());
-            LOGGER.error(message, e);
+            String message = errorAndFormat("Error while cleaning up %s strategy", e, strategy.getType());
+            context.send(toErrorEvent(message, e), strategyRootEvent);
         }
         ruleEndEvent(configuration.getRuleType(), start, strategy.getState().getMessageIDs());
     }
@@ -2656,8 +2675,8 @@ public class FixHandler implements AutoCloseable, IHandler {
         try {
             Thread.sleep(strategy.getState().getConfig().getCleanUpDuration().toMillis());
         } catch (Exception e) {
-            String message = String.format("Error while cleaning up %s strategy", strategy.getType());
-            LOGGER.error(message, e);
+            String message = errorAndFormat("Error while cleaning up %s strategy", e, strategy.getType());
+            context.send(toErrorEvent(message, e), strategyRootEvent);
         }
         ruleEndEvent(strategy.getType(), strategy.getStartTime(), strategy.getState().getMessageIDs());
         strategy.cleanupStrategy();
@@ -2675,8 +2694,8 @@ public class FixHandler implements AutoCloseable, IHandler {
             try {
                 disconnect(configuration.getGracefulDisconnect());
             } catch (Exception e) {
-                String message = String.format("Error while cleaning up %s strategy", strategy.getType());
-                LOGGER.error(message, e);
+                String message = errorAndFormat("Error while cleaning up %s strategy", e, strategy.getType());
+                context.send(toErrorEvent(message, e), strategyRootEvent);
             }
         }
 
@@ -2698,8 +2717,8 @@ public class FixHandler implements AutoCloseable, IHandler {
             try {
                 disconnect(configuration.getGracefulDisconnect());
             } catch (Exception e) {
-                String message = String.format("Error while cleaning up %s strategy", strategy.getType());
-                LOGGER.error(message, e);
+                String message = errorAndFormat("Error while cleaning up %s strategy", e, strategy.getType());
+                context.send(toErrorEvent(message, e), strategyRootEvent);
             }
         }
 
@@ -2707,8 +2726,8 @@ public class FixHandler implements AutoCloseable, IHandler {
             Thread.sleep(strategy.getState().getConfig().getCleanUpDuration().toMillis());
             openChannelAndWaitForLogon();
         } catch (Exception e) {
-            String message = String.format("Error while cleaning up %s strategy", strategy.getType());
-            LOGGER.error(message, e);
+            String message = errorAndFormat("Error while cleaning up %s strategy", e, strategy.getType());
+            context.send(toErrorEvent(message, e), strategyRootEvent);
         }
         strategy.cleanupStrategy();
         ruleEndEvent(configuration.getRuleType(), start, strategy.getState().getMessageIDs());
@@ -2765,7 +2784,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                     channel.send(message, strategy.getState().enrichProperties(), null, SendMode.DIRECT)
                         .thenAcceptAsync(messageID -> strategy.getState().addMessageID(messageID), executorService);
                 } catch (Exception e) {
-                    LOGGER.error("Error while sending batch.", e);
+                    error("Error while sending batch.", e);
                 }
                 return Unit.INSTANCE;
             });
@@ -2891,16 +2910,15 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     // <editor-fold desc="strategies scheduling and cleanup">
     private void applyNextStrategy() {
-        LOGGER.info("Cleaning up current strategy {}", strategy.getState().getType());
-        LOGGER.info("Started waiting for recovery finish.");
+        info("Cleaning up current strategy %s", strategy.getState().getType());
+        info("Started waiting for recovery finish.");
         awaitInactiveRecovery();
-        LOGGER.info("Stopped waiting for recovery finish.");
+        info("Stopped waiting for recovery finish.");
         try {
             strategy.getCleanupHandler().cleanup();
         } catch (Exception e) {
-            String message = String.format("Error while cleaning up strategy: %s", strategy.getState().getType());
-            LOGGER.error(message, e);
-            ruleErrorEvent(strategy.getState().getType(), null, e);
+            String message = errorAndFormat("Error while cleaning up strategy: %s", e, strategy.getState().getType());
+            ruleErrorEvent(strategy.getState().getType(), message, e);
         }
 
         if(!sessionActive.get()) {
@@ -2910,7 +2928,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
 
         if(!strategiesEnabled.get()) {
-            LOGGER.info("Strategies disabled. New strategy will not be applied. Trying again in 30 seconds.");
+            info("Strategies disabled. New strategy will not be applied. Trying again in 30 seconds.");
             strategy.resetStrategyAndState(RuleConfiguration.Companion.defaultConfiguration());
             executorService.schedule(this::applyNextStrategy, Duration.of(30, ChronoUnit.SECONDS).toSeconds(), TimeUnit.SECONDS);
             return;
@@ -2921,12 +2939,11 @@ public class FixHandler implements AutoCloseable, IHandler {
         try {
             nextStrategySetupFunction.accept(nextStrategyConfig);
         } catch (Exception e) {
-            String message = String.format("Error while setting up strategy: %s", strategy.getState().getType());
-            LOGGER.error(message, e);
-            ruleErrorEvent(nextStrategyConfig.getRuleType(), null, e);
+            String message = errorAndFormat("Error while setting up strategy: %s", e, strategy.getState().getType());
+            ruleErrorEvent(nextStrategyConfig.getRuleType(), message, e);
         }
 
-        LOGGER.info("Next strategy applied: {}, duration: {}", nextStrategyConfig.getRuleType(), nextStrategyConfig.getDuration());
+        if (LOGGER.isInfoEnabled()) info("Next strategy applied: %s, duration: %s", nextStrategyConfig.getRuleType(), nextStrategyConfig.getDuration());
         executorService.schedule(this::applyNextStrategy, nextStrategyConfig.getDuration().toMillis(), TimeUnit.MILLISECONDS);
     }
 
@@ -2973,7 +2990,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             case NEGATIVE_STRUCTURE_TESTING_SESSION_MESSAGES: return this::setupNegativeStructuralTestingSessionMessagesStrategy;
             case DUPLICATE_REQUEST: return this::setupIdUniqnessStrategy;
             case DEFAULT: return configuration -> strategy.cleanupStrategy();
-            default: throw new IllegalStateException(String.format("Unknown strategy type %s.", config.getRuleType()));
+            default: throw new IllegalStateException(format("Unknown strategy type %s.", config.getRuleType()));
         }
     }
 
@@ -2988,7 +3005,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         StrategyState state = strategy.getState();
         RecoveryConfig recoveryConfig = strategy.getRecoveryConfig();
 
-        LOGGER.info("Making recovery from state: {} - {}.", beginSeqNo, endSeqNo);
+        info("Making recovery from state: %d - %d.", beginSeqNo, endSeqNo);
 
         if(strategy.getOutOfOrder()
                 && Duration.between(strategy.getStartTime(), Instant.now()).compareTo(strategy.getConfig().getDuration()) > 0 ) {
@@ -3029,31 +3046,31 @@ public class FixHandler implements AutoCloseable, IHandler {
                     updateChecksum(missedMessage);
 
                     if(!skip) {
-                        LOGGER.info("Sending recovery message from state: {}", missedMessage.toString(US_ASCII));
+                        if (LOGGER.isInfoEnabled()) info("Sending recovery message from state: %s", missedMessage.toString(US_ASCII));
                         channel.send(missedMessage, strategy.getState().enrichProperties(), null, SendMode.MANGLE)
                             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
                         try {
                             Thread.sleep(settings.getRecoverySendIntervalMs());
                         } catch (InterruptedException e) {
-                            LOGGER.error("Error while waiting send interval during recovery", e);
+                            error("Error while waiting send interval during recovery", e);
                         }
                     }
 
                     if(skip && strategy.getOutOfOrder()) {
-                        LOGGER.info("Skip recovery message out of order: {}", missedMessage.toString(US_ASCII));
+                        if (LOGGER.isInfoEnabled()) info("Skip recovery message out of order: %s", missedMessage.toString(US_ASCII));
                         skip = false;
                         skipped = missedMessage;
                         continue;
                     }
 
                     if(!skip && strategy.getOutOfOrder() && skipped != null) {
-                        LOGGER.info("Sending recovery message from state out of order: {}", skipped.toString(US_ASCII));
+                        if (LOGGER.isInfoEnabled()) info("Sending recovery message from state out of order: %s", skipped.toString(US_ASCII));
                         channel.send(skipped, strategy.getState().enrichProperties(), null, SendMode.MANGLE)
                             .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
                         try {
                             Thread.sleep(settings.getRecoverySendIntervalMs());
                         } catch (InterruptedException e) {
-                            LOGGER.error("Error while waiting send interval during recovery", e);
+                            error("Error while waiting send interval during recovery", e);
                         }
                         skip = true;
                     }
@@ -3153,9 +3170,9 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void disconnect(boolean graceful) throws ExecutionException, InterruptedException {
-        LOGGER.info("Started waiting for recovery finish.");
+        info("Started waiting for recovery finish.");
         awaitInactiveRecovery();
-        LOGGER.info("Finished waiting for recovery finish.");
+        info("Finished waiting for recovery finish.");
         if(graceful) {
             sendLogout();
             waitLogoutResponse();
@@ -3187,11 +3204,11 @@ public class FixHandler implements AutoCloseable, IHandler {
     private void waitUntilLoggedIn() {
         long start = System.currentTimeMillis();
         while (!enabled.get() && System.currentTimeMillis() - start < 2000) {
-            LOGGER.info("Waiting until session will be logged in: {}", channel.getSessionAlias());
+            info("Waiting until session will be logged in: %s", channel.getSessionAlias());
             try {
                 Thread.sleep(100);
             } catch (Exception e) {
-                LOGGER.error("Error while waiting session login.", e);
+                error("Error while waiting session login.", e);
             }
         }
     }
@@ -3199,12 +3216,12 @@ public class FixHandler implements AutoCloseable, IHandler {
     private void waitLogoutResponse() {
         long start = System.currentTimeMillis();
         while(System.currentTimeMillis() - start < settings.getDisconnectRequestDelay() && enabled.get()) {
-            if (LOGGER.isWarnEnabled()) LOGGER.warn("Waiting session logout: {}", channel.getSessionAlias());
+            warn("Waiting session logout: %s", channel.getSessionAlias());
             try {
                 //noinspection BusyWait
                 Thread.sleep(100);
             } catch (InterruptedException e) {
-                LOGGER.error("Error while sleeping.");
+                error("Error while sleeping.", e);
             }
         }
     }
@@ -3250,7 +3267,8 @@ public class FixHandler implements AutoCloseable, IHandler {
     public String getRandomOldPassword() {
         var previouslyUsedPasswords = passwordManager.getPreviouslyUsedPasswords();
         if(previouslyUsedPasswords.isEmpty()) {
-            throw new IllegalStateException("There was attempt to get old password while there is no old passwords");
+            throw new IllegalStateException(format(
+                    "There was attempt to get old password while there is no old passwords"));
         }
         return previouslyUsedPasswords.get(random.nextInt(previouslyUsedPasswords.size()));
     }
@@ -3280,8 +3298,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void ruleStartEvent(RuleType type, Instant start) {
-        String message = String.format("%s strategy started: %s", type.name(), start.toString());
-        LOGGER.info(message);
+        String message = infoAndFormat("%s strategy started: %s", type.name(), start.toString());
         context.send(
             Event
             .start()
@@ -3294,8 +3311,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void ruleStartEventWithBody(RuleType type, Instant start, Map<String, String> body) {
-        String message = String.format("%s strategy started: %s", type.name(), start.toString());
-        LOGGER.info(message);
+        String message = infoAndFormat("%s strategy started: %s", type.name(), start.toString());
         try {
             String content = MAPPER.writeValueAsString(body);
             Message msg = new Message();
@@ -3311,15 +3327,14 @@ public class FixHandler implements AutoCloseable, IHandler {
                     strategyRootEvent
             );
         } catch (Exception e) {
-            LOGGER.error("Error while creating event", e);
+            error("Error while creating event", e);
             ruleStartEvent(type, start);
         }
     }
 
     private void ruleEndEvent(RuleType type, Instant start, List<MessageID> messageIDS, Map<String, Object> additionalDetails) {
         Instant end = Instant.now();
-        String message = String.format("%s strategy finished: %s - %s", type.name(), start.toString(), end.toString());
-        LOGGER.info(message);
+        String message = infoAndFormat("%s strategy finished: %s - %s", type.name(), start.toString(), end.toString());
         try {
             Message jsonBody = createMessageBean(mapper.writeValueAsString(Map.of(
                 "StartTime", start.toString(), "EndTime", end.toString(),
@@ -3338,7 +3353,7 @@ public class FixHandler implements AutoCloseable, IHandler {
                 strategyRootEvent
             );
         } catch (Exception e) {
-            LOGGER.error("Error while publishing strategy event: {}", message, e);
+            error("Error while publishing strategy event: %s", e, message);
         }
     }
 
@@ -3347,7 +3362,7 @@ public class FixHandler implements AutoCloseable, IHandler {
     }
 
     private void ruleErrorEvent(RuleType type, String message, @Nullable Throwable error) {
-        String errorLog = String.format("Rule %s error event: message - %s, error - %s", type, message, error);
+        String errorLog = errorAndFormat("Rule %s error event: message - %s, error - %s", error, type, message, error);
         LOGGER.error(errorLog, error);
         Event event = Event
                 .start()
@@ -3364,4 +3379,69 @@ public class FixHandler implements AutoCloseable, IHandler {
         );
     }
     // </editor-fold">
+
+    private void info(String message, Object... args) {
+        if(LOGGER.isInfoEnabled()) {
+            LOGGER.info(logFormat, String.format(message, args));
+        }
+    }
+
+    private String infoAndFormat(String message, Object... args) {
+        String result = format(message, args);
+        LOGGER.info(result);
+        return result;
+    }
+
+    @SuppressWarnings("SameParameterValue")
+    private void debug(String message, Object... args) {
+        if(LOGGER.isDebugEnabled()) {
+            LOGGER.debug(logFormat, String.format(message, args));
+        }
+    }
+
+    private String debugAndFormat(String message, Object... args) {
+        String result = format(message, args);
+        LOGGER.debug(result);
+        return result;
+    }
+
+    private void warn(String message, Object... args) {
+        if(LOGGER.isWarnEnabled()) {
+            LOGGER.warn(logFormat, String.format(message, args));
+        }
+    }
+
+    private String warnAndFormat(String message, Object... args) {
+        String result = format(message, args);
+        LOGGER.warn(result);
+        return result;
+    }
+
+    private void error(String message, Throwable throwable, Object... args) {
+        if(LOGGER.isErrorEnabled()) {
+            LOGGER.error(logFormat, String.format(message, args), throwable);
+        }
+    }
+
+    private String errorAndFormat(String message, Throwable throwable, Object... args) {
+        String result = format(message, args);
+        LOGGER.error(result, throwable);
+        return result;
+    }
+
+    private @NotNull String format(String message, Object... args) {
+        return reportPrefix + String.format(message, args);
+    }
+
+    private static String formatSession(@NotNull String senderCompId, @Nullable String senderSubId,
+                                        @NotNull String targetCompId, @NotNull String host, int port) {
+        StringBuilder builder = new StringBuilder(senderCompId);
+        if (senderSubId != null) {
+            builder.append('/').append(senderSubId);
+        }
+        return builder.append(" > ")
+                .append(targetCompId)
+                .append('[').append(host).append(':').append(port).append(']')
+                .toString();
+    }
 }
