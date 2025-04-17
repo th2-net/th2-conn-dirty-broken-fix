@@ -216,6 +216,375 @@ mangler:
 <br />example - value of tag 44 will be changed to `åÅæÆøØ`
 <br />```... .setMetadata(MessageMetadata.newBuilder(builder.getMetadata()).putProperties("rule-actions", "[{\"set\":{\"tag\": 44,\"value\": \"åÅæÆøØ\"}}]").build()) ...```
 
+## Broken Strategies configuration
+This component allows to configure chaos rules for protocol level testing.
+```yaml
+brokenConnConfiguration:
+  schedulerType: CONSECUTIVE
+  rules:
+    - ruleType: STRATEGY_NAME
+      duration: PT5S
+      cleanUpDuration: PT5S
+      weight: null
+      strategyRelatedConfiguration:
+
+```
+
+### Scheduler types
+*schedulerType* allows to configure how rule to be executed will be selected:
+- CONSECUTIVE - rules will be executed one by one in order they are defined in *rules* configuration.
+- WEIGHT - rules will be randomly selected from *rules* configuration. Probability of the rule to be selected from rules list is depends on *weight* option: the more weight rule has the more likely to be selected for execution.
+
+### General rule configurations
+- *ruleType* - strategy name defines how connector will behave when this rule is active.
+- *duration* - how much time rule will be active and affect connector behavior.
+- *cleanUpDuration* - how much time connector is needed to go back to normal session after rule strategy deactivation.
+- *weight* - optional parameter if *schedulerType* is set to WEIGHT, defines probability of this rule to be selected by strategy scheduler.
+
+### Rule Type: LOGON_FROM_ANOTHER_CONNECTION
+```yaml
+ruleType: "LOGON_FROM_ANOTHER_CONNECTION"
+duration: "PT5S"
+cleanUpDuration: "PT2S"
+```
+When this rule is activated another tcp socket with gateway host:port opened and logon sent through this new connection while previous session is still active.
+There is no rule specific configurations.
+
+### Rule Type: CLIENT_OUTAGE
+```yaml
+ruleType: "CLIENT_OUTAGE"
+duration: "PT32S"
+cleanUpDuration: "PT5S"
+```
+This rule emulates client outage behaviour: client is not responding to any gateway messages including heartbeats and test requests.
+There is no rule specific configurations.
+
+### Rule Type: PARTIAL_CLIENT_OUTAGE
+```yaml
+ruleType: "CLIENT_OUTAGE"
+duration: "PT32S"
+cleanUpDuration: "PT5S"
+```
+
+This rule emulates partial client outage: client is not responding to any gateway messages except TestRequest message.
+There is no rule specific configurations.
+
+### Rule Type: DISCONNECT_WITH_RECONNECT
+```yaml
+ruleType: "DISCONNECT_WITH_RECONNECT"
+duration: "PT1S"
+cleanUpDuration: "PT2S"
+gracefulDisconnect: true
+allowMessagesBeforeLogonReply: false
+```
+
+This rule triggers gracefull / ungracefull session disconnect and reconnects.
+
+Rule Specific Configurations:
+- **gracefulDisconnect** - defines whenever client should close session gracefully, i.e by sending logout message and waiting for reply or ungracefully by just closing tcp session.
+- **allowMessagesBeforeLogonReply** - if set to true allows client to send outgoing business messages before session was fully established, i.e logon is sent to gateway and gateway answered with logon response back.
+
+### Rule Type: IGNORE_INCOMMING_MESSAGES
+```yaml
+ruleType: "IGNORE_INCOMING_MESSAGES"
+duration: "PT2S"
+cleanUpDuration: "PT2S"
+missIncomingMessagesConfiguration:
+    count: 4
+```
+
+When this rule is active, gateway gap behavior is emulated: N incoming gateway messages are ignored and resend request is sent when gap is detected.
+
+Rule specific configurations:
+- **missIncomingMessagesConfiguration.count** - defines how many gateway messages should be ignored
+
+### Rule Type: TRANSFORM_LOGON
+```yaml
+ruleType: TRANSFORM_LOGON
+duration: "PT30S"
+cleanUpDuration: "PT5S"
+transformMessageConfiguration:
+  transformations:
+    - messageType: A
+      comment: "invalid_password"
+      actions:
+        - set:
+            tag: 1402
+            value: "invalid_password" 
+    - messageType: 'A'
+      comment: "invalid_key_and_method"
+      newPassword: "new_password"
+      passwordKeyEncryptionAlgorithm: "RSA"
+      passwordEncryptionAlgorithm: "RSA/OAEP"
+      encryptKey: public_key
+```
+
+When this rule is active corrupted logon messages are sent to gateway.
+
+Rule specific configurations:
+- **transformations** - list of transformations for logon messages. They are applied one by one for different logon messages.
+- **messageType** - message type to corrupt, for TRANSFORM_LOGON strategy should be allway equal to `A`
+- **comment** - transformation comment is put into `transformationComment` property of th2 message metadata related to Logon. Can be used in later scenarios execution analysis.
+- **actions** - list of tag related actions like set, remove, replace to be executed on message. Format is the same as for **mangler** configuration.
+- **newPassword** - password to be used in logon message.
+- **passwordEncryptionAlgorithm** - algorithm that will be used either **newPassword** if set or password defined in connect configuration.
+- **encryptKey** - public key which can be used by **passwordEncryptionAlgorithm** option.
+- **passwordKeyEncryptionAlgorithm** - **encryptKey** encryption method.
+
+### Rule Type: CREATE_OUTGOING_GAP
+```yaml
+ruleType: "CREATE_OUTGOING_GAP"
+duration: "PT2S"
+cleanUpDuration: "PT2S"
+allowMessagesBeforeRetransmissionFinishes: false
+recoveryConfig:
+  outOfOrder: false
+  sequenceResetForAdmin: true
+missOutgoingMessagesConfiguration:
+  count: 4
+```
+This strategy emulates client gap behaviour: client skips and doesn't send configured amount of outgoing messages, gateway should detect a gap and send resend request to client
+
+Rule specific configurations:
+- **allowMessagesBeforeRetransmissionFinishes** - when set to true, new business messages can be sent in between recovery messages.
+  **recoveryConfig.outOfOrder** - when set to true, recovery messages is sent to gateway out of order of their sequence numbers.
+  **recoveryConfig.sequenceResetForAdmin** - when set to false, Admin messages like logon, logout, etc that are part of requested gap are sent as is instead of SequenceReset with GapFill flag.
+- **missOutgoingMessagesConfiguration.count** - defines how many outgoing messages client should skip and shouldn't send to gateway, to create gap.
+
+### Rule Type: RESEND_REQUEST
+```yaml
+ruleType: "RESEND_REQUEST"
+duration: "PT2S"
+cleanUpDuration: "PT2S"
+resendRequestConfiguration:
+  messageCount: 5
+  range: true
+  single: false
+  untilLast: false
+```
+
+When this strategy is activated - `ResendRequest` is sent to gateway with configured parameters.
+
+Rule specific configurations:
+- **messageCount** - how many messages should be requested in resend request
+- **range** - if true, range of messages will be requested with specific values for `begin` and `end` intervals.
+- **single** - if true, single message will be requested and begin and end interval will be equal to each other.
+- **untilLast** - if true, range of messages will requested without defined end interval, all messages that gateway has to recover past begin interval number will be requested.
+
+### Rule Type: SEQUENCE_RESET
+```yaml
+ruleType: "SEQUENCE_RESET"
+duration: PT1S
+cleanUpDuration: PT2S
+changeSequenceConfiguration:
+  messageCount: 5
+  changeIncomingSequence: true
+  sendLogoutAfterReset: true
+  changeUp: true
+  gapFill: true
+```
+
+This strategy changes client's internal `next expected client sequence number` or `next expected gateway sequence number` value and reconnects the session.
+
+Rule specific configuration parameters:
+- **messageCount** - by which amount `next expected sequence number` will be changed.
+- **changeIncommingSequenceNumber** - if true `next expected sequence number` from gateway will be changed up / down for **messageCount** amount else sequence number of the next message that client will sent will be changed.
+- **changeUp** - if true, `next expected sequence number` will be increased by **messageCount** amount, if false `next expected sequence number` will be descreased by **messageCount** amount.
+- **sendLogoutAfterReset** - if true, disconnects session after `next expected sequence number` change, otherwise disconnects session before `next expected sequence number` change.
+- **gapFill** -  if true and recovery is issued by gateway after `next expected sequence number` update then `GapFillFlag` tag will be set in `SequenceReset` message used for recovery, if false `GapFillFlag` will not be used.
+
+### Rule Type: SEND_SEQUENCE_RESET
+```yaml
+ruleType: "SEND_SEQUENCE_RESET"
+duration: PT1S
+cleanUpDuration: PT2S
+sendSequenceResetConfiguration:
+  changeUp: true
+```
+
+When this strategy is activated `SequenceReset` message is sent to gateway with configured parameters.
+Rule specific configuration parameters:
+- **changeUp** - if true, `SequenceReset` message will set `NewSeqNo` tag to sequence number which is more than current session sequence number, otherwise `NewSeqNo` will be set to sequence number less than current session sequence number
+
+### Rule Type: FAKE_RETRANSMISSION
+```yaml
+ruleType: "FAKE_RETRANSMISSION"
+duration: PT1S
+cleanUpDuration: PT2S
+```
+This strategy adds `PossDupFlag=Y` to normal business messages which are not part of the retransmission.
+
+### Rule Type: POSS_DUP_SESSION_MESSAGES
+```yaml
+ruleType: "POSS_DUP_SESSION_MESSAGES"
+duration: PT1S
+cleanUpDuration: PT2S
+```
+
+When this strategy activated all session messages are sent to gateway with `PossDupFlag` set to `Y`: `Logon`, `Logout`, `TestRequest`, `Heartbeat`, `SequenceReset`.
+
+### Rule Type: CORRUPT_MESSAGE_STRUCTURE
+```yaml
+ruleType: "CORRUPT_MESSAGE_STRUCTURE"
+duration: PT1S
+cleanUpDuration: PT2S
+corruptMessageConfiguration:
+  headerTags: [...]
+  trailerTags: [...]
+  moveHeaderConfiguration:
+    position: AFTER_BODY
+```
+
+```yaml
+ruleType: "CORRUPT_MESSAGE_STRUCTURE"
+duration: PT1S
+cleanUpDuration: PT2S
+corruptMessageConfiguration:
+  headerTags: [...]
+  trailerTags: [...]
+  moveTrailerConfiguration:
+    position: BEFORE_HEADER
+```
+
+When this strategy is executed, message structure corruptions are applied to outgoing messages: correct message structure `header` - `body` - `trailer` is changed to other permutations of those 3 components.
+
+Rule specific configuration:
+- **headerTags** - fix tag numbers that belongs to header
+- **trailerTags** - fix tag numbers that belongs to trailer
+- **moveHeaderConfiguration.position** - defines the position where message `header` should be moved from the start of the message. Possible values: [INSIDE_BODY, AFTER_BODY, INSIDE_TRAILER, AFTER_TRAILER]
+- **moveTrailerConfiguration.position** - defines the position where message `trailer` should be moved from the end of the message. Possible values: [BEFORE_HEADER, INSIDE_HEADER, AFTER_HEADER, INSIDE_BODY]
+
+### Rule Type: ADJUST SENDING TIME
+```yaml
+ruleType: "ADJUST_SENDING_TIME"
+duration: PT1S
+cleanUpDuration: PT2S
+adjustSendingTimeConfiguration:
+  adjustDuration: "PT180S"
+  substract: false
+```
+
+When this strategy is activated `SendingTime` field is changed up or down depending on configuration.
+
+Rule specific configuration:
+- **adjustDuration** - by how much time `SendingTime` filed should be adjusted in the future or in the past. `Duration` java class is used to configure this setting.
+- **substract** - if true, `SendingTime` will be changed to the time in the past by `adjustDuration`, if false `SendingTime` will be changed to the time in the future by `adjustDuration`.
+
+### Rule Type: TRIGGER_LOGOUT
+```yaml
+ruleType: "TRIGGER_LOGOUT"
+duration: PT1S
+cleanUpDuration: PT2S
+sendResendRequestOnLogoutReply: true
+```
+
+When this strategy is activated `Logout` from gateway is caused by sending message with `SequenceNumber` less then gateway expects.
+
+Rule specific configuration:
+**sendResendRequestOnLogoutReply** - if set to true, `ResendRequest` will be send to gateway before sending logout response to gateway `Logout`.
+
+### Rule Type: POSS_RESEND
+```yaml
+ruleType: "POSS_RESEND"
+duration: PT1S
+cleanUpDuration: PT2S
+```
+
+When this strategy is activated all outgoing business messages will be sent twice, first time with `PossResendFlag=N` and second time with `PossResendFlag=Y`.
+
+### Rule Type: DUPLICATE REQUEST
+```yaml
+ruleType: "POSS_RESEND"
+duration: PT1S
+cleanUpDuration: PT2S
+duplicateRequestConfiguration:
+  allowedMessageTypes: ['D']
+```
+
+When this strategy is active all allowed outgoing messages sent twice to gateway.
+
+Rule specific configuration:
+- **allowedMessageTypes** - list of message types that may be duplicated.
+
+### Rule Type: NEGATIVE_STRUCTURE_TESTING
+```yaml
+ruleType: "NEGATIVE_STRUCTURE_TESTING"
+duration: PT1S
+cleanUpDuration: PT2S
+negativeStructureConfiguration:
+  afterSendTimeoutMs: 150
+```
+
+When this strategy is active outgoing business messages are corrupted by different transformation types applied to header / trailer fields:
+- Remove tag corruption - removes required tag
+- Null tag corruption - sets \0 as tag value
+- Empty tag corruption - sets tag equal to empty string
+- Duplicate tag corruption - makes tag appear twice in the message
+- Out of range tag corruption - sets value out of allowed range for tag
+- Negative number tag corruption - sets tag value to negative value for tags with only positive numbers allowed
+- Invalid data type tag corruption - sets tag value to value which has incorrect data type: for numeric tags string value, for data tags numeric value, for boolean tags - string value
+- Move tag out of order corruption - swaps target tag with tag before
+- Tag that is not exists corruption - adds tag that not exists in fix specification
+- Tag that not belongs to header corruption - adds tag that is not belongs to header into header
+- Tag that not belongs to trailer corruption - adds tag that is not belongs to trailer into trailer
+
+Corruptions are applied one by one for each header and trailer field.
+
+Rule specific configurations:
+- **afterSendTimeoutMs** - time in milliseconds to wait after corrupted message was sent to gateway before corrupting next message, if gateway is taking too much time to answer to corrupted message this parameter can be increased.
+
+### Rule Type: NEGATIVE_STRUCTURE_TESTING_SESSION_MESSAGES
+```yaml
+ruleType: "NEGATIVE_STRUCTURE_TESTING_SESSION_MESSAGES"
+duration: PT1S
+cleanUpDuration: PT2S
+negativeStructureConfiguration:
+  afterSendTimeoutMs: 150
+```
+
+When this strategy is active outgoing session messages are corrupted with different types of corruptions applied to different header / body / trailer fields:
+- Remove tag corruption - removes required tag
+- Null tag corruption - sets \0 as tag value
+- Empty tag corruption - sets tag equal to empty string
+- Duplicate tag corruption - makes tag appear twice in the message
+- Out of range tag corruption - sets value out of allowed range for tag
+- Negative number tag corruption - sets tag value to negative value for tags with only positive numbers allowed
+- Invalid data type tag corruption - sets tag value to value which has incorrect data type: for numeric tags string value, for data tags numeric value, for boolean tags - string value
+- Move tag out of order corruption - swaps target tag with tag before
+- Tag that is not exists corruption - adds tag that not exists in fix specification
+- Tag that not belongs to header corruption - adds tag that is not belongs to header into header
+- Tag that not belongs to trailer corruption - adds tag that is not belongs to trailer into trailer
+
+Corruptions are applied one by one for each header field, for required body fields and for all trailer fields.
+
+Rule specific configurations:
+- **afterSendTimeoutMs** - time in milliseconds to wait after corrupted message was sent to gateway before corrupting next message, if gateway is taking too much time to answer to corrupted message this parameter can be increased.
+
+### Rule Type: TRANSFORM_MESSAGE_STRATEGY
+```yaml
+ruleType: "TRANSFORM_MESSAGE_STRATEGY"
+duration: PT15S
+cleanUpDuration: PT2S
+transformMessageConfiguration:
+  transformations:
+    - actions:
+        - set: 49
+          value: invalid
+    - actions:
+        - add: 
+            tag: 35
+            value: D
+          after: 
+            tag: 10
+            matching: (.*)
+```
+
+When this strategy is active a list of transformations sequentially applied to outgoing messages.
+
+Rule specific configuration:
+- **transformations** - List of message transformation rules that will be sequentially applied to different outgoing messages.
+- **transformations.actions** - Transformation rule declaration in mangler format.
+
 ## MQ pins
 
 + input queue with `subscribe`, `send` and `raw` attributes for outgoing messages
