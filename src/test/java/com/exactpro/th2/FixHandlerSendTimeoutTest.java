@@ -57,7 +57,8 @@ class FixHandlerSendTimeoutTest {
                 .thenReturn(new CompletableFuture<>()); // future never completes
         var settings = new FixHandlerSettings();
         settings.setPort(42);
-        settings.setSenderCompID("test");
+        settings.setSenderCompID("test-sender-comp-id");
+        settings.setTargetCompID("test-target-comp-id");
         settings.setPassword("test");
         settings.setHost("localhost");
         settings.setConnectionTimeoutOnSend(300); // 300 millis
@@ -76,7 +77,7 @@ class FixHandlerSendTimeoutTest {
                                     .build())
                             .build()));
             Assertions.assertEquals(
-                    "could not open connection before timeout 300 mls elapsed",
+                    "test-sender-comp-id > test-target-comp-id[localhost:42]: could not open connection before timeout 300 mls elapsed",
                     exception.getMessage(),
                     "unexpected message"
             );
@@ -101,7 +102,8 @@ class FixHandlerSendTimeoutTest {
                 .thenReturn(CompletableFuture.completedFuture(Unit.INSTANCE)); // completed immediately
         Mockito.when(channelMock.isOpen()).thenReturn(true);
         var settings = createSettings();
-        settings.setSenderCompID("test");
+        settings.setSenderCompID("test-sender-comp-id");
+        settings.setTargetCompID("test-target-comp-id");
         settings.setPassword("test");
         Mockito.when(contextMock.getSettings())
                 .thenReturn(settings);
@@ -117,7 +119,7 @@ class FixHandlerSendTimeoutTest {
                                     .build())
                             .build()));
             Assertions.assertEquals(
-                    "session was not established within 300 mls",
+                    "test-sender-comp-id > test-target-comp-id[localhost:42]: session was not established within 300 mls",
                     exception.getMessage(),
                     "unexpected message"
             );
