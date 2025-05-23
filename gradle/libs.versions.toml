@@ -11,7 +11,7 @@ th2-grpc-lw-data-provider = { group = "com.exactpro.th2", name = "grpc-lw-data-p
 
 kotlin-logging = { group = "io.github.oshai", name = "kotlin-logging", version = "7.0.7" }
 zip4j = { group = "net.lingala.zip4j", name = "zip4j", version = "2.11.5" }
-httpclient5 = { group = "org.apache.httpcomponents.client5", name = "httpclient5", version = "5.4.4" }
+httpclient5 = { group = "org.apache.httpcomponents.client5", name = "httpclient5", version = "5.5" }
 
 auto-service = { group = "com.google.auto.service", name = "auto-service", version = "1.1.1" }
 
