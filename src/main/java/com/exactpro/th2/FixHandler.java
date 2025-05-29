@@ -1590,25 +1590,28 @@ public class FixHandler implements AutoCloseable, IHandler {
             () -> {
                 metadata.put("OriginalMessageType", msgTypeField.getValue());
                 messageTransformer.transformWithoutResults(message, transformation.getCombinedActions(), config.getContext());
-                if(transformation.getNewPassword() != null) {
-                    if(transformation.getEncryptKey() != null) {
-                        FixField encryptedPassword = findField(message, ENCRYPTED_PASSWORD_TAG);
-                        if(encryptedPassword != null) {
-                            encryptedPassword.setValue(encrypt(transformation.getNewPassword(), transformation.getEncryptKey(), transformation.getPasswordEncryptAlgorithm(), transformation.getPasswordKeyEncryptAlgorithm()));
-                        }
+                String passwordValue = transformation.getNewPassword();
+                if (passwordValue == null) {
+                    passwordValue = settings.getPassword();
+                }
+
+                if(transformation.getEncryptKey() != null) {
+                    FixField encryptedPassword = findField(message, ENCRYPTED_PASSWORD_TAG);
+                    if(encryptedPassword != null) {
+                        encryptedPassword.setValue(encrypt(passwordValue, transformation.getEncryptKey(), transformation.getPasswordEncryptAlgorithm(), transformation.getPasswordKeyEncryptAlgorithm()));
+                    }
+                } else {
+                    FixField encryptedPassword = findField(message, ENCRYPTED_PASSWORD_TAG);
+                    if(encryptedPassword != null) {
+                        encryptedPassword.clear();
+                    }
+                    FixField password = findField(message, PASSWORD_TAG);
+                    if(password != null) {
+                        password.setValue(passwordValue);
                     } else {
-                        FixField encryptedPassword = findField(message, ENCRYPTED_PASSWORD_TAG);
-                        if(encryptedPassword != null) {
-                            encryptedPassword.clear();
-                        }
-                        FixField password = findField(message, PASSWORD_TAG);
-                        if(password != null) {
-                            password.setValue(transformation.getNewPassword());
-                        } else {
-                            FixField defaultAppl = findField(message, DEFAULT_APPL_VER_ID_TAG);
-                            if(defaultAppl != null) {
-                                defaultAppl.insertNext(PASSWORD_TAG, transformation.getNewPassword());
-                            }
+                        FixField defaultAppl = findField(message, DEFAULT_APPL_VER_ID_TAG);
+                        if(defaultAppl != null) {
+                            defaultAppl.insertNext(PASSWORD_TAG, passwordValue);
                         }
                     }
                 }
