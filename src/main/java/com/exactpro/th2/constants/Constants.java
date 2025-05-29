@@ -84,6 +84,7 @@ public class Constants {
     public static final String POSS_DUP = SOH + POSS_DUP_TAG + "=";
     public static final String POSS_RESEND = SOH + POSS_RESEND_TAG + "=";
     public static final String TEXT = SOH + TEXT_TAG + "=";
+    public static final String SESSION_STATUS = SOH + SESSION_STATUS_TAG + "=";
 
     //message types
     public static final String MSG_TYPE_LOGON = "A";

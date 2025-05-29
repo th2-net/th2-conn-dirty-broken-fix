@@ -45,7 +45,8 @@ data class RuleConfiguration(
     val corruptMessageStructureConfiguration: CorruptMessageStructureConfiguration? = null,
     val adjustSendingTimeConfiguration: AdjustSendingTimeConfiguration? = null,
     val duplicateRequestConfiguration: DuplicateRequestConfiguration? = null,
-    val negativeStructureConfiguration: NegativeStructureConfiguration = NegativeStructureConfiguration()
+    val negativeStructureConfiguration: NegativeStructureConfiguration = NegativeStructureConfiguration(),
+    val sendTestRequestConfiguration: SendTestRequestConfiguration? = null,
 ) {
     init {
         when(ruleType) {
@@ -103,6 +104,9 @@ data class RuleConfiguration(
             }
             RuleType.NEGATIVE_STRUCTURE_TESTING -> {  }
             RuleType.NEGATIVE_STRUCTURE_TESTING_SESSION_MESSAGES -> {}
+            RuleType.SEND_TEST_REQUEST -> {
+                require(sendTestRequestConfiguration != null) { "`sendTestRequestConfiguration` is required for $ruleType" }
+            }
         }
     }
 

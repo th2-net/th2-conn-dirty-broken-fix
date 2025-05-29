@@ -24,21 +24,11 @@ import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.utils.event.transport.EventUtilsKt;
 import com.exactpro.th2.conn.dirty.fix.*;
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.BatchSendConfiguration;
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.ChangeSequenceConfiguration;
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RecoveryConfig;
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.ResendRequestConfiguration;
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.RuleConfiguration;
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.SendSequenceResetConfiguration;
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.SplitSendConfiguration;
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.TransformMessageConfiguration;
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.TransformationConfiguration;
+import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.*;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.DefaultStrategyHolder;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.IncomingMessagesStrategy;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.OutgoingMessagesStrategy;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.ReceiveStrategy;
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.CorruptMessageStructureConfiguration;
-import com.exactpro.th2.conn.dirty.fix.brokenconn.configuration.AdjustSendingTimeConfiguration;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.RuleType;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.SchedulerType;
 import com.exactpro.th2.conn.dirty.fix.brokenconn.strategy.SendStrategy;
@@ -1378,11 +1368,14 @@ public class FixHandler implements AutoCloseable, IHandler {
         sendLogout(null, false);
     }
 
-    private StringBuilder buildLogout(String text) {
+    private StringBuilder buildLogout(String text, String sessionStatus) {
         StringBuilder logout = new StringBuilder();
         setHeader(logout, MSG_TYPE_LOGOUT, msgSeqNum.incrementAndGet(), null);
         if(text != null) {
             logout.append(TEXT).append(text);
+        }
+        if(sessionStatus != null) {
+            logout.append(SESSION_STATUS).append(sessionStatus);
         }
         setChecksumAndBodyLength(logout);
         return logout;
@@ -2344,9 +2337,33 @@ public class FixHandler implements AutoCloseable, IHandler {
             blockSendLock.lock();
             Map<String, String> metadataUpdate = corruption.invoke(updateSeqNum(asExpandable(buf)));
             if(metadataUpdate != null) {
-                System.out.println(metadataUpdate);
                 metadata.putAll(metadataUpdate);
             }
+            channel.send(buf, strategy.getState().enrichProperties(metadata), null, SendMode.DIRECT).get(1, TimeUnit.SECONDS);
+            Thread.sleep(strategy.getNegativeStructureConfiguration().getAfterSendTimeoutMs());
+        } catch (Exception e) {
+            error("Error while applying transformation", e);
+        } finally {
+            blockSendLock.unlock();
+        }
+    }
+
+    private void sendLogoutWithSessionStatus(String sessionStatus) {
+        if(!strategiesEnabled.get()) return;
+
+        long start = System.currentTimeMillis();
+        while(!enabled.get() && (System.currentTimeMillis() - start) < 1100 ) {
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException ignored) { }
+        }
+
+        Map<String, String> metadata = new HashMap<>();
+        metadata.put(ENCODE_MODE_PROPERTY_NAME, DIRTY_ENCODE_MODE_NAME);
+        try {
+            blockSendLock.lock();
+            StringBuilder logout = buildLogout(null, sessionStatus);
+            ByteBuf buf = Unpooled.wrappedBuffer(logout.toString().getBytes(StandardCharsets.UTF_8));
             channel.send(buf, strategy.getState().enrichProperties(metadata), null, SendMode.DIRECT).get(1, TimeUnit.SECONDS);
             Thread.sleep(strategy.getNegativeStructureConfiguration().getAfterSendTimeoutMs());
         } catch (Exception e) {
@@ -2368,38 +2385,38 @@ public class FixHandler implements AutoCloseable, IHandler {
     private void applyNewTagsStrategies(ByteBuf message, int bodyTagAnchor) {
         corruptAndSendMessage(
                 Unpooled.copiedBuffer(message), (buf) ->
-                        CorruptionAction.TAG_THAT_IS_NOT_EXIST.transform(
-                                buf,
-                                MSG_TYPE_TAG,
-                                true,
-                                true,
-                                TAGS_INFO.get(MSG_TYPE_TAG),
-                                new CorruptionConfiguration(List.of(453), List.of(10000), false)
-                        )
+                    CorruptionAction.TAG_THAT_IS_NOT_EXIST.transform(
+                            buf,
+                            MSG_TYPE_TAG,
+                            true,
+                            true,
+                            TAGS_INFO.get(MSG_TYPE_TAG),
+                            new CorruptionConfiguration(List.of(453), List.of(10000), false)
+                    )
         );
 
         corruptAndSendMessage(
                 Unpooled.copiedBuffer(message), (buf) ->
-                        CorruptionAction.TAG_THAT_NOT_BELONGS_TO_HEADER_TRAILER.transform(
-                                buf,
-                                BEGIN_STRING_TAG,
-                                true,
-                                true,
-                                TAGS_INFO.get(BEGIN_STRING_TAG),
-                                new CorruptionConfiguration(List.of(453), List.of(10000), false)
-                        )
+                    CorruptionAction.TAG_THAT_NOT_BELONGS_TO_HEADER_TRAILER.transform(
+                            buf,
+                            BEGIN_STRING_TAG,
+                            true,
+                            true,
+                            TAGS_INFO.get(BEGIN_STRING_TAG),
+                            new CorruptionConfiguration(List.of(453), List.of(10000), false)
+                    )
         );
 
         corruptAndSendMessage(
                 Unpooled.copiedBuffer(message), (buf) ->
-                        CorruptionAction.TAG_THAT_NOT_BELONGS_TO_HEADER_TRAILER.transform(
-                                buf,
-                                bodyTagAnchor,
-                                true,
-                                true,
-                                TAGS_INFO.get(bodyTagAnchor),
-                                new CorruptionConfiguration(List.of(453), List.of(10000), false)
-                        )
+                    CorruptionAction.TAG_THAT_NOT_BELONGS_TO_HEADER_TRAILER.transform(
+                            buf,
+                            bodyTagAnchor,
+                            true,
+                            true,
+                            TAGS_INFO.get(bodyTagAnchor),
+                            new CorruptionConfiguration(List.of(453), List.of(10000), false)
+                    )
         );
     }
 
@@ -2415,7 +2432,7 @@ public class FixHandler implements AutoCloseable, IHandler {
         ByteBuf logonBuf = addPossFlags(asExpandable(Unpooled.wrappedBuffer(logon.toString().getBytes(StandardCharsets.UTF_8))));
 
         List<Function1<ByteBuf, Map<String, String>>> logonTransformationSequence = CorruptionGenerator.INSTANCE.createTransformationSequenceJava(
-            List.of(34, 8, 10, 98, 789, 1137),
+            List.of(34, 8, 10, 98, 108, 789, 1137),
             TAGS_INFO,
             false
         );
@@ -2506,7 +2523,7 @@ public class FixHandler implements AutoCloseable, IHandler {
 
         // Logout
 
-        StringBuilder logout = buildLogout("test");
+        StringBuilder logout = buildLogout("test", null);
         ByteBuf logoutBuf = addPossFlags(asExpandable(Unpooled.wrappedBuffer(logout.toString().getBytes(StandardCharsets.UTF_8))));
 
         List<Function1<ByteBuf, Map<String, String>>> logoutTransformations = CorruptionGenerator.INSTANCE.createTransformationSequenceJava(
@@ -2520,6 +2537,10 @@ public class FixHandler implements AutoCloseable, IHandler {
         }
 
         applyNewTagsStrategies(logoutBuf, 58);
+
+        sendLogoutWithSessionStatus("0");
+        sendLogoutWithSessionStatus("4");
+        sendLogoutWithSessionStatus("invalid");
 
         // Logout
     }
@@ -2769,6 +2790,39 @@ public class FixHandler implements AutoCloseable, IHandler {
 
     }
 
+    private void sendTestRequestStrategy(RuleConfiguration configuration) {
+        Instant start = Instant.now();
+        try {
+            communicationLock.lock();
+
+            strategy.resetStrategyAndState(configuration);
+            SendTestRequestConfiguration config = configuration.getSendTestRequestConfiguration();
+
+            StringBuilder testRequest = new StringBuilder();
+
+            String time = getTime();
+            setHeader(testRequest, MSG_TYPE_TEST_REQUEST, msgSeqNum.incrementAndGet(), time);
+            if(config.getTestRequestID() != null) {
+                testRequest.append(TEST_REQ_ID).append(config.getTestRequestID());
+            }
+
+            setChecksumAndBodyLength(testRequest);
+
+            channel.send(Unpooled.wrappedBuffer(testRequest.toString().getBytes(StandardCharsets.UTF_8)),
+                            strategy.getState().enrichProperties(),
+                            null,
+                            SendMode.HANDLE_AND_MANGLE)
+                    .thenAcceptAsync(x -> strategy.getState().addMessageID(x), executorService);
+            resetHeartbeatTask();
+            strategy.cleanupStrategy();
+        } catch (Exception e) {
+            ruleEndEvent(configuration.getRuleType(), start, strategy.getState().getMessageIDs());
+        } finally {
+            communicationLock.unlock();
+        }
+
+    }
+
     private void setupBatchSendStrategy(RuleConfiguration configuration) {
         strategy.resetStrategyAndState(configuration);
         strategy.updateSendStrategy(x -> {x.setSendHandler(this::bulkSend); return Unit.INSTANCE;});
@@ -2989,6 +3043,7 @@ public class FixHandler implements AutoCloseable, IHandler {
             case NEGATIVE_STRUCTURE_TESTING: return this::setupNegativeStructuralTestingStrategy;
             case NEGATIVE_STRUCTURE_TESTING_SESSION_MESSAGES: return this::setupNegativeStructuralTestingSessionMessagesStrategy;
             case DUPLICATE_REQUEST: return this::setupIdUniqnessStrategy;
+            case SEND_TEST_REQUEST: return this::sendTestRequestStrategy;
             case DEFAULT: return configuration -> strategy.cleanupStrategy();
             default: throw new IllegalStateException(format("Unknown strategy type %s.", config.getRuleType()));
         }
