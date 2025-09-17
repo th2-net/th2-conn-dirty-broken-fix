@@ -4,7 +4,7 @@ th2-plugin = "0.3.7"
 
 [libraries]
 th2-common = { group = "com.exactpro.th2", name = "common", version = "5.16.0-dev" }
-th2-common-utils = { group = "com.exactpro.th2", name = "common-utils", version = "2.5.0-dev" }
+th2-common-utils = { group = "com.exactpro.th2", name = "common-utils", version = "2.4.0-dev" }
 th2-netty-bytebuf-utils = { group = "com.exactpro.th2", name = "netty-bytebuf-utils", version = "0.3.0" }
 th2-conn-dirty-tcp-core = { group = "com.exactpro.th2", name = "conn-dirty-tcp-core", version = "3.6.0-dev" }
 th2-grpc-lw-data-provider = { group = "com.exactpro.th2", name = "grpc-lw-data-provider", version = "2.5.0-dev" }
