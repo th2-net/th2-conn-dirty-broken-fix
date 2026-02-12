@@ -10,7 +10,7 @@ th2-conn-dirty-tcp-core = { group = "com.exactpro.th2", name = "conn-dirty-tcp-c
 th2-grpc-lw-data-provider = { group = "com.exactpro.th2", name = "grpc-lw-data-provider", version = "2.6.0-dev" }
 
 kotlin-logging = { group = "io.github.oshai", name = "kotlin-logging", version = "7.0.14" }
-zip4j = { group = "net.lingala.zip4j", name = "zip4j", version = "2.11.5" }
+zip4j = { group = "net.lingala.zip4j", name = "zip4j", version = "2.11.6" }
 httpclient5 = { group = "org.apache.httpcomponents.client5", name = "httpclient5", version = "5.6" }
 
 auto-service = { group = "com.google.auto.service", name = "auto-service", version = "1.1.1" }
